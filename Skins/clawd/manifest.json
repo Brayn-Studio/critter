@@ -1,0 +1,66 @@
+{
+  "schema": 1,
+  "name": "clawd",
+  "pixelAspect": [1, 2],
+  "palette": {
+    "#": "#D97757",
+    "o": "#1D1D1F"
+  },
+  "frames": {
+    "base": [
+      "...############...",
+      "...##o######o##...",
+      ".################.",
+      "...############...",
+      "....#.#....#.#...."
+    ],
+    "blink": [
+      "...############...",
+      "...############...",
+      ".################.",
+      "...############...",
+      "....#.#....#.#...."
+    ],
+    "step": [
+      "...############...",
+      "...##o######o##...",
+      ".################.",
+      "...############...",
+      "...#.#......#.#..."
+    ]
+  },
+  "animations": {
+    "idle": {
+      "frames": ["base", "base", "base", "base", "blink"],
+      "fps": 2,
+      "motion": "none",
+      "tint": "dim",
+      "accessory": { "text": "z z", "color": "#8E8E93" }
+    },
+    "running": {
+      "frames": ["base", "step"],
+      "fps": 4,
+      "motion": "hop",
+      "accessory": { "text": "•••", "color": "#8E8E93" }
+    },
+    "waiting": {
+      "frames": ["base"],
+      "fps": 2,
+      "motion": "wiggle",
+      "accessory": { "text": "?", "color": "#FF9F0A" }
+    },
+    "done": {
+      "frames": ["base", "blink", "base", "base"],
+      "fps": 2,
+      "motion": "breathe",
+      "accessory": { "text": "✓", "color": "#34C759" }
+    },
+    "error": {
+      "frames": ["base"],
+      "fps": 1,
+      "motion": "none",
+      "tint": "dim",
+      "accessory": { "text": "!", "color": "#FF3B30" }
+    }
+  }
+}
