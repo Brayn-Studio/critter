@@ -2,34 +2,39 @@ import AppKit
 import Carbon.HIToolbox
 import ClawdCore
 
-/// Boots the menu-bar app: an accessory-policy process with no Dock icon, a transparent
-/// always-on-top pet panel, a status-bar menu, the `clawd://` URL scheme, and a heartbeat
-/// written to `~/.clawd/app.json` so `clawd-hook toggle` can tell the app is alive (and
-/// restart it if the heartbeat has gone stale -- see `ToggleDecision`).
+/// Boots the menu-bar app: an accessory-policy process with no Dock icon, a status-bar
+/// menu, the `clawd://` URL scheme, and a heartbeat written to `~/.clawd/app.json` so
+/// `clawd-hook toggle` can tell the app is alive (and restart it if the heartbeat has gone
+/// stale -- see `ToggleDecision`). It assembles the controllers: `SessionMonitor` (the data
+/// layer) feeds `PetController` (the always-on-top pet panel and its visibility).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
-    private static let scale: CGFloat = 2
-    private static let spriteWidth = CGFloat(ClawdLayer.pixelColumns) * ClawdLayer.pixelWidthPt * scale
-    private static let spriteHeight = CGFloat(ClawdLayer.pixelRows) * ClawdLayer.pixelHeightPt * scale
-    private static let accessoryHeight: CGFloat = 16 * scale
-    private static let edgeInset: CGFloat = 24
     private static let heartbeatInterval: TimeInterval = 2.0
 
     private let paths = ClawdPaths.fromEnvironment()
     private let appStatusStore: AppStatusStore
     private let heartbeatQueue = DispatchQueue(label: "local.clawd.pet.heartbeat")
+    private let sessionMonitor: SessionMonitor
+    private let petController: PetController
 
-    private var panel: PetPanel!
-    private var clawdLayer: ClawdLayer!
     private var statusItem: NSStatusItem!
-    private var visibilityMenuItem: NSMenuItem!
+    private var visibilityMenuItem: NSMenuItem?
     private var heartbeatTimer: Timer?
-
-    private(set) var isVisible = true
 
     override init() {
         appStatusStore = AppStatusStore(paths: paths)
+        sessionMonitor = SessionMonitor(paths: paths)
+        petController = PetController(monitor: sessionMonitor)
         super.init()
+
+        // Visibility lives in `PetController`; the menu title follows it immediately, even
+        // for a `clawd://hide` that arrives before the panel has been built.
+        petController.onVisibilityChange = { [weak self] visible in
+            self?.visibilityMenuItem?.title = Self.visibilityTitle(visible)
+        }
+        sessionMonitor.onSnapshot = { [weak self] sessions in
+            self?.petController.show(sessions: sessions)
+        }
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
@@ -52,6 +57,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // UI-only work happens here, synchronously, on the main thread.
         buildStatusItem()
         startHeartbeat()
+        sessionMonitor.start()
 
         // `SkinLoader.load` does blocking file I/O (`Data(contentsOf:)`), so it must not
         // run on the main thread (Global Constraint: main thread is UI-only; file/process/
@@ -74,39 +80,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
     }
 
-    /// Builds the panel once the skin has finished loading off the main thread, then
-    /// applies whatever visibility was requested (the default, or a `clawd://hide`/
-    /// `clawd://toggle` Apple Event that arrived and was recorded into `isVisible` by
-    /// `requestVisible` while the panel didn't exist yet to apply it to).
+    /// Builds the panel once the skin has finished loading off the main thread;
+    /// `PetController` then applies whatever visibility was requested in the meantime (the
+    /// default, or a `clawd://hide`/`clawd://toggle` that arrived before the panel existed).
     private func finishLaunch(with skin: SkinManifest) {
-        buildPanel(skin: skin)
-        setVisible(isVisible)
+        petController.install(skin: skin)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
         heartbeatTimer?.invalidate()
-    }
-
-    // MARK: - Panel
-
-    private func buildPanel(skin: SkinManifest) {
-        let size = NSSize(width: Self.spriteWidth, height: Self.spriteHeight + Self.accessoryHeight)
-        let screen = NSScreen.main ?? NSScreen.screens.first
-        let visibleFrame = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1440, height: 900)
-        let origin = NSPoint(
-            x: visibleFrame.maxX - size.width - Self.edgeInset,
-            y: visibleFrame.minY + Self.edgeInset
-        )
-
-        let newPanel = PetPanel(contentRect: NSRect(origin: origin, size: size))
-
-        let layer = ClawdLayer(skin: skin, scale: Self.scale)
-        layer.position = CGPoint(x: size.width / 2, y: Self.spriteHeight / 2)
-        layer.apply(state: .idle, reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
-        newPanel.contentView?.layer?.addSublayer(layer)
-
-        panel = newPanel
-        clawdLayer = layer
     }
 
     // MARK: - Status item
@@ -118,7 +100,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         let menu = NSMenu()
 
-        let toggleItem = NSMenuItem(title: "隐藏宠物", action: #selector(toggleVisibility), keyEquivalent: "")
+        let toggleItem = NSMenuItem(title: Self.visibilityTitle(petController.visible), action: #selector(toggleVisibility), keyEquivalent: "")
         toggleItem.target = self
         menu.addItem(toggleItem)
 
@@ -151,40 +133,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         return image
     }
 
+    private static func visibilityTitle(_ visible: Bool) -> String {
+        visible ? "隐藏宠物" : "显示宠物"
+    }
+
     @objc private func toggleVisibility() {
-        requestVisible(!isVisible)
+        petController.setVisible(!petController.visible)
     }
 
     @objc private func quit() {
         NSApp.terminate(nil)
-    }
-
-    // MARK: - Visibility
-
-    /// Applies visibility to the actual panel/menu. Safe to call only once the panel
-    /// exists (see `requestVisible`, which guards the race where a `clawd://...` Apple
-    /// Event is dispatched to `handleGetURLEvent` before `applicationDidFinishLaunching`
-    /// has built the panel -- that used to crash on a nil `panel` force-unwrap).
-    func setVisible(_ visible: Bool) {
-        isVisible = visible
-        if visible {
-            panel.orderFrontRegardless()
-        } else {
-            panel.orderOut(nil)
-        }
-        visibilityMenuItem?.title = visible ? "隐藏宠物" : "显示宠物"
-    }
-
-    /// The entry point for anything that wants to show/hide the pet (the URL scheme, the
-    /// menu, and the initial default-shown state): applies immediately if the panel
-    /// already exists, or just records the request for `applicationDidFinishLaunching`
-    /// to apply once it's built the panel.
-    private func requestVisible(_ visible: Bool) {
-        guard panel != nil else {
-            isVisible = visible
-            return
-        }
-        setVisible(visible)
     }
 
     // MARK: - clawd:// URL scheme
@@ -199,11 +157,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handle(url: URL) {
         switch url.host {
         case "show":
-            requestVisible(true)
+            petController.setVisible(true)
         case "hide":
-            requestVisible(false)
+            petController.setVisible(false)
         case "toggle":
-            requestVisible(!isVisible)
+            petController.setVisible(!petController.visible)
         case "debug-hang":
             if UserDefaults.standard.bool(forKey: "debugEnabled") {
                 Thread.sleep(forTimeInterval: 3600)
@@ -228,13 +186,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         heartbeatTimer = timer
     }
 
-    /// Builds the status value on the main thread (where `isVisible` lives) but performs
+    /// Builds the status value on the main thread (where visibility lives) but performs
     /// the actual file write on a background queue, per the Global Constraint that the
     /// main thread only ever does UI work.
     private func writeHeartbeat() {
         let status = AppStatus(
             pid: ProcessInfo.processInfo.processIdentifier,
-            visible: isVisible,
+            visible: petController.visible,
             heartbeat: Int64(Date().timeIntervalSince1970 * 1000),
             version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
         )

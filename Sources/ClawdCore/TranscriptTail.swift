@@ -38,4 +38,21 @@ public enum TranscriptTail {
 
         return false
     }
+
+    /// Whether an interrupt line found at the end of the transcript should flip `record`
+    /// to idle. Only a busy (`running`/`waiting`) session can be interrupted. And because
+    /// `UserPromptSubmit` fires *before* Claude appends the new prompt to the transcript,
+    /// a fresh prompt's record can briefly sit on top of the previous turn's interrupt line:
+    /// that line is stale unless the transcript was modified after the prompt was submitted
+    /// (`transcriptModifiedAt` and `eventTime` are both ms since epoch). Other events (e.g.
+    /// `PostToolUseFailure` for the tool the user just interrupted) can legitimately land
+    /// after the interrupt line, so they don't block it.
+    public static func interruptApplies(to record: SessionRecord, transcriptModifiedAt: Int64?) -> Bool {
+        guard record.state == .running || record.state == .waiting else { return false }
+        if record.lastEvent == "UserPromptSubmit" {
+            guard let modified = transcriptModifiedAt else { return false }
+            return modified > record.eventTime
+        }
+        return true
+    }
 }
