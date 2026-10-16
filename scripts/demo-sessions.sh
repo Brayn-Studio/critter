@@ -12,7 +12,8 @@
 #                                        missing), e.g. to simulate an Esc interrupt by
 #                                        appending Claude's interrupt line to it
 #   demo-sessions.sh pid <i>             print demo-<i>'s stand-in process id
-#   demo-sessions.sh clean               kill the stand-in processes, delete the state files
+#   demo-sessions.sh clean               kill the stand-in processes, delete the state (and
+#                                        lock) files
 set -euo pipefail
 
 CLAWD_HOME="${CLAWD_HOME:-$HOME/.clawd}"
@@ -61,6 +62,9 @@ require_session() {
 }
 
 clean() {
+  # State files go first, so the app's exit handling (triggered by the kills below) finds
+  # nothing left to delete and doesn't re-create lock files for them.
+  rm -f "$SESSIONS"/demo-*.json
   if [ -f "$PIDS_FILE" ]; then
     while read -r pid; do
       [ -n "$pid" ] || continue
@@ -71,7 +75,8 @@ clean() {
     done < "$PIDS_FILE"
     rm -f "$PIDS_FILE"
   fi
-  rm -f "$SESSIONS"/demo-*.json
+  # StateStore never unlinks its per-session lock files; nothing else uses demo ones.
+  rm -f "$CLAWD_HOME"/locks/demo-*.lock
 }
 
 start() {
