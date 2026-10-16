@@ -70,6 +70,33 @@ private func tmpEnv() -> (paths: ClawdPaths, env: [String: String]) {
     #expect(StateStore(paths: paths).read(sessionId: "s1")?.state == .running)
 }
 
+/// F5: the hook records the session's entrypoint -- from Claude's registry entry for its
+/// process, else from `CLAUDE_CODE_ENTRYPOINT`, which Claude sets in every hook's environment
+/// (verified on 2.1.301: `sdk-cli` for `claude -p`, `cli` for an interactive terminal session).
+@Test func eventRecordsTheEntrypoint() throws {
+    let start = #"{"session_id":"s1","cwd":"/x","hook_event_name":"SessionStart","source":"startup"}"#
+
+    // No registry entry (a `-p` run that hasn't registered): the environment decides.
+    var (paths, env) = tmpEnv()
+    env["CLAUDE_CODE_ENTRYPOINT"] = "sdk-cli"
+    _ = HookCommand.run(arguments: ["event"], stdin: Data(start.utf8), environment: env, now: 1000, hookParentPid: 1, launcher: FakeLauncher())
+    #expect(StateStore(paths: paths).read(sessionId: "s1")?.entrypoint == "sdk-cli")
+
+    // The registry entry of the hook's own Claude takes precedence.
+    (paths, env) = tmpEnv()
+    let processes = FakeProcesses(table: [
+        300: .init(path: "/bin/sh", start: 50, parent: 200),
+        200: .init(path: "/Users/u/.local/share/claude/versions/2.1.301", start: 40),
+    ])
+    try FileManager.default.createDirectory(at: paths.claudeSessionsDir, withIntermediateDirectories: true)
+    try #"{"pid":200,"sessionId":"s1","cwd":"/x","startedAt":40000,"entrypoint":"claude-vscode"}"#
+        .write(to: paths.claudeSessionsDir.appendingPathComponent("200.json"), atomically: true, encoding: .utf8)
+    _ = HookCommand.run(arguments: ["event"], stdin: Data(start.utf8), environment: env, now: 1000, hookParentPid: 300, launcher: FakeLauncher(), processes: processes)
+    let record = StateStore(paths: paths).read(sessionId: "s1")
+    #expect(record?.entrypoint == "claude-vscode")
+    #expect(record?.claudePid == 200)
+}
+
 @Test func garbageInputIsSilent() {
     let (paths, env) = tmpEnv()
     let fake = FakeLauncher()

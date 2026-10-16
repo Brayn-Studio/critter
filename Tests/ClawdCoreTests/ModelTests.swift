@@ -28,6 +28,19 @@ import Testing
     #expect(try JSONDecoder().decode(SessionRecord.self, from: JSONEncoder().encode(r)) == r)
 }
 
+@Test func recordsWrittenBeforeEntrypointExistedStillDecode() throws {
+    let old = #"{"schema":1,"sessionId":"a","cwd":"/x","state":"idle","lastEvent":"SessionStart","eventTime":5,"createdAt":5,"claudePid":42,"claudeStartTime":100}"#
+    let r = try JSONDecoder().decode(SessionRecord.self, from: Data(old.utf8))
+    #expect(r.entrypoint == nil)
+    #expect(r.claudePid == 42)
+
+    var withEntrypoint = r
+    withEntrypoint.entrypoint = "cli"
+    let obj = try JSONSerialization.jsonObject(with: JSONEncoder().encode(withEntrypoint)) as! [String: Any]
+    #expect(obj["entrypoint"] as? String == "cli")
+    #expect(obj["schema"] as? Int == 1)
+}
+
 @Test func pathsFromEnvironment() {
     let p = ClawdPaths.fromEnvironment(["CLAWD_HOME": "/tmp/c", "CLAUDE_CONFIG_DIR": "/tmp/k", "HOME": "/Users/u"])
     #expect(p.sessionsDir.path == "/tmp/c/sessions")

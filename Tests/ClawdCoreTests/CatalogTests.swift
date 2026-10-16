@@ -9,11 +9,13 @@ private func rec(
     detail: String? = nil,
     eventTime: Int64 = 0,
     createdAt: Int64 = 0,
-    claudePid: Int32? = nil
+    claudePid: Int32? = nil,
+    entrypoint: String? = nil
 ) -> SessionRecord {
     SessionRecord(
         schema: 1, sessionId: id, cwd: cwd, transcriptPath: nil, state: state, detail: detail,
-        lastEvent: "Test", eventTime: eventTime, createdAt: createdAt, claudePid: claudePid, claudeStartTime: nil
+        lastEvent: "Test", eventTime: eventTime, createdAt: createdAt, claudePid: claudePid, claudeStartTime: nil,
+        entrypoint: entrypoint
     )
 }
 
@@ -46,6 +48,27 @@ private func entry(
     let records = [rec("a")]
     let result = SessionCatalog.build(records: records, registry: registry, dismissed: [:])
     #expect(result.isEmpty)
+}
+
+/// F5: `claude -p` / SDK runs may not be (or not yet be) in the registry; their state file's
+/// own entrypoint must keep them off the pet -- no flash, no sound, no reset of the user's
+/// expand/collapse choice.
+@Test func sdkSessionsExcludedByTheirStateFileToo() {
+    #expect(SessionCatalog.build(records: [rec("a", entrypoint: "sdk-cli")], registry: [], dismissed: [:]).isEmpty)
+    #expect(SessionCatalog.build(records: [rec("a", entrypoint: "sdk-ts")], registry: [], dismissed: [:]).isEmpty)
+    // Either source saying SDK is enough.
+    #expect(SessionCatalog.build(records: [rec("a", entrypoint: "sdk-cli")], registry: [entry("a", entrypoint: "cli")], dismissed: [:]).isEmpty)
+    #expect(SessionCatalog.build(records: [rec("a", entrypoint: "cli")], registry: [entry("a", entrypoint: "sdk-cli")], dismissed: [:]).isEmpty)
+}
+
+@Test func sourceLabelFallsBackToTheStateFilesEntrypoint() {
+    let unregistered = SessionCatalog.build(records: [rec("a", entrypoint: "claude-vscode")], registry: [], dismissed: [:])
+    #expect(unregistered.map(\.source) == [.vscode])
+    // The registry still wins when it has the session.
+    let registered = SessionCatalog.build(records: [rec("a", entrypoint: "claude-vscode")], registry: [entry("a", entrypoint: "cli")], dismissed: [:])
+    #expect(registered.map(\.source) == [.terminal])
+    // Neither knows: "其他", and the session is shown.
+    #expect(SessionCatalog.build(records: [rec("a")], registry: [], dismissed: [:]).map(\.source) == [.other])
 }
 
 @Test func onlyRecordNoRegistryShownNormally() {

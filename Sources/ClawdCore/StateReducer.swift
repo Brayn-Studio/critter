@@ -20,7 +20,8 @@ public enum StateReducer {
         input: HookInput,
         now: Int64,
         pid: Int32?,
-        pidStartTime: Int64?
+        pidStartTime: Int64?,
+        entrypoint: String? = nil
     ) -> ReducerAction {
         func write(state: PetState, detail: String?) -> ReducerAction {
             .write(SessionRecord(
@@ -34,7 +35,8 @@ public enum StateReducer {
                 eventTime: now,
                 createdAt: previous?.createdAt ?? now,
                 claudePid: pid ?? previous?.claudePid,
-                claudeStartTime: pidStartTime ?? previous?.claudeStartTime
+                claudeStartTime: pidStartTime ?? previous?.claudeStartTime,
+                entrypoint: entrypoint ?? previous?.entrypoint
             ))
         }
 

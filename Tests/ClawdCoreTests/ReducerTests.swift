@@ -120,3 +120,20 @@ private func input(_ json: String) -> HookInput {
     #expect(r.claudeStartTime == 100)
     #expect(r.eventTime == 50)
 }
+
+/// F5: the session's entrypoint is kept in its state file, so an SDK/`-p` session can be
+/// recognized even when Claude's registry doesn't (yet) list it.
+@Test func reducerRecordsTheEntrypointAndKeepsIt() {
+    guard case .write(let first) = StateReducer.reduce(
+        previous: nil, input: input(#"{"session_id":"s","cwd":"/x","hook_event_name":"SessionStart","source":"startup"}"#),
+        now: 10, pid: 1, pidStartTime: 1, entrypoint: "sdk-cli"
+    ) else { Issue.record(); return }
+    #expect(first.entrypoint == "sdk-cli")
+    #expect(first.schema == 1)
+
+    guard case .write(let next) = StateReducer.reduce(
+        previous: first, input: input(#"{"session_id":"s","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"hi"}"#),
+        now: 20, pid: 1, pidStartTime: 1, entrypoint: nil
+    ) else { Issue.record(); return }
+    #expect(next.entrypoint == "sdk-cli")
+}

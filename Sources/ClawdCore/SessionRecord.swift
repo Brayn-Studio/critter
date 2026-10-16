@@ -1,7 +1,7 @@
 import Foundation
 
 /// On-disk representation of a single session's pet state (`~/.clawd/sessions/<id>.json`).
-/// Schema version 1.
+/// Schema version 1. Fields added later are optional, so older files still decode.
 public struct SessionRecord: Codable, Sendable, Equatable {
     public var schema: Int
     public var sessionId: String
@@ -17,6 +17,10 @@ public struct SessionRecord: Codable, Sendable, Equatable {
     public var claudePid: Int32?
     /// Seconds since epoch, the Claude process's start time (for stale-pid detection).
     public var claudeStartTime: Int64?
+    /// How the session was started (`cli`, `claude-vscode`, `sdk-cli`, …): from Claude's
+    /// registry entry, else `CLAUDE_CODE_ENTRYPOINT` in the hook's environment. Lets SDK /
+    /// `claude -p` sessions be excluded even when the registry doesn't list them.
+    public var entrypoint: String?
 
     public init(
         schema: Int,
@@ -29,7 +33,8 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         eventTime: Int64,
         createdAt: Int64,
         claudePid: Int32?,
-        claudeStartTime: Int64?
+        claudeStartTime: Int64?,
+        entrypoint: String? = nil
     ) {
         self.schema = schema
         self.sessionId = sessionId
@@ -42,5 +47,6 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         self.createdAt = createdAt
         self.claudePid = claudePid
         self.claudeStartTime = claudeStartTime
+        self.entrypoint = entrypoint
     }
 }

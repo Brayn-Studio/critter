@@ -62,7 +62,7 @@ public enum HookCommand {
 
         switch arguments.first {
         case "event":
-            runEvent(stdin: stdin, paths: paths, now: now, hookParentPid: hookParentPid, processes: processes)
+            runEvent(stdin: stdin, paths: paths, environment: environment, now: now, hookParentPid: hookParentPid, processes: processes)
             return HookResult(stdout: "", exitCode: 0)
 
         case "pet":
@@ -89,7 +89,14 @@ public enum HookCommand {
 
     // MARK: - event
 
-    private static func runEvent(stdin: Data, paths: ClawdPaths, now: Int64, hookParentPid: Int32, processes: ProcessInspecting) {
+    private static func runEvent(
+        stdin: Data,
+        paths: ClawdPaths,
+        environment: [String: String],
+        now: Int64,
+        hookParentPid: Int32,
+        processes: ProcessInspecting
+    ) {
         guard let input = try? JSONDecoder().decode(HookInput.self, from: stdin) else { return }
 
         let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
@@ -97,10 +104,17 @@ public enum HookCommand {
             sessionId: input.sessionId, registry: registry, hookParentPid: hookParentPid, processes: processes
         )
 
+        // Claude sets CLAUDE_CODE_ENTRYPOINT for its hooks (verified on 2.1.301: `sdk-cli` for
+        // `claude -p`, overriding an inherited `cli`); the registry entry is preferred.
+        let entrypoint = located?.entry?.entrypoint ?? environment["CLAUDE_CODE_ENTRYPOINT"].flatMap { $0.isEmpty ? nil : $0 }
+
         let store = StateStore(paths: paths)
         var taken: ReducerAction = .ignore
         try? store.update(sessionId: input.sessionId) { previous in
-            let action = StateReducer.reduce(previous: previous, input: input, now: now, pid: located?.pid, pidStartTime: located?.startTime)
+            let action = StateReducer.reduce(
+                previous: previous, input: input, now: now,
+                pid: located?.pid, pidStartTime: located?.startTime, entrypoint: entrypoint
+            )
             taken = action
             return action
         }

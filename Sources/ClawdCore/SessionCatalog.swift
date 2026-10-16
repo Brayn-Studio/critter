@@ -81,10 +81,11 @@ public enum SessionCatalog {
             let registryEntry = registryById[id]
             let record = recordsById[id]
 
-            // A session whose registry entry identifies it as SDK-driven is never shown as
-            // a pet, no matter what its (if any) state record says. A record with no
-            // registry entry at all is unaffected -- it's shown normally.
-            if let registryEntry, SessionSource.isExcluded(entrypoint: registryEntry.entrypoint) {
+            // A session that its registry entry *or* its state file identifies as SDK-driven
+            // (`claude -p`, the Agent SDK) is never shown as a pet. One whose entrypoint
+            // neither source knows is shown normally.
+            if SessionSource.isExcluded(entrypoint: registryEntry?.entrypoint)
+                || SessionSource.isExcluded(entrypoint: record?.entrypoint) {
                 continue
             }
 
@@ -110,7 +111,7 @@ public enum SessionCatalog {
             drafts.append(Draft(
                 id: id,
                 baseName: registryEntry?.name ?? URL(fileURLWithPath: cwd).lastPathComponent,
-                source: SessionSource(entrypoint: registryEntry?.entrypoint),
+                source: SessionSource(entrypoint: registryEntry?.entrypoint ?? record?.entrypoint),
                 state: state,
                 detail: detail,
                 cwd: cwd,
