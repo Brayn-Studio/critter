@@ -137,3 +137,22 @@ private func allPresentations() -> [FlockPresentation] {
     #expect(tagWidth(idle("robocup-81", tracked: false)) > CGFloat(54 + 12))    // room for "robocup-81·未接入"
     #expect(tagWidth(idle(String(repeating: "x", count: 80), tracked: true)) == CGFloat(132)) // capped
 }
+
+@Test func clickTargets() {
+    let sessions = (0..<3).map { s("\($0)", state: [.waiting, .idle, .done][$0]) }
+    let r = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: .init(scale: 1))
+    let first = r.slots[0], second = r.slots[1]
+    #expect(r.target(at: CGPoint(x: first.clawd.midX, y: first.clawd.midY)) == .slot(0))
+    #expect(r.target(at: CGPoint(x: first.bubble!.midX, y: first.bubble!.midY)) == .slot(0))
+    #expect(r.target(at: CGPoint(x: second.tag.midX, y: second.tag.midY)) == .slot(1))
+    #expect(r.target(at: CGPoint(x: r.handle!.midX, y: r.handle!.midY)) == .handle)
+    // Above an idle Clawd (no bubble) is empty space: click-through, no target.
+    #expect(r.target(at: CGPoint(x: second.clawd.midX, y: r.size.height - 10)) == nil)
+
+    let merged = FlockLayout.layout(
+        FlockModel.present((0..<5).map { s("\($0)", state: .running) }, threshold: 4, override: nil),
+        metrics: .init(scale: 1)
+    )
+    #expect(merged.target(at: CGPoint(x: merged.chips!.midX, y: merged.chips!.midY)) == .chips)
+    #expect(merged.target(at: CGPoint(x: merged.slots[0].clawd.midX, y: merged.slots[0].clawd.midY)) == .slot(0))
+}

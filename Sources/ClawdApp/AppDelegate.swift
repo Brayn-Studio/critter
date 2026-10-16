@@ -166,6 +166,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if UserDefaults.standard.bool(forKey: "debugEnabled") {
                 Thread.sleep(forTimeInterval: 3600)
             }
+        case "debug-click":
+            // `clawd://debug-click?target=<session id|handle|chips>[&item=<menu title>]`:
+            // replays a left click (or, with `item`, a right-click and that menu choice)
+            // through the pet's real mouse/menu code, for verifying without a display.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in query.first { $0.name == name }?.value }
+            if let target = value("target") {
+                petController.debugClick(target: target, menuItem: value("item"))
+            }
         default:
             break
         }

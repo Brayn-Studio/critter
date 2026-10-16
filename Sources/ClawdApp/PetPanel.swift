@@ -2,7 +2,7 @@ import AppKit
 
 /// A transparent, borderless panel that stays on top of everything -- all spaces,
 /// fullscreen apps included -- without ever stealing keyboard focus or showing up in the
-/// Dock or Cmd-Tab. It hosts the `ClawdLayer`(s) drawn by `PetController`/`AppDelegate`.
+/// Dock or Cmd-Tab. Its content is the `FlockView` that `PetController` drives.
 final class PetPanel: NSPanel {
     init(contentRect: NSRect) {
         super.init(
@@ -21,6 +21,9 @@ final class PetPanel: NSPanel {
         isMovable = false
         isReleasedWhenClosed = false
         ignoresMouseEvents = false
+        // Clawd's app is never active (accessory policy, non-activating panel); without
+        // this, AppKit would suppress the bubbles' full-text tooltips.
+        allowsToolTipsWhenApplicationIsInactive = true
 
         let contentView = NSView(frame: NSRect(origin: .zero, size: contentRect.size))
         contentView.wantsLayer = true

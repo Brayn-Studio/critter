@@ -75,10 +75,21 @@ public struct FlockLayout {
         /// Everything that should catch the mouse; the rest of the window is click-through.
         public var hitRects: [CGRect]
 
-        /// Whether `point` (window coordinates) is on something clickable.
-        public func hits(_ point: CGPoint) -> Bool {
-            hitRects.contains { $0.contains(point) }
+        /// What a click at `point` (window coordinates) lands on: a slot's Clawd, bubble or
+        /// tag, the collapse handle, or the count chips -- nil for click-through space.
+        public func target(at point: CGPoint) -> HitTarget? {
+            if let handle, handle.contains(point) { return .handle }
+            if let chips, chips.contains(point) { return .chips }
+            return slots.firstIndex { slot in
+                slot.clawd.contains(point) || slot.tag.contains(point) || (slot.bubble?.contains(point) ?? false)
+            }.map { .slot($0) }
         }
+    }
+
+    public enum HitTarget: Equatable, Sendable {
+        case slot(Int)
+        case handle
+        case chips
     }
 
     // Small fixed spacings between the rows of a column.

@@ -8,7 +8,30 @@ import QuartzCore
 /// Sprites are reused across snapshots: a session keeps its `ClawdLayer` for as long as it
 /// is on screen and only gets `apply(state:)` again when its state actually changes, so a
 /// new snapshot never restarts a running animation.
+///
+/// Mouse: every click inside the view lands here (never on the labels), and what it hit is
+/// decided from the layout geometry. A press that moves less than 3 pt before release is a
+/// click; anything further drags the whole panel. Right-click opens a context menu.
 final class FlockView: NSView {
+    private static let dragThreshold: CGFloat = 3
+
+    /// Left click on a session's Clawd, bubble or tag (expanded flock).
+    var onClickSession: ((PetSession) -> Void)?
+    /// Click on the merged pile: expand it. / Click on the "收起" handle: merge.
+    var onExpand: (() -> Void)?
+    var onCollapse: (() -> Void)?
+    /// Context menu "关闭".
+    var onDismiss: ((PetSession) -> Void)?
+    var onHide: (() -> Void)?
+    /// Context menu "设置…" (disabled while nil).
+    var onSettings: (() -> Void)?
+    /// A drag of the panel started (true) or ended (false).
+    var onDragStateChange: ((Bool) -> Void)?
+
+    private var pressLocation: NSPoint?
+    private var windowOriginAtPress: NSPoint?
+    private var isDragging = false
+
     private let skin: SkinManifest
     private let metrics: FlockLayout.Metrics
     private var reduceMotion: Bool
@@ -131,6 +154,117 @@ final class FlockView: NSView {
         super.viewDidChangeBackingProperties()
         let scale = window?.backingScaleFactor ?? 2
         for clawd in clawds.values { clawd.accessoryLayer.contentsScale = scale }
+    }
+
+    // MARK: - Mouse
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
+        true
+    }
+
+    /// Claims every point inside the view so the bubble/tag labels never swallow clicks.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let local = superview.map { convert(point, from: $0) } ?? point
+        return bounds.contains(local) ? self : nil
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        pressLocation = NSEvent.mouseLocation
+        windowOriginAtPress = window?.frame.origin
+        isDragging = false
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let start = pressLocation, let origin = windowOriginAtPress, let window else { return }
+        let now = NSEvent.mouseLocation
+        let dx = now.x - start.x
+        let dy = now.y - start.y
+        if !isDragging {
+            guard hypot(dx, dy) >= Self.dragThreshold else { return }
+            isDragging = true
+            onDragStateChange?(true)
+        }
+        window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        defer {
+            pressLocation = nil
+            windowOriginAtPress = nil
+        }
+        if isDragging {
+            isDragging = false
+            onDragStateChange?(false)
+            return
+        }
+        guard pressLocation != nil else { return }
+        let point = convert(event.locationInWindow, from: nil)
+        switch layoutResult.target(at: point) {
+        case .slot(let index):
+            if isMerged {
+                onExpand?()
+            } else if let session = entries[index].session {
+                onClickSession?(session)
+            }
+        case .chips:
+            onExpand?()
+        case .handle:
+            onCollapse?()
+        case nil:
+            break
+        }
+    }
+
+    override func menu(for event: NSEvent) -> NSMenu? {
+        let point = convert(event.locationInWindow, from: nil)
+        let menu = NSMenu()
+        menu.autoenablesItems = false
+
+        let target = layoutResult.target(at: point)
+        if isMerged, target != nil {
+            menu.addItem(ActionMenuItem(title: "展开") { [weak self] in self?.onExpand?() })
+            menu.addItem(.separator())
+        } else if case .slot(let index) = target, let session = entries[index].session {
+            menu.addItem(ActionMenuItem(title: "跳回会话") { [weak self] in self?.onClickSession?(session) })
+            menu.addItem(ActionMenuItem(title: "关闭") { [weak self] in self?.onDismiss?(session) })
+            menu.addItem(.separator())
+        }
+        menu.addItem(ActionMenuItem(title: "隐藏宠物") { [weak self] in self?.onHide?() })
+        let settings = ActionMenuItem(title: "设置…") { [weak self] in self?.onSettings?() }
+        settings.isEnabled = onSettings != nil
+        menu.addItem(settings)
+        return menu
+    }
+
+    /// Debug-only: replays a left click on `target` (a slot's session id, `handle` or
+    /// `chips`) -- or, with `menuItem`, a right-click there and that menu choice -- through
+    /// the same handlers a real mouse uses. Returns false if there's no such target/item.
+    func simulateClick(target: String, menuItem: String?) -> Bool {
+        let rect: CGRect?
+        switch target {
+        case "handle": rect = layoutResult.handle
+        case "chips": rect = layoutResult.chips
+        default: rect = layoutResult.slots.first { $0.id == target }?.clawd
+        }
+        guard let rect, let window else { return false }
+        let location = convert(CGPoint(x: rect.midX, y: rect.midY), to: nil)
+        func event(_ type: NSEvent.EventType) -> NSEvent? {
+            NSEvent.mouseEvent(
+                with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            )
+        }
+        if let menuItem {
+            guard let rightDown = event(.rightMouseDown), let menu = menu(for: rightDown) else { return false }
+            DiagnosticLog.shared.log("menu target=\(target) items=" + menu.items.map { $0.isSeparatorItem ? "-" : $0.title }.joined(separator: "|"))
+            guard let index = menu.items.firstIndex(where: { $0.title == menuItem }), menu.items[index].isEnabled else { return false }
+            menu.performActionForItem(at: index)
+            return true
+        }
+        guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return false }
+        mouseDown(with: down)
+        mouseUp(with: up)
+        return true
     }
 
     // MARK: - Placement
@@ -280,5 +414,24 @@ private final class ChipsView: NSView {
             chip.label.frame = NSRect(x: 0, y: (bounds.height - height) / 2, width: width, height: height)
             x += width + gap
         }
+    }
+}
+
+/// A menu item that runs a closure, so context menus don't need a selector per action.
+private final class ActionMenuItem: NSMenuItem {
+    private let handler: () -> Void
+
+    init(title: String, handler: @escaping () -> Void) {
+        self.handler = handler
+        super.init(title: title, action: #selector(run), keyEquivalent: "")
+        target = self
+    }
+
+    required init(coder: NSCoder) {
+        fatalError("ActionMenuItem does not support NSCoding")
+    }
+
+    @objc private func run() {
+        handler()
     }
 }
