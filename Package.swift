@@ -14,5 +14,6 @@ let package = Package(
         .executableTarget(name: "clawd-hook", dependencies: ["ClawdCore"]),
         .executableTarget(name: "ClawdApp", dependencies: ["ClawdCore"]),
         .testTarget(name: "ClawdCoreTests", dependencies: ["ClawdCore"]),
+        .testTarget(name: "ClawdHookTests", dependencies: ["clawd-hook", "ClawdCore"]),
     ]
 )
