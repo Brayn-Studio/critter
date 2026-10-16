@@ -11,6 +11,9 @@ public struct RegistryEntry: Sendable, Equatable, Decodable {
     public var entrypoint: String?
     public var kind: String?
     public var name: String?
+    /// Milliseconds since epoch of the entry's last rewrite (Claude rewrites it on every
+    /// status change). Absent until the first one -- and in older CLI versions.
+    public var updatedAt: Int64?
 
     public init(
         pid: Int32,
@@ -19,7 +22,8 @@ public struct RegistryEntry: Sendable, Equatable, Decodable {
         startedAt: Int64?,
         entrypoint: String?,
         kind: String?,
-        name: String?
+        name: String?,
+        updatedAt: Int64? = nil
     ) {
         self.pid = pid
         self.sessionId = sessionId
@@ -28,6 +32,7 @@ public struct RegistryEntry: Sendable, Equatable, Decodable {
         self.entrypoint = entrypoint
         self.kind = kind
         self.name = name
+        self.updatedAt = updatedAt
     }
 }
 
@@ -74,24 +79,49 @@ public enum ClaudeRegistry {
     }
 }
 
-/// Finds the real `claude` process behind a hook invocation: the registry is authoritative
-/// when it has the session, otherwise we walk up from the hook's parent pid looking for a
-/// Claude executable. Never falls back to guessing the parent shell is Claude.
+/// The `claude` process behind a hook invocation, and its registry entry if it has one.
+public struct LocatedClaude: Equatable, Sendable {
+    public var pid: Int32
+    /// Seconds since epoch (`ProcessTools.startTime`), recorded to detect pid reuse later.
+    public var startTime: Int64?
+    /// The registry entry for `pid` (source of `entrypoint`), nil if Claude never wrote one.
+    public var entry: RegistryEntry?
+
+    public init(pid: Int32, startTime: Int64?, entry: RegistryEntry?) {
+        self.pid = pid
+        self.startTime = startTime
+        self.entry = entry
+    }
+}
+
+/// Finds the real `claude` process behind a hook invocation. The hook's own parent chain
+/// comes first (Claude runs its hooks as children -- confirmed in the 2026-10-17 spike), so
+/// a leftover registry entry for the same session (a killed process, before `claude
+/// --resume` reopened it) can never win. Only without a Claude ancestor does the registry
+/// decide: its live entries for the session (not dead, pid not reused), newest first.
+/// Never guesses that a non-Claude parent is Claude.
 public enum ClaudeProcessLocator {
+    public static let ancestorDepth = 4
+
     public static func locate(
         sessionId: String,
         registry: [RegistryEntry],
-        hookParentPid: Int32
-    ) -> (pid: Int32, startTime: Int64?)? {
-        if let match = registry.first(where: { $0.sessionId == sessionId }) {
-            return (match.pid, ProcessTools.startTime(of: match.pid))
+        hookParentPid: Int32,
+        processes: ProcessInspecting = SystemProcesses()
+    ) -> LocatedClaude? {
+        let candidates = [hookParentPid] + processes.ancestors(of: hookParentPid, maxDepth: ancestorDepth)
+        if let pid = candidates.first(where: { pid in
+            processes.executablePath(of: pid).map(ProcessTools.isClaudeExecutable(path:)) ?? false
+        }) {
+            let entry = registry.first { $0.pid == pid && $0.sessionId == sessionId } ?? registry.first { $0.pid == pid }
+            return LocatedClaude(pid: pid, startTime: processes.startTime(of: pid), entry: entry)
         }
-        let candidates = [hookParentPid] + ProcessTools.ancestors(of: hookParentPid, maxDepth: 4)
-        for pid in candidates {
-            if let path = ProcessTools.executablePath(of: pid), ProcessTools.isClaudeExecutable(path: path) {
-                return (pid, ProcessTools.startTime(of: pid))
-            }
+
+        let live = registry.filter { entry in
+            entry.sessionId == sessionId
+                && !StartupCleanup.isDead(entry: entry, isAlive: processes.isAlive, startTime: processes.startTime)
         }
-        return nil
+        guard let newest = live.max(by: { ($0.startedAt ?? .min) < ($1.startedAt ?? .min) }) else { return nil }
+        return LocatedClaude(pid: newest.pid, startTime: processes.startTime(of: newest.pid), entry: newest)
     }
 }

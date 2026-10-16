@@ -61,7 +61,7 @@ public enum HookCommand {
 
         switch arguments.first {
         case "event":
-            runEvent(stdin: stdin, paths: paths, now: now, hookParentPid: hookParentPid)
+            runEvent(stdin: stdin, paths: paths, now: now, hookParentPid: hookParentPid, processes: processes)
             return HookResult(stdout: "", exitCode: 0)
 
         case "pet":
@@ -82,11 +82,13 @@ public enum HookCommand {
 
     // MARK: - event
 
-    private static func runEvent(stdin: Data, paths: ClawdPaths, now: Int64, hookParentPid: Int32) {
+    private static func runEvent(stdin: Data, paths: ClawdPaths, now: Int64, hookParentPid: Int32, processes: ProcessInspecting) {
         guard let input = try? JSONDecoder().decode(HookInput.self, from: stdin) else { return }
 
         let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
-        let located = ClaudeProcessLocator.locate(sessionId: input.sessionId, registry: registry, hookParentPid: hookParentPid)
+        let located = ClaudeProcessLocator.locate(
+            sessionId: input.sessionId, registry: registry, hookParentPid: hookParentPid, processes: processes
+        )
 
         let store = StateStore(paths: paths)
         var taken: ReducerAction = .ignore

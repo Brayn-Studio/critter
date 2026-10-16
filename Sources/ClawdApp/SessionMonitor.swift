@@ -157,46 +157,40 @@ private final class MonitorEngine: @unchecked Sendable {
     /// Launch-time sweep (spec §5.3 layer 3): drop state files whose Claude is gone, whose
     /// pid has been reused, or which have no pid and haven't changed in 24 h.
     private func sweepDeadSessions() {
-        let dead = StartupCleanup.deadSessionIds(
+        let removals = SessionReaper.launchSweep(
             records: store.readAll(),
             isAlive: ProcessTools.isAlive,
             startTime: { ProcessTools.startTime(of: $0) },
             now: Self.nowMs()
         )
-        for id in dead {
-            store.delete(sessionId: id)
-            log.log("event cleanup \(id)")
+        for removal in removals where remove(removal) {
+            log.log("event cleanup \(removal.sessionId)")
         }
     }
 
     private func rebuild() {
         var records = store.readAll()
 
-        // Before trusting (and watching) a pid we aren't watching yet, make sure it is
-        // still that session's Claude -- not dead, not reused. Otherwise it has exited.
-        let watched = exitWatcher?.watchedPids ?? []
-        var exited: Set<String> = []
-        for record in records {
-            guard let pid = record.claudePid, !watched.contains(pid) else { continue }
-            let dead = StartupCleanup.isDead(
-                pid: pid,
-                recordedStartTime: record.claudeStartTime,
-                isAlive: ProcessTools.isAlive,
-                startTime: { ProcessTools.startTime(of: $0) }
-            )
-            if dead {
-                store.delete(sessionId: record.sessionId)
-                exited.insert(record.sessionId)
-                log.log("event exited \(record.sessionId) pid=\(pid)")
-            }
-        }
-        records.removeAll { exited.contains($0.sessionId) }
-
         let registryAll = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
         exitedRegistryEntries.formIntersection(registryAll.map(Self.registryKey))
-        let registry = registryAll.filter { entry in
-            !exitedRegistryEntries.contains(Self.registryKey(entry))
-                && !StartupCleanup.isDead(entry: entry, isAlive: ProcessTools.isAlive, startTime: { ProcessTools.startTime(of: $0) })
+        let registry = liveEntries(registryAll)
+
+        // Before trusting (and watching) a pid we aren't watching yet, make sure it is still
+        // that session's Claude -- not dead, not reused; and drop any session whose Claude
+        // has moved on to another one (`SessionReaper`).
+        let watched = exitWatcher?.watchedPids ?? []
+        let removals = SessionReaper.staleRecords(
+            records: records,
+            liveRegistry: registry,
+            watchedPids: watched,
+            isAlive: ProcessTools.isAlive,
+            startTime: { ProcessTools.startTime(of: $0) }
+        )
+        if !removals.isEmpty {
+            for removal in removals where remove(removal) {
+                log.log("event \(removal.reason.rawValue) \(removal.sessionId) pid=\(removal.pid.map(String.init) ?? "-")")
+            }
+            records = store.readAll()
         }
 
         // Exit detection covers every live session, dismissed ones included, so their
@@ -221,19 +215,44 @@ private final class MonitorEngine: @unchecked Sendable {
     private func handleExit(_ pid: Int32) {
         // Every session that process owned: by the pid in its state file, or by Claude's
         // registry entry (a state file lacks the pid if the hook couldn't locate Claude).
-        let ownedEntries = ClaudeRegistry.entries(in: paths.claudeSessionsDir).filter { $0.pid == pid }
+        let registryAll = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
+        let ownedEntries = registryAll.filter { $0.pid == pid }
         exitedRegistryEntries.formUnion(ownedEntries.map(Self.registryKey))
-        let registryIds = Set(ownedEntries.map(\.sessionId))
-        var exited = registryIds
-        for record in store.readAll()
-        where record.claudePid == pid || (record.claudePid == nil && registryIds.contains(record.sessionId)) {
-            store.delete(sessionId: record.sessionId)
-            exited.insert(record.sessionId)
+        let removals = SessionReaper.recordsOwned(
+            byExited: pid,
+            records: store.readAll(),
+            registry: registryAll,
+            liveRegistry: liveEntries(registryAll)
+        )
+        var exited = Set(ownedEntries.map(\.sessionId))
+        for removal in removals where remove(removal) {
+            exited.insert(removal.sessionId)
         }
         for id in exited.sorted() {
             log.log("event exited \(id) pid=\(pid)")
         }
         rebuild()
+    }
+
+    /// Registry entries whose process is still the one that wrote them: not seen exiting,
+    /// not dead, pid not reused.
+    private func liveEntries(_ entries: [RegistryEntry]) -> [RegistryEntry] {
+        entries.filter { entry in
+            !exitedRegistryEntries.contains(Self.registryKey(entry))
+                && !StartupCleanup.isDead(entry: entry, isAlive: ProcessTools.isAlive, startTime: { ProcessTools.startTime(of: $0) })
+        }
+    }
+
+    /// Carries out a `SessionReaper` removal under the session's lock, only if the record is
+    /// still the one that was judged. Returns whether it was deleted.
+    private func remove(_ removal: SessionReaper.Removal) -> Bool {
+        var deleted = false
+        try? store.update(sessionId: removal.sessionId) { current in
+            let action = SessionReaper.confirm(removal, current: current)
+            deleted = action == .delete
+            return action
+        }
+        return deleted
     }
 
     /// Busy (`running`/`waiting`) sessions get their transcript tailed, since an Esc
