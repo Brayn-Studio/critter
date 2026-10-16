@@ -1,12 +1,17 @@
 import ClawdCore
 import CoreGraphics
+import CoreText
 import QuartzCore
 
 /// Draws one Clawd: the sprite flipbook for whatever `PetState` it's currently in, scaled
 /// up with nearest-neighbor filtering so the pixel art stays crisp, plus whatever `Motion`
-/// the state's animation spec calls for, plus its text accessory above it. Every pixel of
-/// behavior here is driven by the skin's data manifest -- nothing about a specific state's
-/// look is hardcoded.
+/// the state's animation spec calls for, plus its text accessory (`accessoryLayer`). Every
+/// pixel of behavior here is driven by the skin's data manifest -- nothing about a specific
+/// state's look is hardcoded.
+///
+/// The accessory is deliberately *not* a sublayer: the sprite's motion (hop, wiggle,
+/// breathe) would otherwise drag it along. The host adds `accessoryLayer` next to this
+/// layer and places it in the layout's accessory row.
 final class ClawdLayer: CALayer {
     /// The skin's logical pixel grid, per the design spec: 18 columns by 5 rows.
     static let pixelColumns = 18
@@ -20,11 +25,13 @@ final class ClawdLayer: CALayer {
     private let scale: CGFloat
     private var frameImages: [String: CGImage] = [:]
     private var dimFrameImages: [String: CGImage] = [:]
-    private let accessoryLayer = CATextLayer()
+    /// The state's text badge (`z z`, `•••`, `?`, `✓`, `!`), for the host to position.
+    let accessoryLayer: CATextLayer
 
     init(skin: SkinManifest, scale: CGFloat) {
         self.skin = skin
         self.scale = scale
+        accessoryLayer = CATextLayer()
         super.init()
 
         let width = CGFloat(Self.pixelColumns) * Self.pixelWidthPt * scale
@@ -39,13 +46,9 @@ final class ClawdLayer: CALayer {
             dimFrameImages[name] = SkinRenderer.image(frame: rows, palette: skin.palette, dim: true)
         }
 
-        accessoryLayer.anchorPoint = CGPoint(x: 0.5, y: 0)
-        accessoryLayer.position = CGPoint(x: width / 2, y: height + 1 * scale)
-        accessoryLayer.bounds = CGRect(x: 0, y: 0, width: width, height: 14 * scale)
         accessoryLayer.alignmentMode = .center
-        accessoryLayer.fontSize = 9 * scale
-        accessoryLayer.contentsScale = 2
-        addSublayer(accessoryLayer)
+        accessoryLayer.font = CTFontCreateUIFontForLanguage(.emphasizedSystem, 11, nil)
+        accessoryLayer.fontSize = 11
     }
 
     required init?(coder: NSCoder) {
@@ -64,6 +67,7 @@ final class ClawdLayer: CALayer {
         scale = other.scale
         frameImages = other.frameImages
         dimFrameImages = other.dimFrameImages
+        accessoryLayer = other.accessoryLayer
         super.init(layer: layer)
     }
 
@@ -101,6 +105,13 @@ final class ClawdLayer: CALayer {
         } else {
             accessoryLayer.string = nil
         }
+    }
+
+    /// The first frame of `state`'s animation (tinted as the manifest says), as a still --
+    /// used for the Clawds stacked behind the front one in the merged pile.
+    func stillImage(for state: PetState) -> CGImage? {
+        guard let spec = skin.animations[state.rawValue], let first = spec.frames.first else { return nil }
+        return (spec.tint == .dim ? dimFrameImages : frameImages)[first]
     }
 
     private func motionAnimation(for motion: Motion) -> CAAnimation? {
