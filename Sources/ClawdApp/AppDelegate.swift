@@ -55,9 +55,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         )
         buildPanel(skin: skin)
         buildStatusItem()
-        // Default to shown; a `clawd://hide` Apple Event (delivered just after launch, if
-        // that's what triggered it) will flip this via `handle(url:)`.
-        setVisible(true)
+        // Default to shown, unless a `clawd://hide`/`clawd://toggle` Apple Event that
+        // triggered this launch already arrived (and was recorded into `isVisible` by
+        // `requestVisible`, since the panel didn't exist yet to apply it to).
+        setVisible(isVisible)
         startHeartbeat()
     }
 
@@ -130,7 +131,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func toggleVisibility() {
-        setVisible(!isVisible)
+        requestVisible(!isVisible)
     }
 
     @objc private func quit() {
@@ -139,6 +140,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Visibility
 
+    /// Applies visibility to the actual panel/menu. Safe to call only once the panel
+    /// exists (see `requestVisible`, which guards the race where a `clawd://...` Apple
+    /// Event is dispatched to `handleGetURLEvent` before `applicationDidFinishLaunching`
+    /// has built the panel -- that used to crash on a nil `panel` force-unwrap).
     func setVisible(_ visible: Bool) {
         isVisible = visible
         if visible {
@@ -147,6 +152,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             panel.orderOut(nil)
         }
         visibilityMenuItem?.title = visible ? "隐藏宠物" : "显示宠物"
+    }
+
+    /// The entry point for anything that wants to show/hide the pet (the URL scheme, the
+    /// menu, and the initial default-shown state): applies immediately if the panel
+    /// already exists, or just records the request for `applicationDidFinishLaunching`
+    /// to apply once it's built the panel.
+    private func requestVisible(_ visible: Bool) {
+        guard panel != nil else {
+            isVisible = visible
+            return
+        }
+        setVisible(visible)
     }
 
     // MARK: - clawd:// URL scheme
@@ -161,11 +178,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func handle(url: URL) {
         switch url.host {
         case "show":
-            setVisible(true)
+            requestVisible(true)
         case "hide":
-            setVisible(false)
+            requestVisible(false)
         case "toggle":
-            setVisible(!isVisible)
+            requestVisible(!isVisible)
         case "debug-hang":
             if UserDefaults.standard.bool(forKey: "debugEnabled") {
                 Thread.sleep(forTimeInterval: 3600)

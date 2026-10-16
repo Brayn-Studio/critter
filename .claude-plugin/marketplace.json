@@ -1,0 +1,14 @@
+{
+  "name": "clawd-pet",
+  "description": "Clawd 桌面宠物插件市场",
+  "owner": {
+    "name": "Clawd"
+  },
+  "plugins": [
+    {
+      "name": "clawd",
+      "source": "./plugin",
+      "description": "Clawd 桌面宠物：上报 Claude Code 会话状态"
+    }
+  ]
+}
