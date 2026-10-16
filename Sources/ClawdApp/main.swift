@@ -1,2 +1,6 @@
-// Placeholder entry point. Real NSApplication bootstrap lands in a later batch.
-print("Clawd")
+import AppKit
+
+let app = NSApplication.shared
+let delegate = AppDelegate()
+app.delegate = delegate
+app.run()
