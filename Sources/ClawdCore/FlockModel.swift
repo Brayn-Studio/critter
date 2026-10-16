@@ -1,0 +1,68 @@
+import Foundation
+
+/// A user's explicit override of the automatic merge/expand decision (e.g. they manually
+/// expanded a merged flock). Held by the app only as long as the session count it was made
+/// against still matches -- once sessions are added or removed, the automatic rule resumes.
+public struct FlockOverride: Sendable, Equatable {
+    public var merged: Bool
+    public var sessionCount: Int
+
+    public init(merged: Bool, sessionCount: Int) {
+        self.merged = merged
+        self.sessionCount = sessionCount
+    }
+}
+
+/// How many sessions share a given state, for the merged flock's summary badge.
+public struct StateCount: Equatable {
+    public var state: PetState
+    public var count: Int
+
+    public init(state: PetState, count: Int) {
+        self.state = state
+        self.count = count
+    }
+}
+
+/// What the flock window should currently render.
+public enum FlockPresentation: Equatable {
+    case empty
+    case expanded([PetSession], showCollapse: Bool)
+    case merged(lead: PetSession, counts: [StateCount], total: Int)
+}
+
+/// Decides whether to show every session's own Clawd, or merge them into one representative
+/// Clawd with a summary badge -- automatically above `threshold`, or per the user's
+/// `override` while it still applies.
+public enum FlockModel {
+    private static let countOrder: [PetState] = [.waiting, .error, .done, .running, .idle]
+
+    public static func present(_ sessions: [PetSession], threshold: Int, override: FlockOverride?) -> FlockPresentation {
+        if sessions.isEmpty { return .empty }
+        if sessions.count == 1 { return .expanded(sessions, showCollapse: false) }
+
+        let shouldMerge: Bool
+        if let override, override.sessionCount == sessions.count {
+            shouldMerge = override.merged
+        } else {
+            shouldMerge = sessions.count > threshold
+        }
+
+        guard shouldMerge else {
+            return .expanded(sessions, showCollapse: sessions.count >= 2)
+        }
+
+        let leadState = PetState.mostUrgent(sessions.map(\.state)) ?? .idle
+        let lead = sessions
+            .filter { $0.state == leadState }
+            .min { $0.sortKey < $1.sortKey }
+            ?? sessions[0]
+
+        let counts = countOrder.compactMap { state -> StateCount? in
+            let count = sessions.filter { $0.state == state }.count
+            return count > 0 ? StateCount(state: state, count: count) : nil
+        }
+
+        return .merged(lead: lead, counts: counts, total: sessions.count)
+    }
+}
