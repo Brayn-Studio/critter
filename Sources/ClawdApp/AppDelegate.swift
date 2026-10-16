@@ -1,13 +1,15 @@
 import AppKit
 import Carbon.HIToolbox
 import ClawdCore
+import os
 
 /// Boots the menu-bar app: an accessory-policy process with no Dock icon, a status-bar
 /// menu, the `clawd://` URL scheme, and a heartbeat written to `~/.clawd/app.json` so
 /// `clawd-hook toggle` can tell the app is alive (and restart it if the heartbeat has gone
 /// stale -- see `ToggleDecision`). It assembles the controllers: `SessionMonitor` (the data
 /// layer) feeds `PetController` (the always-on-top pet panel and its visibility), whose
-/// clicks go to `JumpBackService` (bringing the session's window forward).
+/// clicks go to `JumpBackService` (bringing the session's window forward). `SettingsStore`
+/// changes are routed here to the pet, the global `HotKey` and the login item.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let heartbeatInterval: TimeInterval = 2.0
@@ -18,6 +20,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let sessionMonitor: SessionMonitor
     private let petController: PetController
     private let jumpBackService: JumpBackService
+    private let settings: SettingsStore
+    private let hotKey = HotKey()
+    private let loginItemQueue = DispatchQueue(label: "local.clawd.pet.login-item", qos: .utility)
+    private lazy var settingsWindow = SettingsWindowController(store: settings) { [weak self] in
+        self?.petController.resetPosition()
+    }
 
     private var statusItem: NSStatusItem!
     private var visibilityMenuItem: NSMenuItem?
@@ -26,7 +34,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     override init() {
         appStatusStore = AppStatusStore(paths: paths)
         sessionMonitor = SessionMonitor(paths: paths)
-        petController = PetController(monitor: sessionMonitor)
+        settings = SettingsStore()
+        petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: SystemSoundPlayer())
         jumpBackService = JumpBackService(paths: paths)
         super.init()
 
@@ -41,6 +50,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // Clicking a Clawd (or its menu's "跳回会话") brings that session's window forward.
         petController.onJump = { [jumpBackService] session in
             jumpBackService.jump(to: session)
+        }
+        petController.onOpenSettings = { [weak self] in
+            self?.openSettings()
+        }
+        settings.onChange = { [weak self] change in
+            self?.settingsChanged(change)
+        }
+        hotKey.onPress = { [weak self] in
+            guard let self else { return }
+            DiagnosticLog.shared.log("hotkey pressed")
+            petController.setVisible(!petController.visible)
         }
     }
 
@@ -65,6 +85,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         startHeartbeat()
         sessionMonitor.start()
+        refreshHotKey()
+        applyLaunchAtLogin()
 
         // `SkinLoader.load` does blocking file I/O (`Data(contentsOf:)`), so it must not
         // run on the main thread (Global Constraint: main thread is UI-only; file/process/
@@ -111,8 +133,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         toggleItem.target = self
         menu.addItem(toggleItem)
 
-        let settingsItem = NSMenuItem(title: "设置…", action: nil, keyEquivalent: "")
-        settingsItem.isEnabled = false // enabled in Task 14
+        let settingsItem = NSMenuItem(title: "设置…", action: #selector(openSettings), keyEquivalent: "")
+        settingsItem.target = self
         menu.addItem(settingsItem)
 
         menu.addItem(.separator())
@@ -152,6 +174,63 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NSApp.terminate(nil)
     }
 
+    // MARK: - Settings
+
+    @objc private func openSettings() {
+        settingsWindow.show()
+    }
+
+    private func settingsChanged(_ change: SettingsStore.Change) {
+        switch change {
+        case .petScale:
+            petController.scaleDidChange()
+        case .mergeThreshold:
+            petController.layoutSettingsDidChange()
+        case .sounds:
+            break // read when a sound is due
+        case .hotKey:
+            refreshHotKey()
+        case .launchAtLogin:
+            applyLaunchAtLogin()
+        }
+    }
+
+    /// (Re-)registers the global hot key from the settings -- or keeps it unregistered
+    /// while the settings window is recording a new one.
+    private func refreshHotKey() {
+        guard !settings.isRecordingHotKey else {
+            hotKey.unregister()
+            DiagnosticLog.shared.log("hotkey suspended while recording")
+            return
+        }
+        let spec = settings.hotKey
+        let status = hotKey.register(spec)
+        settings.hotKeyUnavailable = status != noErr
+        DiagnosticLog.shared.log("hotkey register \(HotKeyFormat.display(spec)) keyCode=\(spec.keyCode) modifiers=0x\(String(spec.modifiers, radix: 16)) status=\(status)")
+    }
+
+    /// Writes or deletes `~/Library/LaunchAgents/local.clawd.pet.plist` to match the
+    /// setting (also at every launch, so the agent follows the app if it was moved). Only
+    /// a real `.app` bundle is ever registered -- never a bare development binary.
+    private func applyLaunchAtLogin() {
+        let enabled = settings.launchAtLogin
+        let appURL = Bundle.main.bundleURL
+        let dir = LaunchAgent.userLaunchAgentsDir()
+        loginItemQueue.async {
+            do {
+                if enabled {
+                    guard appURL.pathExtension == "app" else { return }
+                    try LaunchAgent.install(appPath: appURL.path, in: dir)
+                } else {
+                    try LaunchAgent.remove(in: dir)
+                }
+                DiagnosticLog.shared.log("launch-at-login \(enabled ? "on" : "off") plist=\(LaunchAgent.isInstalled(in: dir))")
+            } catch {
+                Logger(subsystem: "local.clawd.pet", category: "settings").error("launch at login: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+    }
+
     // MARK: - clawd:// URL scheme
 
     @objc private func handleGetURLEvent(_ event: NSAppleEventDescriptor, withReplyEvent replyEvent: NSAppleEventDescriptor) {
@@ -182,6 +261,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let value = { (name: String) in query.first { $0.name == name }?.value }
             if let target = value("target") {
                 petController.debugClick(target: target, menuItem: value("item"))
+            }
+        case "debug-set":
+            // `clawd://debug-set?<setting>=<value>[&…]`: changes settings through the same
+            // store the settings window binds to (debug only; see `applyDebugValue`).
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            for item in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
+                let ok = settings.applyDebugValue(item.value ?? "", forKey: item.name)
+                DiagnosticLog.shared.log("debug-set \(item.name)=\(item.value ?? "") ok=\(ok)")
             }
         default:
             break

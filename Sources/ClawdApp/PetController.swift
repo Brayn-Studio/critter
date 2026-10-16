@@ -5,16 +5,10 @@ import ClawdCore
 /// from `SessionMonitor`, presented as an expanded flock or a merged pile (`FlockModel`),
 /// laid out by `FlockLayout` and drawn by `FlockView` -- and where it sits (pinned at a
 /// saved `Anchor`, kept on screen by `PositionModel`). It also routes the pet's clicks and
-/// menu choices to the right place.
+/// menu choices to the right place, and plays the alert sound when a session enters
+/// waiting/done/error. Size, merge threshold and sounds follow `SettingsStore`.
 @MainActor
 final class PetController {
-    private static let scale: CGFloat = 1
-    /// Above this many sessions the flock merges into a pile. UserDefaults `mergeThreshold`
-    /// (2…10, default 4) until the settings window takes it over.
-    private static var mergeThreshold: Int {
-        let stored = UserDefaults.standard.object(forKey: "mergeThreshold") as? Int ?? 4
-        return min(max(stored, 2), 10)
-    }
     private static let fallbackScreen = NSRect(x: 0, y: 0, width: 1440, height: 900)
 
     private(set) var visible = true
@@ -30,10 +24,16 @@ final class PetController {
     }
 
     private let monitor: SessionMonitor
+    private let settings: SettingsStore
+    private let soundPlayer: SoundPlayer
+    private var skin: SkinManifest?
     private var panel: PetPanel?
     private var flockView: FlockView?
     private var clickThrough: ClickThroughController?
     private var sessions: [PetSession] = []
+    /// Each session's state in the previous snapshot (nil before the first one), to tell
+    /// which alert states were just entered.
+    private var previousStates: [String: PetState]?
     /// The user's explicit expand/collapse, honored until the session count changes.
     private var flockOverride: FlockOverride?
     /// Where the user last dropped the pet (UserDefaults `anchor`); nil → default corner.
@@ -45,8 +45,14 @@ final class PetController {
     private var lastLogLine: String?
     private var observers: [NSObjectProtocol] = []
 
-    init(monitor: SessionMonitor) {
+    init(monitor: SessionMonitor, settings: SettingsStore, soundPlayer: SoundPlayer) {
         self.monitor = monitor
+        self.settings = settings
+        self.soundPlayer = soundPlayer
+    }
+
+    private var metrics: FlockLayout.Metrics {
+        FlockLayout.Metrics(scale: CGFloat(settings.petScale))
     }
 
     /// Shows or hides the pet. Safe before the panel exists: the request is remembered and
@@ -66,17 +72,13 @@ final class PetController {
 
     /// Builds the panel once the skin has been loaded (off the main thread).
     func install(skin: SkinManifest) {
-        let view = FlockView(
-            skin: skin,
-            metrics: FlockLayout.Metrics(scale: Self.scale),
-            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        )
+        self.skin = skin
+        let view = makeFlockView(skin: skin)
         let newPanel = PetPanel(contentRect: NSRect(origin: .zero, size: view.frame.size))
         newPanel.contentView = view
         panel = newPanel
         flockView = view
         clickThrough = ClickThroughController(panel: newPanel)
-        wire(view)
 
         // "Reduce motion" (System Settings › Accessibility › Display) stops every animation.
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
@@ -104,9 +106,68 @@ final class PetController {
         }
         hasSnapshot = true
         render()
+        playAlert(for: sessions)
+    }
+
+    // MARK: - Settings
+
+    /// Clawd's size changed (the settings slider). Sprites are drawn for one scale, so the
+    /// flock view is rebuilt at the new one; the window keeps its anchor.
+    func scaleDidChange() {
+        guard let skin, let panel else { return }
+        let view = makeFlockView(skin: skin)
+        panel.contentView = view
+        flockView = view
+        render()
+    }
+
+    /// The merge threshold changed.
+    func layoutSettingsDidChange() {
+        render()
+    }
+
+    /// "重置位置": back to the default spot, the bottom-right corner of the main screen
+    /// (`PositionModel.defaultAnchor`), forgetting where the pet was dropped.
+    func resetPosition() {
+        anchor = nil
+        AnchorStore.clear()
+        DiagnosticLog.shared.log("event moved anchor=default")
+        render()
+    }
+
+    // MARK: - Sounds
+
+    /// One sound per snapshot at most: the most urgent alert state some session has just
+    /// entered whose switch is on -- and only while the pet is visible (spec §7: no sounds
+    /// while hidden).
+    private func playAlert(for sessions: [PetSession]) {
+        let states = Dictionary(sessions.map { ($0.id, $0.state) }) { first, _ in first }
+        let entered = SoundTrigger.enteredAlertStates(old: previousStates, new: states)
+        previousStates = states
+        guard let mostUrgent = entered.first else { return }
+        guard visible else {
+            DiagnosticLog.shared.log("sound skipped state=\(mostUrgent.rawValue) reason=hidden")
+            return
+        }
+        guard let state = entered.first(where: settings.soundAllowed(for:)) else {
+            let reason = settings.soundEnabled ? "state-off" : "sound-off"
+            DiagnosticLog.shared.log("sound skipped state=\(mostUrgent.rawValue) reason=\(reason)")
+            return
+        }
+        soundPlayer.play(state)
     }
 
     // MARK: - Interaction
+
+    private func makeFlockView(skin: SkinManifest) -> FlockView {
+        let view = FlockView(
+            skin: skin,
+            metrics: metrics,
+            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+        wire(view)
+        return view
+    }
 
     private func wire(_ view: FlockView) {
         view.onClickSession = { [weak self] session in
@@ -153,8 +214,8 @@ final class PetController {
     // MARK: - Rendering
 
     private func render() {
-        let presentation = FlockModel.present(sessions, threshold: Self.mergeThreshold, override: flockOverride)
-        let layout = FlockLayout.layout(presentation, metrics: FlockLayout.Metrics(scale: Self.scale))
+        let presentation = FlockModel.present(sessions, threshold: settings.mergeThreshold, override: flockOverride)
+        let layout = FlockLayout.layout(presentation, metrics: metrics)
         guard let panel, let flockView else {
             logIfChanged(presentation, placement: nil)
             return
@@ -230,5 +291,9 @@ private enum AnchorStore {
     static func save(_ anchor: Anchor) {
         guard let data = try? JSONEncoder().encode(anchor) else { return }
         UserDefaults.standard.set(String(decoding: data, as: UTF8.self), forKey: key)
+    }
+
+    static func clear() {
+        UserDefaults.standard.removeObject(forKey: key)
     }
 }
