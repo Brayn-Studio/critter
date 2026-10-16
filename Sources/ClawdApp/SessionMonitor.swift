@@ -91,9 +91,11 @@ private final class MonitorEngine: @unchecked Sendable {
     private var directoryWatchers: [DirectoryWatcher] = []
     private var exitWatcher: ProcessExitWatcher?
     private var transcriptWatchers: [String: (path: String, watcher: FileAppendWatcher)] = [:]
-    /// Registry sessions whose process we saw exit. Claude leaves the registry file behind
-    /// when its process is killed, so they're filtered out until that file disappears.
-    private var exitedRegistrySessions: Set<String> = []
+    /// Registry entries (`"<pid>/<sessionId>"`) whose process we saw exit. Claude leaves
+    /// the registry file behind when its process is killed, so they're filtered out until
+    /// that file disappears. Keyed by pid too: the same session id can be open in two
+    /// processes at once, and one of them exiting mustn't hide the other.
+    private var exitedRegistryEntries: Set<String> = []
     private var lastPublished: MonitorSnapshot?
     private var rebuildScheduled = false
 
@@ -191,9 +193,9 @@ private final class MonitorEngine: @unchecked Sendable {
         records.removeAll { exited.contains($0.sessionId) }
 
         let registryAll = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
-        exitedRegistrySessions.formIntersection(registryAll.map(\.sessionId))
+        exitedRegistryEntries.formIntersection(registryAll.map(Self.registryKey))
         let registry = registryAll.filter { entry in
-            !exitedRegistrySessions.contains(entry.sessionId)
+            !exitedRegistryEntries.contains(Self.registryKey(entry))
                 && !StartupCleanup.isDead(entry: entry, isAlive: ProcessTools.isAlive, startTime: { ProcessTools.startTime(of: $0) })
         }
 
@@ -219,8 +221,9 @@ private final class MonitorEngine: @unchecked Sendable {
     private func handleExit(_ pid: Int32) {
         // Every session that process owned: by the pid in its state file, or by Claude's
         // registry entry (a state file lacks the pid if the hook couldn't locate Claude).
-        let registryIds = Set(ClaudeRegistry.entries(in: paths.claudeSessionsDir).filter { $0.pid == pid }.map(\.sessionId))
-        exitedRegistrySessions.formUnion(registryIds)
+        let ownedEntries = ClaudeRegistry.entries(in: paths.claudeSessionsDir).filter { $0.pid == pid }
+        exitedRegistryEntries.formUnion(ownedEntries.map(Self.registryKey))
+        let registryIds = Set(ownedEntries.map(\.sessionId))
         var exited = registryIds
         for record in store.readAll()
         where record.claudePid == pid || (record.claudePid == nil && registryIds.contains(record.sessionId)) {
@@ -286,6 +289,10 @@ private final class MonitorEngine: @unchecked Sendable {
             log.log("event interrupted \(sessionId)")
             scheduleRebuild()
         }
+    }
+
+    private static func registryKey(_ entry: RegistryEntry) -> String {
+        "\(entry.pid)/\(entry.sessionId)"
     }
 
     private static func nowMs() -> Int64 {

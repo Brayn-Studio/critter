@@ -107,3 +107,28 @@ private func entry(
     let recordOnly = SessionCatalog.build(records: [rec("b", claudePid: 30)], registry: [], dismissed: [:])
     #expect(recordOnly.first?.pid == 30)
 }
+
+@Test func duplicateRegistryEntriesDoNotCrashAndTheNewestWins() {
+    // The same conversation resumed in two terminals: two live processes, one session id.
+    let registry = [
+        entry("a", cwd: "/x/old", pid: 11, startedAt: 100, name: "older"),
+        entry("a", cwd: "/x/new", pid: 22, startedAt: 200, name: "newer"),
+        entry("b", pid: 33, startedAt: 50, name: "solo"),
+    ]
+    let result = SessionCatalog.build(records: [], registry: registry, dismissed: [:])
+    #expect(result.map(\.id) == ["b", "a"])
+    #expect(result[1].name == "newer")
+    #expect(result[1].pid == 22)
+}
+
+@Test func duplicateRecordsDoNotCrashAndTheNewestWins() {
+    // A stray copy of a state file (e.g. `a copy.json`) carrying the same session id.
+    let records = [
+        rec("a", state: .done, detail: "newer", eventTime: 20),
+        rec("a", state: .running, detail: "older", eventTime: 10),
+    ]
+    let result = SessionCatalog.build(records: records, registry: [], dismissed: [:])
+    #expect(result.count == 1)
+    #expect(result[0].state == .done)
+    #expect(result[0].detail == "newer")
+}

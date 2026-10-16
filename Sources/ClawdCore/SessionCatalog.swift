@@ -52,8 +52,14 @@ public enum SessionCatalog {
     public static let untrackedHint = "重启该会话后可显示实时状态"
 
     public static func build(records: [SessionRecord], registry: [RegistryEntry], dismissed: [String: Int64]) -> [PetSession] {
-        let recordsById = Dictionary(uniqueKeysWithValues: records.map { ($0.sessionId, $0) })
-        let registryById = Dictionary(uniqueKeysWithValues: registry.map { ($0.sessionId, $0) })
+        // Duplicate ids are bad-but-possible input (the same conversation resumed in two
+        // terminals; a stray copy of a state file) and must never trap: keep the newest.
+        let recordsById = Dictionary(records.map { ($0.sessionId, $0) }) { kept, other in
+            other.eventTime > kept.eventTime ? other : kept
+        }
+        let registryById = Dictionary(registry.map { ($0.sessionId, $0) }) { kept, other in
+            (other.startedAt ?? .min) > (kept.startedAt ?? .min) ? other : kept
+        }
         let allIds = Set(recordsById.keys).union(registryById.keys)
 
         struct Draft {
