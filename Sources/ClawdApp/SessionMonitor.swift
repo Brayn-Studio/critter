@@ -217,12 +217,18 @@ private final class MonitorEngine: @unchecked Sendable {
     /// Process-exit fallback (spec §5.3 layer 2): the session's Claude is gone, so its state
     /// file goes too, even if `SessionEnd` never fired (crash, `kill -9`, closed terminal).
     private func handleExit(_ pid: Int32) {
-        for record in store.readAll() where record.claudePid == pid {
+        // Every session that process owned: by the pid in its state file, or by Claude's
+        // registry entry (a state file lacks the pid if the hook couldn't locate Claude).
+        let registryIds = Set(ClaudeRegistry.entries(in: paths.claudeSessionsDir).filter { $0.pid == pid }.map(\.sessionId))
+        exitedRegistrySessions.formUnion(registryIds)
+        var exited = registryIds
+        for record in store.readAll()
+        where record.claudePid == pid || (record.claudePid == nil && registryIds.contains(record.sessionId)) {
             store.delete(sessionId: record.sessionId)
-            log.log("event exited \(record.sessionId) pid=\(pid)")
+            exited.insert(record.sessionId)
         }
-        for entry in ClaudeRegistry.entries(in: paths.claudeSessionsDir) where entry.pid == pid {
-            exitedRegistrySessions.insert(entry.sessionId)
+        for id in exited.sorted() {
+            log.log("event exited \(id) pid=\(pid)")
         }
         rebuild()
     }
