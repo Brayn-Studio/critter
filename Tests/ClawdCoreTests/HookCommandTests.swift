@@ -18,6 +18,32 @@ final class FakeLauncher: AppLauncher, @unchecked Sendable {
     }
 }
 
+/// A made-up process table: which pids are alive, what they run, when they started, and
+/// who their parents are. Anything not listed is dead.
+struct FakeProcesses: ProcessInspecting {
+    struct Proc {
+        var path: String
+        var start: Int64?
+        var parent: Int32 = 1
+    }
+    var table: [Int32: Proc]
+
+    func isAlive(_ pid: Int32) -> Bool { table[pid] != nil }
+    func startTime(of pid: Int32) -> Int64? { table[pid]?.start }
+    func executablePath(of pid: Int32) -> String? { table[pid]?.path }
+    func ancestors(of pid: Int32, maxDepth: Int) -> [Int32] {
+        var result: [Int32] = []
+        var current = pid
+        while result.count < maxDepth, let parent = table[current]?.parent, parent > 1 {
+            result.append(parent)
+            current = parent
+        }
+        return result
+    }
+}
+
+let clawdExecutable = "/Users/u/Applications/Clawd.app/Contents/MacOS/Clawd"
+
 private func tmpEnv() -> (paths: ClawdPaths, env: [String: String]) {
     let base = FileManager.default.temporaryDirectory.appendingPathComponent("clawd-hook-cmd-tests-\(UUID().uuidString)")
     let clawdHome = base.appendingPathComponent(".clawd")
@@ -118,20 +144,66 @@ private func tmpEnv() -> (paths: ClawdPaths, env: [String: String]) {
     #expect(fake.opened == [URL(string: "clawd://show")!])
 }
 
-@Test func petRestartsAndKillsStaleApp() throws {
+/// F1 (critical): app.json outlives Clawd (quit, crash, reboot), and its pid can be reused
+/// by any process. Here it names this test process -- alive, but not Clawd. Whether its
+/// heartbeat looks stale or fresh, `/pet` must just launch Clawd and never kill anything.
+@Test func petNeverKillsAnUnrelatedProcessHoldingTheRecordedPid() throws {
+    for heartbeat in [Int64(0), 999_000] {
+        for startTime in [Int64?.none, ProcessTools.startTime(of: getpid())] {
+            let (paths, env) = tmpEnv()
+            let fake = FakeLauncher()
+            try AppStatusStore(paths: paths).write(
+                AppStatus(pid: getpid(), visible: true, heartbeat: heartbeat, version: "1", startTime: startTime)
+            )
+
+            let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake)
+            let obj = try JSONSerialization.jsonObject(with: Data(r.stdout.utf8)) as! [String: String]
+            #expect(obj["reason"] == "Clawd 已显示", "heartbeat=\(heartbeat) startTime=\(String(describing: startTime))")
+            #expect(fake.killed.isEmpty, "heartbeat=\(heartbeat) startTime=\(String(describing: startTime))")
+            #expect(fake.opened == [URL(string: "clawd://show")!])
+        }
+    }
+}
+
+@Test func petSendsToAVerifiedLiveClawd() throws {
     let (paths, env) = tmpEnv()
     let fake = FakeLauncher()
-    let store = AppStatusStore(paths: paths)
-    // Use our own pid so `ProcessTools.isAlive` reports it as alive, but with an ancient
-    // heartbeat relative to `now`: alive-but-stale is exactly the restart case.
-    let myPid = getpid()
-    try store.write(AppStatus(pid: myPid, visible: false, heartbeat: 0, version: "1"))
+    let processes = FakeProcesses(table: [4242: .init(path: clawdExecutable, start: 1_000)])
+    try AppStatusStore(paths: paths).write(AppStatus(pid: 4242, visible: true, heartbeat: 999_000, version: "1", startTime: 1_000))
 
-    let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake)
+    let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake, processes: processes)
+    let obj = try JSONSerialization.jsonObject(with: Data(r.stdout.utf8)) as! [String: String]
+    #expect(obj["reason"] == "Clawd 已隐藏")
+    #expect(fake.killed.isEmpty)
+    #expect(fake.opened == [URL(string: "clawd://hide")!])
+}
+
+/// The pid runs a Clawd, but not the one that wrote app.json (it started later): unverified,
+/// so launch (which reaches whichever Clawd is running) and kill nothing.
+@Test func petNeverKillsAClawdWithADifferentStartTime() throws {
+    let (paths, env) = tmpEnv()
+    let fake = FakeLauncher()
+    let processes = FakeProcesses(table: [4242: .init(path: clawdExecutable, start: 9_000)])
+    try AppStatusStore(paths: paths).write(AppStatus(pid: 4242, visible: true, heartbeat: 0, version: "1", startTime: 1_000))
+
+    let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake, processes: processes)
+    let obj = try JSONSerialization.jsonObject(with: Data(r.stdout.utf8)) as! [String: String]
+    #expect(obj["reason"] == "Clawd 已显示")
+    #expect(fake.killed.isEmpty)
+    #expect(fake.opened == [URL(string: "clawd://show")!])
+}
+
+@Test func petRestartsAVerifiedClawdWithAStaleHeartbeat() throws {
+    let (paths, env) = tmpEnv()
+    let fake = FakeLauncher()
+    let processes = FakeProcesses(table: [4242: .init(path: clawdExecutable, start: 1_000)])
+    try AppStatusStore(paths: paths).write(AppStatus(pid: 4242, visible: false, heartbeat: 0, version: "1", startTime: 1_000))
+
+    let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake, processes: processes)
     let obj = try JSONSerialization.jsonObject(with: Data(r.stdout.utf8)) as! [String: String]
     #expect(obj["reason"] == "Clawd 无响应，已重启并显示")
-    #expect(fake.killed == [myPid])
-    #expect(fake.opened == [URL(string: "clawd://show")!])
+    #expect(fake.killed == [4242])
+    #expect(fake.opened.last == URL(string: "clawd://show")!)
 }
 
 @Test func petLaunchesWhenStatusPidIsDead() throws {

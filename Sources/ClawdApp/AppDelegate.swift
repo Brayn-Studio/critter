@@ -30,6 +30,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var statusItem: NSStatusItem!
     private var visibilityMenuItem: NSMenuItem?
     private var heartbeatTimer: Timer?
+    private var isTerminating = false
 
     override init() {
         appStatusStore = AppStatusStore(paths: paths)
@@ -116,8 +117,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         petController.install(skin: skin)
     }
 
+    /// Removes `~/.clawd/app.json` (best effort), so a pid that outlives this process can't
+    /// be mistaken for Clawd later. Queued behind any pending heartbeat write, so that write
+    /// can't recreate the file; bounded, so quitting never hangs on it.
     func applicationWillTerminate(_ notification: Notification) {
         heartbeatTimer?.invalidate()
+        heartbeatTimer = nil
+        isTerminating = true
+        let store = appStatusStore
+        let removed = DispatchSemaphore(value: 0)
+        heartbeatQueue.async {
+            store.delete(ifOwnedBy: OwnProcess.pid)
+            removed.signal()
+        }
+        _ = removed.wait(timeout: .now() + 0.5)
     }
 
     // MARK: - Status item
@@ -294,15 +307,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// the actual file write on a background queue, per the Global Constraint that the
     /// main thread only ever does UI work.
     private func writeHeartbeat() {
-        let status = AppStatus(
-            pid: ProcessInfo.processInfo.processIdentifier,
-            visible: petController.visible,
-            heartbeat: Int64(Date().timeIntervalSince1970 * 1000),
-            version: Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.1.0"
-        )
+        guard !isTerminating else { return }
+        let visible = petController.visible
+        let heartbeat = Int64(Date().timeIntervalSince1970 * 1000)
+        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
         let store = appStatusStore
         heartbeatQueue.async {
+            // `startTime` lets clawd-hook tell this process from a later one that reuses its
+            // pid (see `ToggleDecision.isClawd`).
+            let status = AppStatus(
+                pid: OwnProcess.pid, visible: visible, heartbeat: heartbeat, version: version,
+                startTime: OwnProcess.startTime
+            )
             try? store.write(status)
         }
     }
+}
+
+/// This process's identity as recorded in app.json. `startTime` is a process query, so it
+/// is only ever first touched from the heartbeat queue (Global Constraint: the main thread
+/// only does UI); a `static let` is initialized once, thread-safely.
+private enum OwnProcess {
+    static let pid = ProcessInfo.processInfo.processIdentifier
+    static let startTime = ProcessTools.startTime(of: ProcessInfo.processInfo.processIdentifier)
 }

@@ -59,9 +59,28 @@ private func rec(_ sessionId: String, _ state: PetState, t: Int64) -> SessionRec
 @Test func appStatusRoundTrip() throws {
     let paths = tmpPaths()
     let store = AppStatusStore(paths: paths)
-    let status = AppStatus(pid: 123, visible: true, heartbeat: 456, version: "1.0")
+    let status = AppStatus(pid: 123, visible: true, heartbeat: 456, version: "1.0", startTime: 1_792_000_000)
     try store.write(status)
     #expect(store.read() == status)
+}
+
+@Test func appStatusDecodesFilesWrittenBeforeStartTimeExisted() throws {
+    let old = #"{"pid":123,"visible":true,"heartbeat":456,"version":"0.1.0"}"#
+    let status = try JSONDecoder().decode(AppStatus.self, from: Data(old.utf8))
+    #expect(status == AppStatus(pid: 123, visible: true, heartbeat: 456, version: "0.1.0", startTime: nil))
+}
+
+/// Clawd removes app.json when it quits, but only its own: if another instance has
+/// already overwritten it, that one's status must survive.
+@Test func appStatusDeleteOnlyRemovesTheOwnersFile() throws {
+    let store = AppStatusStore(paths: tmpPaths())
+    try store.write(AppStatus(pid: 123, visible: true, heartbeat: 456, version: "1", startTime: 77))
+    store.delete(ifOwnedBy: 999)
+    #expect(store.read()?.pid == 123)
+    store.delete(ifOwnedBy: 123)
+    #expect(store.read() == nil)
+    store.delete(ifOwnedBy: 123) // already gone: a no-op, not a crash
+    #expect(store.read() == nil)
 }
 
 @Test func concurrentDeleteAndWriteNeverCorruptStateOrLock() throws {

@@ -73,3 +73,21 @@ public enum ProcessTools {
         return path.contains("/claude/versions/")
     }
 }
+
+/// The process queries the hook needs, behind a protocol so tests can stand in for "a live
+/// Clawd" or "a Claude parent" without real processes.
+public protocol ProcessInspecting: Sendable {
+    func isAlive(_ pid: Int32) -> Bool
+    func startTime(of pid: Int32) -> Int64?
+    func executablePath(of pid: Int32) -> String?
+    func ancestors(of pid: Int32, maxDepth: Int) -> [Int32]
+}
+
+/// `ProcessInspecting` backed by the real `ProcessTools`.
+public struct SystemProcesses: ProcessInspecting {
+    public init() {}
+    public func isAlive(_ pid: Int32) -> Bool { ProcessTools.isAlive(pid) }
+    public func startTime(of pid: Int32) -> Int64? { ProcessTools.startTime(of: pid) }
+    public func executablePath(of pid: Int32) -> String? { ProcessTools.executablePath(of: pid) }
+    public func ancestors(of pid: Int32, maxDepth: Int) -> [Int32] { ProcessTools.ancestors(of: pid, maxDepth: maxDepth) }
+}

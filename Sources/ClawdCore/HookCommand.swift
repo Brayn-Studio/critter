@@ -54,7 +54,8 @@ public enum HookCommand {
         environment: [String: String],
         now: Int64,
         hookParentPid: Int32,
-        launcher: AppLauncher
+        launcher: AppLauncher,
+        processes: ProcessInspecting = SystemProcesses()
     ) -> HookResult {
         let paths = ClawdPaths.fromEnvironment(environment)
 
@@ -64,14 +65,14 @@ public enum HookCommand {
             return HookResult(stdout: "", exitCode: 0)
 
         case "pet":
-            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, fallbackEvent: "pet")
+            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes, fallbackEvent: "pet")
             let obj: [String: String] = ["decision": "block", "reason": message]
             let data = try? JSONSerialization.data(withJSONObject: obj)
             let stdout = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             return HookResult(stdout: stdout, exitCode: 0)
 
         case "toggle":
-            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, fallbackEvent: "toggle")
+            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes, fallbackEvent: "toggle")
             return HookResult(stdout: message + "\n", exitCode: 0)
 
         default:
@@ -113,12 +114,13 @@ public enum HookCommand {
         paths: ClawdPaths,
         now: Int64,
         launcher: AppLauncher,
+        processes: ProcessInspecting,
         fallbackEvent: String
     ) -> String {
         let input = try? JSONDecoder().decode(HookInput.self, from: stdin)
         let status = AppStatusStore(paths: paths).read()
-        let pidAlive = status.map { ProcessTools.isAlive($0.pid) } ?? false
-        let action = ToggleDecision.decide(request: .toggle, status: status, pidAlive: pidAlive, now: now)
+        let appRunning = status.map { isRunningClawd($0, processes: processes) } ?? false
+        let action = ToggleDecision.decide(request: .toggle, status: status, appRunning: appRunning, now: now)
 
         perform(action: action, status: status, launcher: launcher)
 
@@ -131,6 +133,16 @@ public enum HookCommand {
         )
 
         return ToggleDecision.message(for: action)
+    }
+
+    /// Whether `status.pid` is still the Clawd that wrote `status` (never just "some live pid").
+    private static func isRunningClawd(_ status: AppStatus, processes: ProcessInspecting) -> Bool {
+        ToggleDecision.isClawd(
+            status: status,
+            alive: processes.isAlive(status.pid),
+            executablePath: processes.executablePath(of: status.pid),
+            startTime: processes.startTime(of: status.pid)
+        )
     }
 
     private static func perform(action: ToggleAction, status: AppStatus?, launcher: AppLauncher) {
