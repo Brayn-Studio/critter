@@ -49,17 +49,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let skin = SkinLoader.load(
-            name: "clawd",
-            searchDirs: [paths.skinsDir, Bundle.main.resourceURL!.appending(path: "Skins")]
-        )
-        buildPanel(skin: skin)
+        // UI-only work happens here, synchronously, on the main thread.
         buildStatusItem()
-        // Default to shown, unless a `clawd://hide`/`clawd://toggle` Apple Event that
-        // triggered this launch already arrived (and was recorded into `isVisible` by
-        // `requestVisible`, since the panel didn't exist yet to apply it to).
-        setVisible(isVisible)
         startHeartbeat()
+
+        // `SkinLoader.load` does blocking file I/O (`Data(contentsOf:)`), so it must not
+        // run on the main thread (Global Constraint: main thread is UI-only; file/process/
+        // AppleScript work goes on a background queue). `Bundle.main.resourceURL` is just
+        // path arithmetic (no I/O), but it can be nil outside a real .app bundle, so it's
+        // folded in only when present rather than force-unwrapped.
+        let searchDirs: [URL] = Bundle.main.resourceURL
+            .map { [paths.skinsDir, $0.appending(path: "Skins")] } ?? [paths.skinsDir]
+
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let skin = SkinLoader.load(name: "clawd", searchDirs: searchDirs)
+            DispatchQueue.main.async {
+                // Safe: `DispatchQueue.main` always runs on the main thread/actor, even
+                // though the closure's static type isn't actor-isolated (same reasoning
+                // as the heartbeat timer below).
+                MainActor.assumeIsolated {
+                    self?.finishLaunch(with: skin)
+                }
+            }
+        }
+    }
+
+    /// Builds the panel once the skin has finished loading off the main thread, then
+    /// applies whatever visibility was requested (the default, or a `clawd://hide`/
+    /// `clawd://toggle` Apple Event that arrived and was recorded into `isVisible` by
+    /// `requestVisible` while the panel didn't exist yet to apply it to).
+    private func finishLaunch(with skin: SkinManifest) {
+        buildPanel(skin: skin)
+        setVisible(isVisible)
     }
 
     func applicationWillTerminate(_ notification: Notification) {
