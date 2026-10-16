@@ -1,4 +1,5 @@
 import Foundation
+import os
 import Testing
 @testable import ClawdCore
 
@@ -61,4 +62,68 @@ private func rec(_ sessionId: String, _ state: PetState, t: Int64) -> SessionRec
     let status = AppStatus(pid: 123, visible: true, heartbeat: 456, version: "1.0")
     try store.write(status)
     #expect(store.read() == status)
+}
+
+@Test func concurrentDeleteAndWriteNeverCorruptStateOrLock() throws {
+    let paths = tmpPaths()
+    let s = StateStore(paths: paths)
+    try s.update(sessionId: "a") { _ in .write(rec("a", .idle, t: 0)) }
+
+    let errors = OSAllocatedUnfairLock(initialState: [Error]())
+
+    DispatchQueue.concurrentPerform(iterations: 200) { i in
+        do {
+            if i.isMultiple(of: 10) {
+                s.delete(sessionId: "a")
+            } else {
+                try s.update(sessionId: "a") { _ in .write(rec("a", .running, t: Int64(i))) }
+            }
+        } catch {
+            errors.withLock { $0.append(error) }
+        }
+    }
+
+    #expect(errors.withLock { $0 }.isEmpty)
+
+    // The state file must be either absent or hold valid, decodable JSON -- never corrupt.
+    let stateFile = paths.stateFile(sessionId: "a")!
+    if FileManager.default.fileExists(atPath: stateFile.path) {
+        let data = try Data(contentsOf: stateFile)
+        #expect((try? JSONDecoder().decode(SessionRecord.self, from: data)) != nil)
+    }
+
+    // A deterministic, sequential delete() afterward must still never remove the lock file:
+    // flock binds to the vnode, not the path, so unlinking it would let a concurrent
+    // open(O_CREAT) hand out a lock on a fresh inode and defeat mutual exclusion. (Checking
+    // this only after the concurrent storm, rather than inside it, keeps the assertion
+    // deterministic instead of depending on which operation happens to finish last.)
+    s.delete(sessionId: "a")
+    let lockFile = paths.locksDir.appendingPathComponent("a.lock")
+    #expect(FileManager.default.fileExists(atPath: lockFile.path))
+}
+
+@Test func standaloneDeleteSerializesWithUpdate() throws {
+    let s = StateStore(paths: tmpPaths())
+    try s.update(sessionId: "a") { _ in .write(rec("a", .idle, t: 1)) }
+
+    let group = DispatchGroup()
+    group.enter()
+    DispatchQueue.global().async {
+        try? s.update(sessionId: "a") { _ in
+            Thread.sleep(forTimeInterval: 0.1)
+            return .write(rec("a", .running, t: 2))
+        }
+        group.leave()
+    }
+    // Give the background update a head start so it is the one holding the lock first.
+    Thread.sleep(forTimeInterval: 0.02)
+
+    let deleteStart = Date()
+    s.delete(sessionId: "a")
+    let deleteDuration = Date().timeIntervalSince(deleteStart)
+    group.wait()
+
+    // If delete() did not serialize on the same lock, it would return almost immediately;
+    // instead it must block until the in-flight update's 0.1s critical section finishes.
+    #expect(deleteDuration > 0.05)
 }

@@ -59,8 +59,11 @@ public struct StateStore: Sendable {
         case .ignore:
             return
         case .delete:
+            // Never unlink the lock file: flock binds to the vnode, not the path. If we
+            // unlinked it here, a concurrent open(O_CREAT) on the same path would create a
+            // fresh inode and hand out a "lock" on it immediately, defeating mutual
+            // exclusion with whoever (if anyone) still held the old one.
             try? FileManager.default.removeItem(at: stateFile)
-            try? FileManager.default.removeItem(at: lockFile)
         case .write(let newRecord):
             if let previous, newRecord.eventTime < previous.eventTime {
                 return
@@ -89,10 +92,13 @@ public struct StateStore: Sendable {
         }
     }
 
+    /// Routed through `update` so it serializes with any in-flight `update` for the same
+    /// session (e.g. a hook process writing state) instead of racing it unlocked. The only
+    /// way `update` throws is an invalid `sessionId`, which this method simply ignores
+    /// (matching its non-throwing signature), consistent with `read`/`stateFile` treating a
+    /// malformed id as "no such session" rather than an error.
     public func delete(sessionId: String) {
-        guard let stateFile = paths.stateFile(sessionId: sessionId) else { return }
-        try? FileManager.default.removeItem(at: stateFile)
-        try? FileManager.default.removeItem(at: paths.locksDir.appendingPathComponent("\(sessionId).lock"))
+        try? update(sessionId: sessionId) { _ in .delete }
     }
 
     private func readRecord(at url: URL) -> SessionRecord? {
