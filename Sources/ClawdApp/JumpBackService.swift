@@ -4,8 +4,8 @@ import os
 
 /// Brings a session's window to the front when its Clawd is clicked (spec §6.4): finds the
 /// GUI app hosting the session's Claude process, picks a `JumpPlan` and carries it out --
-/// AppleScript for a Terminal/iTerm2 tab, `NSWorkspace` to open a VS Code folder, plain
-/// activation for anything else.
+/// AppleScript for a Terminal/iTerm2 tab, `NSWorkspace` to open a VS Code folder, and
+/// activation through Launch Services for anything else.
 ///
 /// Everything after the click runs on a background serial queue (process queries, file
 /// reads and the `osascript` child process are never on the main thread). Failures are
@@ -136,19 +136,20 @@ private enum JumpWorker {
         }
     }
 
+    /// Brings the app running as `pid` forward. Launch Services (`openApplication` with
+    /// `activates`) is the primary path: since macOS 14, activation is cooperative and
+    /// `NSRunningApplication.activate` requested by an app that isn't active itself -- Clawd
+    /// never is -- may be silently declined. The direct request is only the fallback.
     static func activate(pid: Int32, sessionId: String) {
         guard let app = NSRunningApplication(processIdentifier: pid), !app.isTerminated else {
             fail(sessionId, "pid \(pid) is not a running app")
             return
         }
-        if app.activate(options: []) {
-            DiagnosticLog.shared.log("jump-result \(sessionId) activated pid=\(pid)")
-        } else if let bundleURL = app.bundleURL {
-            // The direct request was refused; asking Launch Services is the fallback.
-            openApplication(at: bundleURL, sessionId: sessionId)
-        } else {
-            fail(sessionId, "activate pid=\(pid) refused")
+        guard let bundleURL = app.bundleURL else {
+            activateDirectly(app, sessionId: sessionId)
+            return
         }
+        openApplication(at: bundleURL, sessionId: sessionId, fallback: app)
     }
 
     /// Activates the app with `bundleId`, launching it if it isn't running.
@@ -156,21 +157,30 @@ private enum JumpWorker {
         if let running = NSRunningApplication.runningApplications(withBundleIdentifier: bundleId).first {
             activate(pid: running.processIdentifier, sessionId: sessionId)
         } else if let appURL = NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleId) {
-            openApplication(at: appURL, sessionId: sessionId)
+            openApplication(at: appURL, sessionId: sessionId, fallback: nil)
         } else {
             fail(sessionId, "no app for \(bundleId)")
         }
     }
 
-    static func openApplication(at appURL: URL, sessionId: String) {
+    static func openApplication(at appURL: URL, sessionId: String, fallback: NSRunningApplication?) {
         let configuration = NSWorkspace.OpenConfiguration()
         configuration.activates = true
         NSWorkspace.shared.openApplication(at: appURL, configuration: configuration) { _, error in
             if let error {
                 fail(sessionId, "open \(appURL.lastPathComponent): \(error.localizedDescription)")
+                if let fallback { activateDirectly(fallback, sessionId: sessionId) }
             } else {
                 DiagnosticLog.shared.log("jump-result \(sessionId) opened \(appURL.lastPathComponent)")
             }
+        }
+    }
+
+    static func activateDirectly(_ app: NSRunningApplication, sessionId: String) {
+        if app.activate(options: []) {
+            DiagnosticLog.shared.log("jump-result \(sessionId) activated pid=\(app.processIdentifier)")
+        } else {
+            fail(sessionId, "activate pid=\(app.processIdentifier) refused")
         }
     }
 

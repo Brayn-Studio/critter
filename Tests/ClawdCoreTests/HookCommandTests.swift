@@ -298,3 +298,31 @@ private func tmpEnv() -> (paths: ClawdPaths, env: [String: String]) {
     #expect(fake.killed.isEmpty)
     #expect(fake.opened == [URL(string: "clawd://show")!])
 }
+
+/// F7: the `open` child must not inherit the hook's stdout/stderr -- `pet`'s stdout is Claude
+/// Code's JSON channel, and a child still holding the pipe keeps Claude waiting for EOF.
+@Test func launcherDetachesTheOpenChildFromTheHooksOutput() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("clawd-open-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let report = dir.appendingPathComponent("report.txt")
+    let tool = dir.appendingPathComponent("fake-open")
+    // Reports what its stdout (saved as fd 3) and stderr (fd 4) are, next to /dev/null.
+    try """
+    #!/bin/sh
+    exec 3>&1 4>&2
+    { stat -L -f '%HT %r' /dev/fd/3; stat -L -f '%HT %r' /dev/fd/4; stat -f '%HT %r' /dev/null; } > "\(report.path).tmp" 2>&1
+    mv "\(report.path).tmp" "\(report.path)"
+    """.write(to: tool, atomically: true, encoding: .utf8)
+    try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: tool.path)
+
+    SystemAppLauncher(openTool: tool).open(url: URL(string: "clawd://show")!)
+
+    let deadline = Date().addingTimeInterval(10)
+    while !FileManager.default.fileExists(atPath: report.path), Date() < deadline {
+        usleep(20_000)
+    }
+    let lines = try String(contentsOf: report, encoding: .utf8).split(separator: "\n").map(String.init)
+    #expect(lines.count == 3)
+    #expect(lines.first == lines.last, "stdout: \(lines)")
+    #expect(lines.dropFirst().first == lines.last, "stderr: \(lines)")
+}

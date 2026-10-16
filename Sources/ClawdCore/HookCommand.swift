@@ -12,14 +12,23 @@ public protocol AppLauncher: Sendable {
 
 /// The real `AppLauncher` used by the `clawd-hook` binary. `-g` opens the URL without
 /// bringing the target app to the foreground, since showing/hiding the pet shouldn't steal
-/// focus from whatever the user is doing.
+/// focus from whatever the user is doing. The `open` child gets /dev/null for stdin, stdout
+/// and stderr: the hook's stdout is Claude Code's JSON channel for `pet`, and a child still
+/// holding the hook's pipes would keep Claude waiting for them to close.
 public struct SystemAppLauncher: AppLauncher {
-    public init() {}
+    private let openTool: URL
+
+    public init(openTool: URL = URL(fileURLWithPath: "/usr/bin/open")) {
+        self.openTool = openTool
+    }
 
     public func open(url: URL) {
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.executableURL = openTool
         process.arguments = ["-g", url.absoluteString]
+        process.standardInput = FileHandle.nullDevice
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
         try? process.run()
     }
 

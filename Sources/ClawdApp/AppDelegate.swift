@@ -45,9 +45,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         super.init()
 
         // Visibility lives in `PetController`; the menu title follows it immediately, even
-        // for a `clawd://hide` that arrives before the panel has been built.
+        // for a `clawd://hide` that arrives before the panel has been built. So does
+        // app.json (written off the main thread): otherwise a second `/pet` within the 2 s
+        // heartbeat interval would read the old `visible` and repeat the first one.
         petController.onVisibilityChange = { [weak self] visible in
             self?.visibilityMenuItem?.title = Self.visibilityTitle(visible)
+            self?.writeHeartbeat()
         }
         sessionMonitor.onSnapshot = { [weak self] sessions in
             self?.petController.show(sessions: sessions)
