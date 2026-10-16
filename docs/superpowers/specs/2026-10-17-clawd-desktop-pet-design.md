@@ -226,7 +226,8 @@ y4  ....#.#....#.#....
 - `/pet`：切换显示/隐藏；app 没在运行时先启动再显示【用户定】。
 - 隐藏只是收起窗口，app 留在菜单栏，状态照常记录；**【Claude 定】**隐藏期间不播放提示音。
 - **实现方式（需先做小实验验证）：**
-  - 首选：插件里注册一个 `pet` 命令（保证自动补全、不被当成未知命令），同时用 `UserPromptSubmit`（或 `UserPromptExpansion`）hook 识别 `/pet`，执行 `clawd-hook toggle` 后以 `decision: block` 拦下，**不触发模型回复**，只给用户一行"Clawd 已显示/已隐藏"。
+  - 首选：注册一个 `pet` 命令（保证自动补全、不被当成未知命令），同时用 `UserPromptExpansion` hook 识别 `/pet`，执行 `clawd-hook toggle` 后以 `decision: block` 拦下，**不触发模型回复**，只给用户一行"Clawd 已显示/已隐藏"。
+    - 2026-10-17 在 CLI 2.1.301 上实测可行。注意：插件里的命令会带命名空间（`/clawd:pet`），所以 `pet` 命令要装成用户级命令 `~/.claude/commands/pet.md`；hooks 仍放在插件里。`UserPromptSubmit` 会在拦截前先触发一次（prompt 为 `/pet`），状态归约时要忽略它。
   - 兜底：skill 设 `disable-model-invocation: true`，用 `!` 内联执行 `clawd-hook toggle`，让模型只回一行结果（会花一次很小的模型调用）。
 - `clawd-hook toggle` 与 app 的通信方式由实现者定（建议注册 URL scheme `clawd://toggle`，`open` 它即可在 app 未运行时自动拉起）。
 - **其它入口：** 全局快捷键（默认 ⌃⌥C，可改）、菜单栏图标。
