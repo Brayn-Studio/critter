@@ -5,7 +5,8 @@ import Testing
     let fresh = AppStatus(pid: 1, visible: true, heartbeat: 100_000, version: "1")
     #expect(ToggleDecision.decide(request: .toggle, status: nil, appRunning: false, now: 0) == .launch(show: true))
     #expect(ToggleDecision.decide(request: .toggle, status: fresh, appRunning: true, now: 101_000) == .send(show: false))
-    #expect(ToggleDecision.decide(request: .toggle, status: fresh, appRunning: true, now: 200_000) == .restart(show: false))
+    // A stale heartbeat is only a suspicion (App Nap can delay it): probe before restarting.
+    #expect(ToggleDecision.decide(request: .toggle, status: fresh, appRunning: true, now: 200_000) == .probe(show: false))
     #expect(ToggleDecision.decide(request: .hide, status: nil, appRunning: false, now: 0) == .launch(show: false))
     #expect(ToggleDecision.message(for: .send(show: true)) == "Clawd 已显示")
 }
@@ -50,4 +51,24 @@ import Testing
     #expect(!ToggleDecision.isClawd(status: withStart, alive: true, executablePath: clawd, startTime: 5_000))
     // The status names a start time we can no longer read: unconfirmed, so not Clawd.
     #expect(!ToggleDecision.isClawd(status: withStart, alive: true, executablePath: clawd, startTime: nil))
+}
+
+/// F3: an App-Napped (or merely busy) Clawd answers the URL it is sent by writing a fresh
+/// heartbeat; only one that doesn't within the probe window is restarted.
+@Test func probeRestartsOnlyWithoutAFreshHeartbeat() {
+    #expect(ToggleDecision.afterProbe(show: true, answered: true) == .send(show: true))
+    #expect(ToggleDecision.afterProbe(show: false, answered: true) == .send(show: false))
+    #expect(ToggleDecision.afterProbe(show: true, answered: false) == .restart(show: true))
+    #expect(ToggleDecision.afterProbe(show: false, answered: false) == .restart(show: false))
+
+    let before = AppStatus(pid: 7, visible: true, heartbeat: 1_000, version: "1", startTime: 5)
+    #expect(!ToggleDecision.probeAnswered(before: before, after: nil))
+    #expect(!ToggleDecision.probeAnswered(before: before, after: before))
+    var newer = before
+    newer.heartbeat = 1_001
+    #expect(ToggleDecision.probeAnswered(before: before, after: newer))
+    // A brand-new instance answering also counts: there's nothing hung left to kill.
+    let relaunched = AppStatus(pid: 8, visible: false, heartbeat: 2_000, version: "1", startTime: 9)
+    #expect(ToggleDecision.probeAnswered(before: before, after: relaunched))
+    #expect(ToggleDecision.probeTimeout == 1.5)
 }

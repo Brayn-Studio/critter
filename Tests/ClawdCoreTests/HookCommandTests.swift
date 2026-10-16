@@ -8,9 +8,12 @@ import Testing
 final class FakeLauncher: AppLauncher, @unchecked Sendable {
     var opened: [URL] = []
     var killed: [Int32] = []
+    /// Runs on every `open`, e.g. to play a responsive app writing a fresh heartbeat.
+    var onOpen: ((URL) -> Void)?
 
     func open(url: URL) {
         opened.append(url)
+        onOpen?(url)
     }
 
     func kill(pid: Int32) {
@@ -193,17 +196,66 @@ private func tmpEnv() -> (paths: ClawdPaths, env: [String: String]) {
     #expect(fake.opened == [URL(string: "clawd://show")!])
 }
 
-@Test func petRestartsAVerifiedClawdWithAStaleHeartbeat() throws {
+/// F3: a verified Clawd whose heartbeat is stale is sent the request first; if no fresh
+/// heartbeat arrives within the probe window it really is hung, so it's killed and relaunched.
+@Test func petRestartsAVerifiedClawdThatDoesNotAnswerTheProbe() throws {
     let (paths, env) = tmpEnv()
     let fake = FakeLauncher()
     let processes = FakeProcesses(table: [4242: .init(path: clawdExecutable, start: 1_000)])
     try AppStatusStore(paths: paths).write(AppStatus(pid: 4242, visible: false, heartbeat: 0, version: "1", startTime: 1_000))
 
-    let r = HookCommand.run(arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1, launcher: fake, processes: processes)
+    let started = Date()
+    let r = HookCommand.run(
+        arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1,
+        launcher: fake, processes: processes, probeTimeout: 0.2
+    )
     let obj = try JSONSerialization.jsonObject(with: Data(r.stdout.utf8)) as! [String: String]
     #expect(obj["reason"] == "Clawd 无响应，已重启并显示")
     #expect(fake.killed == [4242])
-    #expect(fake.opened.last == URL(string: "clawd://show")!)
+    #expect(fake.opened == [URL(string: "clawd://show")!, URL(string: "clawd://show")!])
+    #expect(Date().timeIntervalSince(started) >= 0.2)
+}
+
+/// F3: App Nap can hold a healthy, hidden Clawd's heartbeat back past the stale threshold.
+/// It answers the probe URL with a fresh heartbeat, and must not be killed.
+@Test func petNeverKillsAClawdThatAnswersTheProbe() throws {
+    let (paths, env) = tmpEnv()
+    let store = AppStatusStore(paths: paths)
+    let fake = FakeLauncher()
+    fake.onOpen = { url in
+        try? store.write(AppStatus(pid: 4242, visible: url.host == "show", heartbeat: 999_999, version: "1", startTime: 1_000))
+    }
+    let processes = FakeProcesses(table: [4242: .init(path: clawdExecutable, start: 1_000)])
+    try store.write(AppStatus(pid: 4242, visible: false, heartbeat: 0, version: "1", startTime: 1_000))
+
+    let r = HookCommand.run(
+        arguments: ["toggle"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1,
+        launcher: fake, processes: processes, probeTimeout: 5
+    )
+    #expect(r.stdout == "Clawd 已显示\n")
+    #expect(fake.killed.isEmpty)
+    #expect(fake.opened == [URL(string: "clawd://show")!])
+}
+
+/// If the pid stops being Clawd while the probe waits, nothing is killed (just relaunched).
+@Test func petRechecksIdentityBeforeKilling() throws {
+    let (paths, env) = tmpEnv()
+    final class Flip: ProcessInspecting, @unchecked Sendable {
+        var calls = 0
+        func isAlive(_ pid: Int32) -> Bool { calls += 1; return calls == 1 }
+        func startTime(of pid: Int32) -> Int64? { 1_000 }
+        func executablePath(of pid: Int32) -> String? { clawdExecutable }
+        func ancestors(of pid: Int32, maxDepth: Int) -> [Int32] { [] }
+    }
+    let fake = FakeLauncher()
+    try AppStatusStore(paths: paths).write(AppStatus(pid: 4242, visible: true, heartbeat: 0, version: "1", startTime: 1_000))
+
+    _ = HookCommand.run(
+        arguments: ["pet"], stdin: Data(), environment: env, now: 999_999, hookParentPid: 1,
+        launcher: fake, processes: Flip(), probeTimeout: 0.1
+    )
+    #expect(fake.killed.isEmpty)
+    #expect(fake.opened == [URL(string: "clawd://hide")!, URL(string: "clawd://hide")!])
 }
 
 @Test func petLaunchesWhenStatusPidIsDead() throws {

@@ -55,7 +55,8 @@ public enum HookCommand {
         now: Int64,
         hookParentPid: Int32,
         launcher: AppLauncher,
-        processes: ProcessInspecting = SystemProcesses()
+        processes: ProcessInspecting = SystemProcesses(),
+        probeTimeout: TimeInterval = ToggleDecision.probeTimeout
     ) -> HookResult {
         let paths = ClawdPaths.fromEnvironment(environment)
 
@@ -65,14 +66,20 @@ public enum HookCommand {
             return HookResult(stdout: "", exitCode: 0)
 
         case "pet":
-            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes, fallbackEvent: "pet")
+            let message = runToggle(
+                stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes,
+                probeTimeout: probeTimeout, fallbackEvent: "pet"
+            )
             let obj: [String: String] = ["decision": "block", "reason": message]
             let data = try? JSONSerialization.data(withJSONObject: obj)
             let stdout = data.flatMap { String(data: $0, encoding: .utf8) } ?? ""
             return HookResult(stdout: stdout, exitCode: 0)
 
         case "toggle":
-            let message = runToggle(stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes, fallbackEvent: "toggle")
+            let message = runToggle(
+                stdin: stdin, paths: paths, now: now, launcher: launcher, processes: processes,
+                probeTimeout: probeTimeout, fallbackEvent: "toggle"
+            )
             return HookResult(stdout: message + "\n", exitCode: 0)
 
         default:
@@ -117,14 +124,31 @@ public enum HookCommand {
         now: Int64,
         launcher: AppLauncher,
         processes: ProcessInspecting,
+        probeTimeout: TimeInterval,
         fallbackEvent: String
     ) -> String {
         let input = try? JSONDecoder().decode(HookInput.self, from: stdin)
-        let status = AppStatusStore(paths: paths).read()
+        let store = AppStatusStore(paths: paths)
+        let status = store.read()
         let appRunning = status.map { isRunningClawd($0, processes: processes) } ?? false
-        let action = ToggleDecision.decide(request: .toggle, status: status, appRunning: appRunning, now: now)
+        var action = ToggleDecision.decide(request: .toggle, status: status, appRunning: appRunning, now: now)
 
-        perform(action: action, status: status, launcher: launcher)
+        if case .probe(let show) = action, let status {
+            // Stale heartbeat: send the request and give the app a moment to answer it with
+            // a fresh heartbeat before concluding it's hung (App Nap can delay heartbeats).
+            launcher.open(url: url(show: show))
+            let answered = waitForAnswer(store: store, before: status, timeout: probeTimeout)
+            action = ToggleDecision.afterProbe(show: show, answered: answered)
+            if case .restart = action {
+                // Re-verified right before the kill: the pid may have changed hands meanwhile.
+                if isRunningClawd(status, processes: processes) {
+                    launcher.kill(pid: status.pid)
+                }
+                launcher.open(url: url(show: show))
+            }
+        } else {
+            perform(action: action, status: status, launcher: launcher, processes: processes)
+        }
 
         logIfEnabled(
             paths: paths,
@@ -147,15 +171,29 @@ public enum HookCommand {
         )
     }
 
-    private static func perform(action: ToggleAction, status: AppStatus?, launcher: AppLauncher) {
+    /// Polls app.json until it shows a heartbeat newer than `before`'s, or `timeout` passes.
+    private static func waitForAnswer(store: AppStatusStore, before: AppStatus, timeout: TimeInterval) -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while true {
+            if ToggleDecision.probeAnswered(before: before, after: store.read()) { return true }
+            guard Date() < deadline else { return false }
+            usleep(50_000)
+        }
+    }
+
+    private static func url(show: Bool) -> URL {
+        URL(string: show ? "clawd://show" : "clawd://hide")!
+    }
+
+    private static func perform(action: ToggleAction, status: AppStatus?, launcher: AppLauncher, processes: ProcessInspecting) {
         switch action {
-        case .launch(let show), .send(let show):
-            launcher.open(url: URL(string: show ? "clawd://show" : "clawd://hide")!)
+        case .launch(let show), .send(let show), .probe(let show):
+            launcher.open(url: url(show: show))
         case .restart(let show):
-            if let pid = status?.pid {
-                launcher.kill(pid: pid)
+            if let status, isRunningClawd(status, processes: processes) {
+                launcher.kill(pid: status.pid)
             }
-            launcher.open(url: URL(string: show ? "clawd://show" : "clawd://hide")!)
+            launcher.open(url: url(show: show))
         }
     }
 

@@ -31,6 +31,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var visibilityMenuItem: NSMenuItem?
     private var heartbeatTimer: Timer?
     private var isTerminating = false
+    /// Held for the app's whole lifetime: opts out of App Nap, which could otherwise hold a
+    /// hidden pet's heartbeat timer back past the hook's stale threshold and get a healthy
+    /// app restarted by `/pet` (also declared via `LSAppNapIsDisabled` in Info.plist).
+    private var noAppNapActivity: NSObjectProtocol?
 
     override init() {
         appStatusStore = AppStatusStore(paths: paths)
@@ -66,6 +70,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     func applicationWillFinishLaunching(_ notification: Notification) {
+        noAppNapActivity = ProcessInfo.processInfo.beginActivity(
+            options: [.userInitiatedAllowingIdleSystemSleep],
+            reason: "Clawd keeps its heartbeat on time so /pet can tell it apart from a hung app"
+        )
+
         // Set early (and also declared via LSUIElement in Info.plist) so the process never
         // shows a Dock icon or steals activation, including when run outside the .app
         // bundle during development.
@@ -254,6 +263,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     private func handle(url: URL) {
+        // Every URL event is answered with a fresh heartbeat: when the heartbeat looked
+        // stale, clawd-hook sends its request and waits briefly for exactly this before
+        // concluding the app is hung (`ToggleAction.probe`).
+        defer { writeHeartbeat() }
         switch url.host {
         case "show":
             petController.setVisible(true)

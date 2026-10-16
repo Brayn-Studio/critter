@@ -20,6 +20,8 @@
 	<string>1</string>
 	<key>LSUIElement</key>
 	<true/>
+	<key>LSAppNapIsDisabled</key>
+	<true/>
 	<key>LSMinimumSystemVersion</key>
 	<string>14.0</string>
 	<key>NSHighResolutionCapable</key>
