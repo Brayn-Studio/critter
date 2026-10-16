@@ -156,3 +156,46 @@ private func allPresentations() -> [FlockPresentation] {
     #expect(merged.target(at: CGPoint(x: merged.chips!.midX, y: merged.chips!.midY)) == .chips)
     #expect(merged.target(at: CGPoint(x: merged.slots[0].clawd.midX, y: merged.slots[0].clawd.midY)) == .slot(0))
 }
+
+/// F4: columns don't wrap, so on a 1440 pt display a flock of 11+ (threshold 10, or a manual
+/// "展开") is wider than the screen -- and the "⇥ 收起" handle at its far end ends up out of
+/// reach. Whatever is presented must keep the whole window, the handle and every hit target
+/// inside the visible frame, whichever side the pet is anchored on.
+@Test func flockAndItsHandleStayInsideTheVisibleFrame() {
+    let visible = CGRect(x: 0, y: 25, width: 1440, height: 850)
+    let metrics = FlockLayout.Metrics(scale: 1)
+    let maxWidth = PositionModel.usableWidth(of: visible)
+    for count in 2...24 {
+        let sessions = (0..<count).map { s("\($0)", state: .running) } // bubbles: the widest columns
+        for override in [nil, FlockOverride(merged: false, sessionCount: count)] {
+            let presentation = FlockLayout.fitted(
+                FlockModel.present(sessions, threshold: 10, override: override), metrics: metrics, maxWidth: maxWidth
+            )
+            let layout = FlockLayout.layout(presentation, metrics: metrics)
+            for anchor in [PositionModel.defaultAnchor(visible: visible), Anchor(side: .left, x: 40, y: 60)] {
+                let frame = PositionModel.frame(size: layout.size, anchor: anchor, visible: visible)
+                func onScreen(_ rect: CGRect) -> Bool { visible.contains(rect.offsetBy(dx: frame.minX, dy: frame.minY)) }
+                #expect(visible.contains(frame), "count=\(count) override=\(String(describing: override))")
+                if let handle = layout.handle {
+                    #expect(onScreen(handle), "handle off screen: count=\(count)")
+                }
+                #expect(layout.hitRects.allSatisfy(onScreen), "count=\(count)")
+            }
+        }
+    }
+}
+
+/// ... while a flock that fits stays expanded, handle and all.
+@Test func fittingFlockStaysExpanded() {
+    let sessions = (0..<5).map { s("\($0)", state: .running) }
+    let expanded = FlockModel.present(sessions, threshold: 10, override: nil)
+    let metrics = FlockLayout.Metrics(scale: 1)
+    #expect(FlockLayout.fitted(expanded, metrics: metrics, maxWidth: 1432) == expanded)
+    #expect(FlockLayout.layout(expanded, metrics: metrics).handle != nil)
+    // Too narrow for it: merged, with the same lead and counts the automatic rule would pick.
+    #expect(FlockLayout.fitted(expanded, metrics: metrics, maxWidth: 300) == FlockModel.present(sessions, threshold: 2, override: nil))
+    // Merged and empty presentations are left alone.
+    let merged = FlockModel.present(sessions, threshold: 2, override: nil)
+    #expect(FlockLayout.fitted(merged, metrics: metrics, maxWidth: 10) == merged)
+    #expect(FlockLayout.fitted(.empty, metrics: metrics, maxWidth: 10) == .empty)
+}

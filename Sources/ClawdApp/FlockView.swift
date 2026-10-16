@@ -27,6 +27,9 @@ final class FlockView: NSView {
     var onSettings: (() -> Void)?
     /// A drag of the panel started (true) or ended (false).
     var onDragStateChange: ((Bool) -> Void)?
+    /// False while the expanded flock wouldn't fit on screen (so it stays merged): the
+    /// pile's "展开" is then disabled rather than silently doing nothing.
+    var canExpand = true
 
     private var pressLocation: NSPoint?
     private var windowOriginAtPress: NSPoint?
@@ -202,12 +205,12 @@ final class FlockView: NSView {
         switch layoutResult.target(at: point) {
         case .slot(let index):
             if isMerged {
-                onExpand?()
+                if canExpand { onExpand?() }
             } else if let session = entries[index].session {
                 onClickSession?(session)
             }
         case .chips:
-            onExpand?()
+            if canExpand { onExpand?() }
         case .handle:
             onCollapse?()
         case nil:
@@ -222,12 +225,19 @@ final class FlockView: NSView {
 
         let target = layoutResult.target(at: point)
         if isMerged, target != nil {
-            menu.addItem(ActionMenuItem(title: "展开") { [weak self] in self?.onExpand?() })
+            let expand = ActionMenuItem(title: "展开") { [weak self] in self?.onExpand?() }
+            expand.isEnabled = canExpand
+            menu.addItem(expand)
             menu.addItem(.separator())
         } else if case .slot(let index) = target, let session = entries[index].session {
             menu.addItem(ActionMenuItem(title: "跳回会话") { [weak self] in self?.onClickSession?(session) })
             menu.addItem(ActionMenuItem(title: "关闭") { [weak self] in self?.onDismiss?(session) })
             menu.addItem(.separator())
+        }
+        // The expanded flock can always be merged from the menu too, not only via the
+        // "⇥ 收起" handle at its far end.
+        if case .expanded(_, showCollapse: true) = presentation {
+            menu.addItem(ActionMenuItem(title: "收起") { [weak self] in self?.onCollapse?() })
         }
         menu.addItem(ActionMenuItem(title: "隐藏宠物") { [weak self] in self?.onHide?() })
         let settings = ActionMenuItem(title: "设置…") { [weak self] in self?.onSettings?() }

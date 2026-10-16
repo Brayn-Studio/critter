@@ -214,15 +214,25 @@ final class PetController {
     // MARK: - Rendering
 
     private func render() {
-        let presentation = FlockModel.present(sessions, threshold: settings.mergeThreshold, override: flockOverride)
+        // An expanded flock wider than its screen is shown merged (`FlockLayout.fitted`), so
+        // no Clawd and not the "⇥ 收起" handle can end up out of reach.
+        let visibleFrame = anchorVisibleFrame()
+        let maxWidth = PositionModel.usableWidth(of: visibleFrame)
+        let presentation = FlockLayout.fitted(
+            FlockModel.present(sessions, threshold: settings.mergeThreshold, override: flockOverride),
+            metrics: metrics,
+            maxWidth: maxWidth
+        )
         let layout = FlockLayout.layout(presentation, metrics: metrics)
         guard let panel, let flockView else {
             logIfChanged(presentation, placement: nil)
             return
         }
+        // Whether "展开" can do anything: the expanded flock would fit on this screen.
+        flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).size.width <= maxWidth
         flockView.update(presentation, layout: layout)
 
-        var placement = targetPlacement(size: layout.size)
+        var placement = (frame: placementFrame(size: layout.size, visible: visibleFrame), visible: visibleFrame)
         if isDragging {
             // Mid-drag the window follows the mouse; only its size may change.
             placement.frame = NSRect(origin: panel.frame.origin, size: layout.size)
@@ -232,18 +242,21 @@ final class PetController {
         logIfChanged(presentation, placement: placement)
     }
 
-    /// The window frame for `size` at the saved anchor, on the anchor's screen -- or on the
-    /// main screen if that display is gone -- clamped fully into that screen's visible area.
-    private func targetPlacement(size: CGSize) -> (frame: NSRect, visible: NSRect) {
+    /// The visible area of the saved anchor's screen -- or of the main screen if that
+    /// display is gone, or there's no saved anchor yet.
+    private func anchorVisibleFrame() -> NSRect {
         let screens = NSScreen.screens
         let visibleOfMain = screens.first?.visibleFrame ?? Self.fallbackScreen
-        guard let anchor else {
-            let frame = PositionModel.frame(size: size, anchor: PositionModel.defaultAnchor(visible: visibleOfMain), visible: visibleOfMain)
-            return (frame, visibleOfMain)
+        guard let anchor, let index = PositionModel.screenIndex(for: anchor, screens: screens.map(\.frame)) else {
+            return visibleOfMain
         }
-        let index = PositionModel.screenIndex(for: anchor, screens: screens.map(\.frame))
-        let visibleFrame = index.map { screens[$0].visibleFrame } ?? visibleOfMain
-        return (PositionModel.frame(size: size, anchor: anchor, visible: visibleFrame), visibleFrame)
+        return screens[index].visibleFrame
+    }
+
+    /// The window frame for `size` at the saved anchor (or the default spot), clamped fully
+    /// into `visible`.
+    private func placementFrame(size: CGSize, visible: NSRect) -> NSRect {
+        PositionModel.frame(size: size, anchor: anchor ?? PositionModel.defaultAnchor(visible: visible), visible: visible)
     }
 
     private static func describe(_ rect: NSRect) -> String {

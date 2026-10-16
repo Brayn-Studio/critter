@@ -124,6 +124,17 @@ public struct FlockLayout {
         estimatedTextWidth(chipLabel(count), fontSize: chipFontSize) + 10
     }
 
+    /// The presentation to actually show in a window at most `maxWidth` wide. Columns
+    /// don't wrap, so an expanded flock too wide for the screen (many sessions, a high merge
+    /// threshold or a manual "展开") is shown merged instead: otherwise its far end -- the
+    /// "⇥ 收起" handle included -- would be pushed off screen, out of reach.
+    public static func fitted(_ presentation: FlockPresentation, metrics: Metrics, maxWidth: CGFloat) -> FlockPresentation {
+        guard case .expanded(let sessions, _) = presentation, sessions.count >= 2,
+              layout(presentation, metrics: metrics).size.width > maxWidth
+        else { return presentation }
+        return FlockModel.merged(sessions)
+    }
+
     public static func layout(_ p: FlockPresentation, metrics m: Metrics) -> Result {
         switch p {
         case .empty:

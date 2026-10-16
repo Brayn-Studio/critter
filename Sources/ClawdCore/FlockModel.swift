@@ -51,7 +51,12 @@ public enum FlockModel {
         guard shouldMerge else {
             return .expanded(sessions, showCollapse: sessions.count >= 2)
         }
+        return merged(sessions)
+    }
 
+    /// The merged pile for `sessions` (non-empty): the most urgent session in front (the
+    /// earliest started among equals) and a count per state.
+    public static func merged(_ sessions: [PetSession]) -> FlockPresentation {
         let leadState = PetState.mostUrgent(sessions.map(\.state)) ?? .idle
         let lead = sessions
             .filter { $0.state == leadState }

@@ -54,6 +54,11 @@ public enum PositionModel {
         )
     }
 
+    /// The widest window that fits in `visible` with a `margin` on both sides.
+    public static func usableWidth(of visible: CGRect) -> CGFloat {
+        visible.width - 2 * margin
+    }
+
     /// Bottom-right corner of the visible area, inset by 24 pt.
     public static func defaultAnchor(visible: CGRect) -> Anchor {
         Anchor(side: .right, x: visible.maxX - defaultInset, y: visible.minY + defaultInset)
