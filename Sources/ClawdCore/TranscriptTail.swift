@@ -5,7 +5,9 @@ import Foundation
 /// mid-response), so this is the only way Clawd finds out the session actually went idle.
 public enum TranscriptTail {
     public static func isInterrupted(tail: Data) -> Bool {
-        guard let text = String(data: tail, encoding: .utf8) else { return false }
+        // Lenient decoding: a tail cut at a raw byte offset can start mid-character (CJK,
+        // emoji). That only garbles the partial first line, which is never the one parsed.
+        let text = String(decoding: tail, as: UTF8.self)
 
         // Split on newlines and drop the final component: if `text` ends with "\n" that's
         // an empty trailing component, and if it doesn't, that final component is a

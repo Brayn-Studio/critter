@@ -8,8 +8,8 @@
 #   demo-sessions.sh set <i> <state> [detail]
 #                                        change demo-<i>'s state (and bubble text)
 #   demo-sessions.sh transcript <i> <path>
-#                                        give demo-<i> a transcriptPath (file is created if
-#                                        missing), e.g. to simulate an Esc interrupt by
+#                                        give demo-<i> a transcriptPath (the file may not
+#                                        exist yet), e.g. to simulate an Esc interrupt by
 #                                        appending Claude's interrupt line to it
 #   demo-sessions.sh pid <i>             print demo-<i>'s stand-in process id
 #   demo-sessions.sh clean               kill the stand-in processes, delete the state (and
@@ -121,8 +121,6 @@ set_state() {
 set_transcript() {
   local i="$1" path="$2"
   require_session "$i"
-  mkdir -p "$(dirname "$path")"
-  [ -f "$path" ] || : > "$path"
   local file
   file="$(state_file "$i")"
   write_atomic "$file" "$(jq -c --arg path "$path" '.transcriptPath = $path' "$file")"

@@ -57,3 +57,12 @@ private func record(state: PetState, lastEvent: String, eventTime: Int64) -> Ses
     #expect(!TranscriptTail.interruptApplies(to: record(state: .running, lastEvent: "UserPromptSubmit", eventTime: 500), transcriptModifiedAt: nil))
     #expect(TranscriptTail.interruptApplies(to: record(state: .running, lastEvent: "PreToolUse", eventTime: 500), transcriptModifiedAt: nil))
 }
+
+@Test func tailStartingInsideAMultiByteCharacterStillDetectsTheInterrupt() {
+    // "中" is E4 B8 AD; a raw 16 KB cut can leave just its last two bytes at the start.
+    let line = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]},"interruptedMessageId":"msg_x"}"#
+    var tail = Data([0xB8, 0xAD])
+    tail.append(Data(("中文内容\n" + line + "\n").utf8))
+    #expect(String(data: tail, encoding: .utf8) == nil) // genuinely invalid UTF-8
+    #expect(TranscriptTail.isInterrupted(tail: tail))
+}

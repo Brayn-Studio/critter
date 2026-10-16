@@ -155,10 +155,16 @@ public final class ProcessExitWatcher: @unchecked Sendable {
 }
 
 /// Calls `onAppend(tail)` (debounced) whenever a file is written to or grows, handing over
-/// the last `maxTailBytes` of it. Used to spot an Esc interrupt at the end of a session's
-/// transcript, for which Claude Code fires no hook.
+/// the whole lines among its last `maxTailBytes`. Used to spot an Esc interrupt at the end
+/// of a session's transcript, for which Claude Code fires no hook.
+///
+/// The file doesn't have to exist yet: a brand-new session's transcript may only be created
+/// after the session already turned busy. Until it appears, the watcher waits on the parent
+/// directory (or, if even that is missing, retries with a backoff capped at 5 s), attaches
+/// as soon as the file shows up, and then delivers its tail right away.
 public final class FileAppendWatcher: @unchecked Sendable {
     public static let maxTailBytes = 16 * 1024
+    private static let maxRetryDelay: TimeInterval = 5
 
     private let url: URL
     private let queue: DispatchQueue
@@ -166,7 +172,12 @@ public final class FileAppendWatcher: @unchecked Sendable {
     private let onAppend: @Sendable (Data) -> Void
 
     private let lock = NSLock()
+    private var active = false
+    /// Watching the file itself.
     private var source: DispatchSourceFileSystemObject?
+    /// Waiting for the file to appear in its directory.
+    private var directorySource: DispatchSourceFileSystemObject?
+    private var retryDelay: TimeInterval = 0
     private var pending = false
 
     public init(url: URL, queue: DispatchQueue, debounce: TimeInterval = 0.3, onAppend: @escaping @Sendable (Data) -> Void) {
@@ -178,35 +189,88 @@ public final class FileAppendWatcher: @unchecked Sendable {
 
     deinit {
         source?.cancel()
+        directorySource?.cancel()
     }
 
-    /// Returns false (and watches nothing) if the file can't be opened, e.g. it doesn't
-    /// exist yet; the caller may simply try again later.
+    /// Starts watching. Returns whether the file itself is being watched already; if not
+    /// (it doesn't exist yet), the watcher keeps waiting for it until `stop()`.
     @discardableResult
     public func start() -> Bool {
         lock.withLock {
-            guard source == nil else { return true }
-            let fd = open(url.path, O_EVTONLY)
-            guard fd >= 0 else { return false }
-            let newSource = DispatchSource.makeFileSystemObjectSource(
-                fileDescriptor: fd, eventMask: [.write, .extend], queue: queue
-            )
-            newSource.setEventHandler { [weak self] in self?.scheduleFire() }
-            newSource.setCancelHandler { close(fd) }
-            source = newSource
-            newSource.resume()
-            return true
+            guard !active else { return source != nil }
+            active = true
+            return attachLocked()
         }
     }
 
     public func stop() {
-        let old: DispatchSourceFileSystemObject? = lock.withLock {
-            let old = source
+        let old: [DispatchSourceFileSystemObject] = lock.withLock {
+            let old = [source, directorySource].compactMap { $0 }
+            active = false
             source = nil
+            directorySource = nil
             pending = false
             return old
         }
-        old?.cancel()
+        for oldSource in old { oldSource.cancel() }
+    }
+
+    /// Attaches to the file if it can; otherwise makes sure something will try again
+    /// (a directory watch, or failing that a delayed retry). Returns whether the file is
+    /// attached. Call with the lock held and `active` set.
+    private func attachLocked() -> Bool {
+        if source != nil { return true }
+        if attachFileLocked() { return true }
+        if directorySource == nil {
+            guard attachDirectoryLocked() else {
+                scheduleRetryLocked()
+                return false
+            }
+            // The file may have been created between the two attempts.
+            if attachFileLocked() { return true }
+        }
+        return false
+    }
+
+    private func attachFileLocked() -> Bool {
+        let fd = open(url.path, O_EVTONLY)
+        guard fd >= 0 else { return false }
+        let newSource = DispatchSource.makeFileSystemObjectSource(
+            fileDescriptor: fd, eventMask: [.write, .extend], queue: queue
+        )
+        newSource.setEventHandler { [weak self] in self?.scheduleFire() }
+        newSource.setCancelHandler { close(fd) }
+        source = newSource
+        newSource.resume()
+        directorySource?.cancel()
+        directorySource = nil
+        return true
+    }
+
+    private func attachDirectoryLocked() -> Bool {
+        let fd = open(url.deletingLastPathComponent().path, O_EVTONLY)
+        guard fd >= 0 else { return false }
+        let newSource = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write], queue: queue)
+        newSource.setEventHandler { [weak self] in self?.retryAttach() }
+        newSource.setCancelHandler { close(fd) }
+        directorySource = newSource
+        newSource.resume()
+        return true
+    }
+
+    private func scheduleRetryLocked() {
+        retryDelay = retryDelay == 0 ? 0.25 : min(retryDelay * 2, Self.maxRetryDelay)
+        queue.asyncAfter(deadline: .now() + retryDelay) { [weak self] in self?.retryAttach() }
+    }
+
+    /// The directory changed, or a retry is due: if the file has appeared, attach and
+    /// deliver what it already holds (an interrupt may be its very first content).
+    private func retryAttach() {
+        let attached: Bool = lock.withLock {
+            guard active, source == nil else { return false }
+            return attachLocked()
+        }
+        if attached { scheduleFire() }
     }
 
     private func scheduleFire() {
@@ -227,13 +291,24 @@ public final class FileAppendWatcher: @unchecked Sendable {
         }
     }
 
-    /// The last `maxBytes` bytes of the file at `url` (all of it if it's smaller).
+    /// The whole lines among the last `maxBytes` bytes of the file at `url` (the entire
+    /// file if it's smaller). When the window starts mid-file, the partial line it begins
+    /// in -- possibly mid-way through a multi-byte character -- is dropped, so the result is
+    /// always valid UTF-8 for a UTF-8 file.
     public static func readTail(of url: URL, maxBytes: Int = maxTailBytes) -> Data? {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return nil }
         defer { try? handle.close() }
         guard let size = try? handle.seekToEnd() else { return nil }
-        let start = size > UInt64(maxBytes) ? size - UInt64(maxBytes) : 0
-        guard (try? handle.seek(toOffset: start)) != nil else { return nil }
-        return try? handle.readToEnd() ?? Data()
+        guard size > UInt64(maxBytes) else {
+            guard (try? handle.seek(toOffset: 0)) != nil else { return nil }
+            return try? handle.readToEnd() ?? Data()
+        }
+        // Read one byte before the window too: if it's a newline, the window already
+        // starts on a line boundary and nothing but that byte is dropped.
+        guard (try? handle.seek(toOffset: size - UInt64(maxBytes) - 1)) != nil,
+              let window = try? handle.readToEnd()
+        else { return nil }
+        guard let newline = window.firstIndex(of: UInt8(ascii: "\n")) else { return Data() }
+        return Data(window[window.index(after: newline)...])
     }
 }

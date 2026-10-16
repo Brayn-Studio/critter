@@ -256,11 +256,12 @@ private final class MonitorEngine: @unchecked Sendable {
             let watcher = FileAppendWatcher(url: url, queue: queue) { [weak self] tail in
                 self?.checkInterrupt(sessionId: id, transcript: url, tail: tail)
             }
-            // A transcript that doesn't exist yet is retried on the next rebuild.
-            guard watcher.start() else { continue }
             transcriptWatchers[id] = (path, watcher)
-            // The interrupt may already be there (Esc pressed while the app wasn't running).
-            if let tail = FileAppendWatcher.readTail(of: url) {
+            // A transcript that doesn't exist yet (a brand-new session's first prompt) is
+            // waited for by the watcher itself, which delivers its tail once it appears.
+            // One that does exist may already end in an interrupt (Esc pressed while the
+            // app wasn't running), so check it right away.
+            if watcher.start(), let tail = FileAppendWatcher.readTail(of: url) {
                 checkInterrupt(sessionId: id, transcript: url, tail: tail)
             }
         }
