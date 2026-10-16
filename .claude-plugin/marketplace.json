@@ -8,7 +8,8 @@
     {
       "name": "clawd",
       "source": "./plugin",
-      "description": "Clawd 桌面宠物：上报 Claude Code 会话状态"
+      "description": "Clawd 桌面宠物：上报 Claude Code 会话状态",
+      "version": "0.2.0"
     }
   ]
 }

@@ -9,8 +9,19 @@ set -euo pipefail
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$REPO"
 
-CLAWD_HOME="${CLAWD_HOME:-$HOME/.clawd}"
+# The plugin's hooks run "$HOME/.clawd/bin/clawd-hook", and Clawd.app -- started by Launch
+# Services, without this shell's environment -- reads ~/.clawd and ~/.claude. CLAWD_HOME and
+# CLAUDE_CONFIG_DIR are test-only overrides that would split the hooks from the app, so the
+# install always targets ~/.clawd.
+if [ -n "${CLAWD_HOME:-}" ] && [ "$CLAWD_HOME" != "$HOME/.clawd" ]; then
+  echo "warning: ignoring CLAWD_HOME=$CLAWD_HOME (test-only); installing to $HOME/.clawd" >&2
+fi
+CLAWD_HOME="$HOME/.clawd"
 CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
+if [ "$CLAUDE_CONFIG_DIR" != "$HOME/.claude" ]; then
+  echo "warning: CLAUDE_CONFIG_DIR=$CLAUDE_CONFIG_DIR is set. /pet goes there, but Clawd.app always" >&2
+  echo "         reads ~/.claude, so it won't see these sessions' names or sources." >&2
+fi
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 PET_MARKER="<!-- clawd-pet -->"
 
@@ -32,7 +43,16 @@ if [ "$WAS_RUNNING" = 1 ]; then
   echo "==> Restarting the running Clawd"
   killall Clawd >/dev/null 2>&1 || true
   for _ in $(seq 1 50); do pgrep -x Clawd >/dev/null 2>&1 || break; sleep 0.1; done
-  open -g "$HOME/Applications/Clawd.app"
+  # Launch Services can take a moment to notice the old instance is gone; until then `open`
+  # fails with -600. Retry (bounded) rather than abort the rest of the install.
+  STARTED=0
+  for _ in $(seq 1 20); do
+    if open -g "$HOME/Applications/Clawd.app" 2>/dev/null; then STARTED=1; break; fi
+    sleep 0.5
+  done
+  if [ "$STARTED" != 1 ]; then
+    echo "warning: couldn't restart Clawd; start it with: open ~/Applications/Clawd.app" >&2
+  fi
 fi
 
 echo "==> Building and installing clawd-hook to $CLAWD_HOME/bin"
@@ -50,8 +70,20 @@ if [ -f "$PET_CMD" ] && ! grep -qF "$PET_MARKER" "$PET_CMD"; then
 fi
 cp "$REPO/Support/pet-command.md" "$PET_CMD"
 
+# Re-runnable: add the marketplace only if it isn't there yet (re-added if it points at another
+# checkout), then refresh it so a bumped plugin version is seen before `plugin update`.
 echo "==> Registering the clawd-pet marketplace"
-claude plugin marketplace add "$REPO"
+MARKETPLACES="$(claude plugin marketplace list --json 2>/dev/null || true)"
+if printf '%s' "$MARKETPLACES" | grep -q '"name"[[:space:]]*:[[:space:]]*"clawd-pet"'; then
+  if ! printf '%s' "$MARKETPLACES" | grep -qF "\"$REPO\""; then
+    echo "    (it points at another checkout; re-adding it from $REPO)"
+    claude plugin marketplace remove clawd-pet || true
+    claude plugin marketplace add "$REPO"
+  fi
+else
+  claude plugin marketplace add "$REPO"
+fi
+claude plugin marketplace update clawd-pet
 
 echo "==> Installing/updating the clawd plugin"
 if claude plugin list --json 2>/dev/null | grep -q '"id"[[:space:]]*:[[:space:]]*"clawd@clawd-pet"'; then

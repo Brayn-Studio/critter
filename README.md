@@ -37,14 +37,15 @@
 make install
 ```
 
-安装会做下面几件事，可以重复执行：
+安装会做下面几件事，可以重复执行（再跑一次就是升级）：
 
 1. 编译 release 版。
 2. 把 `Clawd.app` 装进 `~/Applications`，并注册 `clawd://` URL scheme。
    - 如果 Clawd 正在运行，会自动重启，换成新版本。
 3. 把 `clawd-hook` 装到 `~/.clawd/bin/`。
 4. 把 `/pet` 装成用户级命令：`~/.claude/commands/pet.md`。
-5. 把本仓库添加为本地插件市场，并安装 `clawd` 插件。插件里是上报状态用的 hooks。
+5. 把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `clawd` 插件。插件里是上报状态用的 hooks。
+   - 插件按版本号缓存在 `~/.claude/plugins/cache/clawd-pet/clawd/<版本>/`。改了 `plugin/` 里的 hooks，要同时把 `plugin/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 里的版本号加一，重新安装后才会生效。
 
 装完后：
 
@@ -57,7 +58,9 @@ make install
 make uninstall
 ```
 
-卸载会移除插件、插件市场、`Clawd.app`、`/pet` 命令、`~/.clawd` 和开机自启项（`~/Library/LaunchAgents/local.clawd.pet.plist`）。
+卸载会移除插件、插件市场、`Clawd.app`（并从 Launch Services 注销 `clawd://`）、`/pet` 命令、`~/.clawd` 和开机自启项（`~/Library/LaunchAgents/local.clawd.pet.plist`）。
+
+**卸载后请重启仍然开着的 Claude Code 会话。** 这些会话启动时已经加载了插件的 hooks，卸载后它们还会继续触发；hooks 发现 `~/.clawd/bin/clawd-hook` 不在了会直接跳过，不会报错，但要重启会话才会彻底不再调用。
 
 设置保存在 UserDefaults 里，卸载时会保留。要一起清掉，运行 `defaults delete local.clawd.pet`。
 
@@ -167,6 +170,12 @@ make app               # 组装 dist/Clawd.app
 | `Sources/ClawdApp` | 菜单栏应用 |
 | `plugin/` | Claude Code 插件（hooks） |
 | `Skins/` | 形象素材 |
+
+测试用的环境变量（**只用于测试，不要在日常环境里设置**）：
+
+- `CLAWD_HOME`：替换 `~/.clawd`；`CLAUDE_CONFIG_DIR`：替换 `~/.claude`。单元测试靠它们把文件写进临时目录。
+- 插件 hooks 里写死的是 `$HOME/.clawd/bin/clawd-hook`，而 `Clawd.app` 由 Launch Services 启动，拿不到 shell 里的环境变量，始终读 `~/.clawd` 和 `~/.claude`。设了这两个变量，hooks 和 App 就会各看各的目录。
+- 所以 `make install` / `make uninstall` 会忽略 `CLAWD_HOME`（并给出提示），始终使用 `~/.clawd`；设了 `CLAUDE_CONFIG_DIR` 时也会提示 App 看不到那些会话。
 
 调试开关：
 
