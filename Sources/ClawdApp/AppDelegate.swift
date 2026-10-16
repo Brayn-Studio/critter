@@ -6,7 +6,8 @@ import ClawdCore
 /// menu, the `clawd://` URL scheme, and a heartbeat written to `~/.clawd/app.json` so
 /// `clawd-hook toggle` can tell the app is alive (and restart it if the heartbeat has gone
 /// stale -- see `ToggleDecision`). It assembles the controllers: `SessionMonitor` (the data
-/// layer) feeds `PetController` (the always-on-top pet panel and its visibility).
+/// layer) feeds `PetController` (the always-on-top pet panel and its visibility), whose
+/// clicks go to `JumpBackService` (bringing the session's window forward).
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let heartbeatInterval: TimeInterval = 2.0
@@ -16,6 +17,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let heartbeatQueue = DispatchQueue(label: "local.clawd.pet.heartbeat")
     private let sessionMonitor: SessionMonitor
     private let petController: PetController
+    private let jumpBackService: JumpBackService
 
     private var statusItem: NSStatusItem!
     private var visibilityMenuItem: NSMenuItem?
@@ -25,6 +27,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appStatusStore = AppStatusStore(paths: paths)
         sessionMonitor = SessionMonitor(paths: paths)
         petController = PetController(monitor: sessionMonitor)
+        jumpBackService = JumpBackService(paths: paths)
         super.init()
 
         // Visibility lives in `PetController`; the menu title follows it immediately, even
@@ -34,6 +37,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sessionMonitor.onSnapshot = { [weak self] sessions in
             self?.petController.show(sessions: sessions)
+        }
+        // Clicking a Clawd (or its menu's "跳回会话") brings that session's window forward.
+        petController.onJump = { [jumpBackService] session in
+            jumpBackService.jump(to: session)
         }
     }
 

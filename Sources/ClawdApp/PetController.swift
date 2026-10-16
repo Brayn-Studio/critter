@@ -21,8 +21,8 @@ final class PetController {
     /// Called whenever `visible` changes -- including before the panel exists -- so the
     /// status-item menu title can follow immediately.
     var onVisibilityChange: ((Bool) -> Void)?
-    /// Left click on a session (or its menu's "跳回会话"). Wired to the jump-back service
-    /// once it exists; until then the click is only logged.
+    /// Left click on a session (or its menu's "跳回会话"): jump back to its window. The
+    /// app delegate connects this to `JumpBackService`.
     var onJump: ((PetSession) -> Void)?
     /// "设置…" in the pet's context menu (disabled while nil).
     var onOpenSettings: (() -> Void)? {
