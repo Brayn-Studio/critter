@@ -216,8 +216,8 @@
       "rows": ["bb......bb", "........bb"]
     },
     "laptop": {
-      "at": [3, 7],
-      "rows": [".llllllllll.", ".ssssGGssss.", "dddddddddddd"]
+      "at": [3, 6],
+      "rows": [".llllllllll.", ".ssssGGssss.", ".ssssssssss.", "dddddddddddd"]
     },
     "laptop_half": {
       "at": [3, 8],
@@ -377,9 +377,9 @@
     "lap_closed": ["body", "feet", "arm_l_key", "arm_r_key", "eyes_down", "laptop_closed", "top"],
     "lap_half": ["body", "feet", "arm_l_key", "arm_r_key", "eyes_down", "laptop_half", "top"],
     "lap_look": ["body", "feet", "arm_l_key", "arm_r_key", "eyes_open", "laptop", "top"],
-    "lap_a": ["body", "feet", "arm_l_key", "arm_r_keyup", "eyes_down", "laptop", "top_sway_l"],
-    "lap_b": ["body", "feet", "arm_l_keyup", "arm_r_key", "eyes_down", "laptop", "top_sway_r"],
-    "lap_enter_up": ["body", "feet", "arm_l_key", "arm_r_hi", "eyes_down", "laptop", "top_up"],
+    "lap_a": ["body", "feet", "arm_l_key", "arm_r_keyup", "eyes_half", "laptop", "top_sway_l"],
+    "lap_b": ["body", "feet", "arm_l_keyup", "arm_r_key", "eyes_half", "laptop", "top_sway_r"],
+    "lap_enter_up": ["body", "feet", "arm_l_key", "arm_r_hi", "eyes_half", "laptop", "top_up"],
     "lap_happy": ["body", "feet", "arm_l_key", "arm_r_key", "eyes_happy", "laptop", "top_up"],
     "think": ["body", "feet", "arm_l", "arm_r", "eyes_ur", "top"],
     "think_edge": ["body", "feet", "arm_l", "arm_r", "eyes_ur", "top_edge"],

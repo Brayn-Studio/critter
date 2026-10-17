@@ -376,7 +376,7 @@ const SKINS = (() => {
     feet_dangle_b: { at: [4, 9], rows: ['bb......bb', '........bb'] },
 
     // a laptop seen from behind its lid (a leaf on the lid), and a magnifying glass
-    laptop: { at: [3, 7], rows: ['.llllllllll.', '.ssssGGssss.', 'dddddddddddd'] },
+    laptop: { at: [3, 6], rows: ['.llllllllll.', '.ssssGGssss.', '.ssssssssss.', 'dddddddddddd'] },
     laptop_half: { at: [3, 8], rows: ['.llllllllll.', 'dddddddddddd'] },
     laptop_closed: { at: [3, 9], rows: ['dddddddddddd'] },
     lens_r: { at: [9, 2], rows: ['.rrrr..', 'reeeer.', 'reower.', 'reooer.', 'reeeer.', '.rrrrr.', '.....rr'] },
@@ -449,9 +449,10 @@ const SKINS = (() => {
     lap_closed: P('body', 'eyes_down', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop_closed'),
     lap_half: P('body', 'eyes_down', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop_half'),
     lap_look: P('body', 'eyes_open', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop'),
-    lap_a: P('body', 'eyes_down', ['arm_l_key', 'arm_r_keyup'], 'feet', 'top_sway_l', 'laptop'),
-    lap_b: P('body', 'eyes_down', ['arm_l_keyup', 'arm_r_key'], 'feet', 'top_sway_r', 'laptop'),
-    lap_enter_up: P('body', 'eyes_down', ['arm_l_key', 'arm_r_hi'], 'feet', 'top_up', 'laptop'),
+    // typing: eyes lowered to a line just over the lid, so the screen never cuts them in half
+    lap_a: P('body', 'eyes_half', ['arm_l_key', 'arm_r_keyup'], 'feet', 'top_sway_l', 'laptop'),
+    lap_b: P('body', 'eyes_half', ['arm_l_keyup', 'arm_r_key'], 'feet', 'top_sway_r', 'laptop'),
+    lap_enter_up: P('body', 'eyes_half', ['arm_l_key', 'arm_r_hi'], 'feet', 'top_up', 'laptop'),
     lap_happy: P('body', 'eyes_happy', ['arm_l_key', 'arm_r_key'], 'feet', 'top_up', 'laptop'),
     think: P('body', 'eyes_ur', REST, 'feet', 'top'),
     think_edge: P('body', 'eyes_ur', REST, 'feet', 'top_edge'),
