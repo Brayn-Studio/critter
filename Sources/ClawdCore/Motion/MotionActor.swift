@@ -39,11 +39,36 @@ public final class MotionActor {
     /// Per effect name, how many times it fired (picks the next `cycle` group).
     var effectCycles: [String: Int] = [:]
 
+    // State brain (MotionActor+State.swift).
+    public internal(set) var state: PetState = .idle
+    /// The running variant shown (or last shown).
+    public internal(set) var variant = ""
+    public internal(set) var asleep = false
+    /// Whether the waiting state's resident "!" has appeared.
+    public internal(set) var badgeVisible = true
+    /// When false, nothing happens on its own: no fidgets, sleep, impatience or variant switch.
+    public var brainEnabled = true
+    var accessoryName: String?
+    var propName: String?
+    var idleTicks = 0
+    var waitTicks = 0
+    var fidgetIn = 80
+    /// Ticks since the badge appeared; it hops for the first 2.
+    var badgeAge = 99
+    /// The variant the latest activity asks for, and for how many ticks it has asked.
+    var desiredVariant = ""
+    var desiredTicks = 0
+    var variantShownTicks = 0
+
     public init(skin: SkinManifest, rng: MotionRNG, reduceMotion: Bool = false) {
         self.skin = skin
         self.rng = rng
         self.reduceMotion = reduceMotion
-        if let loop = skin.state(.idle).loop { setLoop(loop) }
+        variant = skin.state(.running).defaultVariant ?? ""
+        desiredVariant = variant
+        tint = skin.state(.idle).tint
+        accessoryName = skin.state(.idle).accessory
+        setLoop(stateLoopName())
     }
 
     // MARK: - Playback
@@ -126,10 +151,16 @@ public final class MotionActor {
     // MARK: - Tick
 
     public func step() {
+        brainStep()
         clock += 1
+        badgeAge += 1
         let dt = Double(skin.tickMs) / 1000
         for i in particles.indices { particles[i].step(dt: dt) }
         particles.removeAll { !$0.isAlive }
+        if let spec = accessorySpec, let every = spec.twinkleEvery, every > 0, let twinkle = spec.twinkle,
+           clock % every == 0, !noAccessory {
+            emit(twinkle)
+        }
         advanceKey()
     }
 
@@ -155,19 +186,31 @@ public final class MotionActor {
     // MARK: - Output
 
     public func snapshot() -> ActorSnapshot {
-        let key = currentKey
-        let dx = key?.dx ?? 0, dy = key?.dy ?? 0
-        let particleDraws = particles.map { p in
+        let f = frame()
+        let markers = !hidden && markersAllowed(dy: f.dy)
+        let particleDraws: [GlyphDraw] = hidden ? [] : particles.map { p in
             var d = p.draw()
-            d.x += dx + lag
+            d.x += f.dx + lag
             d.y -= lift
             return d
         }
         return ActorSnapshot(
-            hidden: hidden, pose: key?.pose ?? skin.interactions.lookCenter,
-            bodyX: dx + lag, bodyY: dy + lift, offsetX: 0, offsetY: 0,
-            tint: tint, alpha: alpha, z: z, shadowWidth: Self.shadowWidth(air: dy + lift),
-            accessory: nil, badge: nil, particles: particleDraws, props: [])
+            hidden: hidden, pose: f.pose, bodyX: f.dx + lag, bodyY: f.dy + lift, offsetX: 0, offsetY: 0,
+            tint: tint, alpha: alpha, z: z, shadowWidth: Self.shadowWidth(air: f.dy + lift),
+            accessory: markers ? accessoryDraw() : nil, badge: markers ? badgeDraw() : nil,
+            particles: particleDraws, props: hidden ? [] : propDraws(dx: f.dx))
+    }
+
+    /// The pose and key offset to show now.
+    func frame() -> (pose: String, dx: Int, dy: Int) {
+        if reduceMotion {
+            if modeName == skin.interactions.held { return (skin.interactions.heldStill, 0, 0) }
+            let st = skin.state(state)
+            if asleep { return (st.sleep?.still ?? st.still, 0, 0) }
+            return (st.still, 0, st.stillDy ?? 0)
+        }
+        let key = currentKey
+        return (key?.pose ?? skin.interactions.lookCenter, key?.dx ?? 0, key?.dy ?? 0)
     }
 
     /// Shadow width in cells for a body `air` cells above the ground.
@@ -178,8 +221,10 @@ public final class MotionActor {
     /// Ticks until the snapshot can next change on its own (at least 1).
     public func ticksUntilChange() -> Int {
         if !particles.isEmpty { return 1 }
-        guard let key = currentKey else { return onceActive ? 1 : Self.never }
-        return Swift.max(1, key.ticks - keyTicks)
+        var n = Self.never
+        if let key = currentKey { n = key.ticks - keyTicks } else if onceActive { n = 1 }
+        n = Swift.min(n, markerTicksLeft(), brainTicksLeft())
+        return Swift.max(1, n)
     }
 
     /// Returned by `ticksUntilChange` when nothing will change on its own.

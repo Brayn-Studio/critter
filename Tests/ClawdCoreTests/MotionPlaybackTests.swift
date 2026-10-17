@@ -141,12 +141,14 @@ private func makeActor(reduceMotion: Bool = false) -> MotionActor {
     #expect(s.particles[0].color == "#B4BAC4")
 }
 
-@Test func snapshotCarriesLookAndHasNoMarkersYet() {
+@Test func snapshotCarriesLookAndHiddenDrawsNothing() {
     let a = makeActor()
     a.setLoop("idle")
     a.tint = .dim
     a.alpha = 0.55
     a.z = 0
+    a.emit("dust")
+    #expect(a.snapshot().particles.count == 2)
     a.hidden = true
     let s = a.snapshot()
     #expect(s.hidden)
@@ -154,7 +156,9 @@ private func makeActor(reduceMotion: Bool = false) -> MotionActor {
     #expect(s.alpha == 0.55)
     #expect(s.z == 0)
     #expect(s.offsetX == 0 && s.offsetY == 0)
+    #expect(s.particles.isEmpty)
     #expect(s.props.isEmpty)
+    #expect(s.accessory == nil && s.badge == nil)
 }
 
 @Test func ticksUntilChangeIsRemainingKeyTicks() {
