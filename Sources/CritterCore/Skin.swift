@@ -6,6 +6,8 @@ import Foundation
 public struct SkinManifest: Codable, Sendable, Equatable {
     public var schema: Int
     public var name: String
+    /// What the settings call the skin ("小芽 Sprig"); optional, see `SkinChoice.title`.
+    public var title: String?
     /// Duration of one tick in milliseconds.
     public var tickMs: Int
     /// Base box `[width, height]` in square pixel cells; row `height` is the ground.
@@ -205,6 +207,26 @@ public struct VariantSpec: Codable, Sendable, Equatable {
     public var prop: String?
 }
 
+/// The poses a state looks around with, in place of `interactions.look*` (so a state can keep
+/// what it wears, like the done state's flower, while its eyes follow the pointer).
+public struct GazePoses: Codable, Sendable, Equatable {
+    public var left: String
+    public var right: String
+    public var up: String
+    public var down: String
+    public var center: String
+
+    public func pose(_ zone: GazeZone) -> String {
+        switch zone {
+        case .left: left
+        case .right: right
+        case .up: up
+        case .down: down
+        case .center: center
+        }
+    }
+}
+
 /// A color post-processing effect applied to a whole state's poses.
 public enum Tint: String, Codable, Sendable {
     case dim
@@ -226,6 +248,7 @@ public struct StateSpec: Codable, Sendable, Equatable {
     public var badge: BadgeSpec?
     public var variants: [String: VariantSpec]?
     public var defaultVariant: String?
+    public var gaze: GazePoses?
 }
 
 /// Names of the clips, poses and effects the engine uses for interactions and orchestration.
@@ -288,6 +311,7 @@ public enum SkinValidator {
         let cells = -64...64, ticks = 1...100_000, motion = -1000.0...1000.0
 
         if m.schema != 2 { bad("unsupported schema \(m.schema) (need 2)") }
+        if let t = m.title, t.isEmpty || t.count > 40 { bad("title must be 1…40 characters") }
         number(m.tickMs, 16...1000, "tickMs")
         // The renderer, layout, hover and gaze all draw an 18×10 box with the ground on row 10.
         if m.grid != [18, 10] { bad("grid must be [18, 10]") }
@@ -400,6 +424,9 @@ public enum SkinValidator {
             if let i = s.impatient {
                 clip(i.loop, ctx)
                 number(i.after, ticks, "\(ctx) impatient.after")
+            }
+            if let g = s.gaze {
+                for p in [g.left, g.right, g.up, g.down, g.center] { pose(p, "\(ctx) gaze") }
             }
             if let b = s.badge {
                 glyph(b.glyph, ctx); color(b.color, ctx)
@@ -1498,16 +1525,22 @@ public enum SkinLoader {
     /// both decodes and passes `SkinValidator.problems` wins. Falls back to `builtin()` if
     /// none qualifies.
     public static func load(name: String, searchDirs: [URL]) -> SkinManifest {
-        for dir in searchDirs {
-            let manifestURL = dir.appendingPathComponent(name).appendingPathComponent("manifest.json")
-            guard let data = try? Data(contentsOf: manifestURL),
-                  let manifest = try? JSONDecoder().decode(SkinManifest.self, from: data),
-                  SkinValidator.problems(manifest).isEmpty
-            else {
-                continue
-            }
-            return manifest
+        find(name: name, searchDirs: searchDirs) ?? builtin()
+    }
+
+    /// `load` without the fallback: nil if no search dir has a valid skin called `name`.
+    public static func find(name: String, searchDirs: [URL]) -> SkinManifest? {
+        searchDirs.lazy.compactMap { validManifest(in: $0.appendingPathComponent(name)) }.first
+    }
+
+    /// The manifest in skin folder `dir`, if it decodes and passes `SkinValidator.problems`.
+    static func validManifest(in dir: URL) -> SkinManifest? {
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("manifest.json")),
+              let manifest = try? JSONDecoder().decode(SkinManifest.self, from: data),
+              SkinValidator.problems(manifest).isEmpty
+        else {
+            return nil
         }
-        return builtin()
+        return manifest
     }
 }

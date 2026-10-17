@@ -61,6 +61,13 @@ public enum SkinRenderer {
         return PixelGrid(minX: minX, minY: minY, width: maxX - minX + 1, height: maxY - minY + 1, rows: rows)
     }
 
+    /// The skin standing still, for the menu-bar icon and the settings: its `base` pose, or
+    /// the one it looks straight ahead with (`interactions.lookCenter`, which every valid
+    /// skin has) if it has no `base`.
+    public static func portrait(of skin: SkinManifest) -> PixelGrid? {
+        grid(pose: "base", in: skin) ?? grid(pose: skin.interactions.lookCenter, in: skin)
+    }
+
     public static func image(_ grid: PixelGrid, palette: [String: String], dim: Bool) -> CGImage? {
         bitmap(rows: grid.rows) { ch in
             guard let hex = palette[String(ch)] else { return nil }

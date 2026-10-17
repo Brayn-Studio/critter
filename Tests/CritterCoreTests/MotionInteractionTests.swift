@@ -3,8 +3,8 @@ import Foundation
 import Testing
 @testable import CritterCore
 
-private func makeActor(seed: UInt64 = 7, reduceMotion: Bool = false) -> MotionActor {
-    MotionActor(skin: SkinLoader.builtin(), rng: MotionRNG(seed: seed), reduceMotion: reduceMotion)
+private func makeActor(_ skin: SkinManifest = SkinLoader.builtin(), seed: UInt64 = 7, reduceMotion: Bool = false) -> MotionActor {
+    MotionActor(skin: skin, rng: MotionRNG(seed: seed), reduceMotion: reduceMotion)
 }
 
 @discardableResult
@@ -542,6 +542,20 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     r.enterState(.idle, quiet: true)
     r.setGaze(.down)
     #expect(r.snapshot().pose == "look_down")
+}
+
+@Test func stateGazePosesReplaceTheLookPoses() throws {
+    // Sprig's done state keeps its flower on while it looks around.
+    let a = makeActor(try bundledSkin("sprig"))
+    a.enterState(.done, quiet: true)
+    a.setGaze(.right)
+    #expect(a.snapshot().pose == "bloom_r")
+    a.setGaze(.center)
+    #expect(a.snapshot().pose == "bloom_open")
+    // The zone outlasts the state: idle has no gaze of its own, so the plain look poses.
+    a.setGaze(.right)
+    a.enterState(.idle, quiet: true)
+    #expect(a.snapshot().pose == "look_r")
 }
 
 // MARK: - Rubbing

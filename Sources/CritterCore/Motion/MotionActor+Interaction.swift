@@ -119,7 +119,7 @@ extension MotionActor {
     public func startFollow(lookLeft: Bool) {
         guard !traveling, !hidden, underground == nil else { return }
         cancelOnce()
-        gazePose = nil
+        gazeZone = nil
         following = true
         followHold = true
         followLook = lookLeft ? skin.interactions.lookLeft : skin.interactions.lookRight
@@ -176,23 +176,23 @@ extension MotionActor {
     // MARK: - Gaze
 
     public func setGaze(_ zone: GazeZone?) {
-        let names = skin.interactions
-        gazePose = zone.map {
-            switch $0 {
-            case .left: names.lookLeft
-            case .right: names.lookRight
-            case .up: names.lookUp
-            case .down: names.lookDown
-            case .center: names.lookCenter
-            }
-        }
+        gazeZone = zone
     }
 
     /// The gaze pose, when it may replace the current one: idle and awake, or done; no
-    /// one-shot, no mode, not following, not under ground.
+    /// one-shot, no mode, not following, not under ground. A state with its own `gaze` poses
+    /// looks around with those.
     var activeGaze: String? {
-        guard let gazePose, (state == .idle && !asleep) || state == .done,
+        guard let gazeZone, (state == .idle && !asleep) || state == .done,
               !onceActive, modeName == nil, !following, underground == nil else { return nil }
-        return gazePose
+        if let poses = skin.state(state).gaze { return poses.pose(gazeZone) }
+        let names = skin.interactions
+        switch gazeZone {
+        case .left: return names.lookLeft
+        case .right: return names.lookRight
+        case .up: return names.lookUp
+        case .down: return names.lookDown
+        case .center: return names.lookCenter
+        }
     }
 }

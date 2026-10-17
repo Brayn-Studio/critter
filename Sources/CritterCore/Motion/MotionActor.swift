@@ -80,7 +80,7 @@ public final class MotionActor {
     /// Follow offset in cells, y up.
     var offX: Double = 0
     var offY: Double = 0
-    var gazePose: String?
+    var gazeZone: GazeZone?
     /// Cells under ground it is held at (`holdUnderground`); nil while not held.
     public internal(set) var underground: Int?
 

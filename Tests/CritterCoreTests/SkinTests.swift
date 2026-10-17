@@ -27,6 +27,14 @@ import Testing
     #expect(again == m)
 }
 
+@Test func titleIsOptional() throws {
+    #expect(SkinLoader.builtin().title == nil)
+    let titled = SkinLoader.builtinJSON.replacingOccurrences(of: #""name": "clawd","#, with: #""name": "clawd", "title": "小芽 Sprig","#)
+    let m = try JSONDecoder().decode(SkinManifest.self, from: Data(titled.utf8))
+    #expect(m.title == "小芽 Sprig")
+    #expect(SkinValidator.problems(m).isEmpty)
+}
+
 @Test func clipKeyDecodesShortAndLongForms() throws {
     let json = #"[["base",40],["base",10,0,-1],["base",1,0,-2,"dust"]]"#
     let keys = try JSONDecoder().decode(MotionClip.self, from: Data(json.utf8))
@@ -83,6 +91,14 @@ import Testing
 @Test func laterPartsCoverEarlierOnes() {
     let g = SkinRenderer.grid(pose: "base", in: SkinLoader.builtin())!
     #expect(g.character(atX: 5, y: 2) == "o")   // eyes over body
+}
+
+@Test func portraitIsTheBasePoseOrElseLookCenter() {
+    var m = SkinLoader.builtin()
+    #expect(SkinRenderer.portrait(of: m) == SkinRenderer.grid(pose: "base", in: m))
+    m.poses.removeValue(forKey: "base")
+    m.interactions.lookCenter = "look_l"
+    #expect(SkinRenderer.portrait(of: m) == SkinRenderer.grid(pose: "look_l", in: m))
 }
 
 @Test func unknownPoseHasNoGrid() {
@@ -145,6 +161,19 @@ private func mutated(_ change: (inout SkinManifest) -> Void) -> [String] {
 @Test func validatorCatchesMissingVariantLoop() { #expect(!mutated { $0.states["running"]!.variants!["think"]!.loop = "nope" }.isEmpty) }
 @Test func validatorCatchesUnknownInteractionClip() { #expect(!mutated { $0.interactions.notice = "nope" }.isEmpty) }
 @Test func validatorCatchesUnknownGlyphInEffect() { #expect(!mutated { $0.effects["dust"]!.particles![0].glyph = "nope" }.isEmpty) }
+
+@Test func validatorBoundsTheTitle() {
+    #expect(mutated { $0.title = "" } == ["title must be 1…40 characters"])
+    #expect(mutated { $0.title = String(repeating: "芽", count: 41) } == ["title must be 1…40 characters"])
+    #expect(mutated { $0.title = String(repeating: "芽", count: 40) }.isEmpty)
+}
+
+@Test func validatorCatchesUnknownGazePose() throws {
+    var m = try bundledSkin("sprig")
+    #expect(m.states["done"]?.gaze != nil)
+    m.states["done"]!.gaze!.right = "nope"
+    #expect(SkinValidator.problems(m) == ["state done gaze references unknown pose nope"])
+}
 
 @Test func validatorPinsTheGridTo18By10() {
     // The renderer, layout, hover and gaze all draw an 18×10 box with the ground on row 10.
