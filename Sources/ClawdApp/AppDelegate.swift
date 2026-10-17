@@ -21,11 +21,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let petController: PetController
     private let jumpBackService: JumpBackService
     private let settings: SettingsStore
+    private let soundPlayer = ThemedSoundPlayer()
     private let hotKey = HotKey()
     private let loginItemQueue = DispatchQueue(label: "local.clawd.pet.login-item", qos: .utility)
-    private lazy var settingsWindow = SettingsWindowController(store: settings) { [weak self] in
-        self?.petController.resetPosition()
-    }
+    private lazy var settingsWindow = SettingsWindowController(
+        store: settings,
+        onPreviewSound: { [weak self] state in self?.previewSound(state) },
+        onResetPosition: { [weak self] in self?.petController.resetPosition() }
+    )
 
     private var statusItem: NSStatusItem!
     private var visibilityMenuItem: NSMenuItem?
@@ -40,7 +43,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         appStatusStore = AppStatusStore(paths: paths)
         sessionMonitor = SessionMonitor(paths: paths)
         settings = SettingsStore()
-        petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: SystemSoundPlayer())
+        petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: soundPlayer)
         jumpBackService = JumpBackService(paths: paths)
         super.init()
 
@@ -203,6 +206,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         settingsWindow.show()
+    }
+
+    /// A ▶ in settings: plays that state's sound from the chosen set, whether or not the pet
+    /// is visible or that state's own switch is on.
+    private func previewSound(_ state: PetState) {
+        DiagnosticLog.shared.log("sound preview state=\(state.rawValue) theme=\(settings.soundTheme.rawValue)")
+        soundPlayer.play(state, theme: settings.soundTheme)
     }
 
     private func settingsChanged(_ change: SettingsStore.Change) {

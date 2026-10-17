@@ -9,11 +9,13 @@ import SwiftUI
 final class SettingsWindowController {
     private let store: SettingsStore
     private let recorder: HotKeyRecorder
+    private let onPreviewSound: (PetState) -> Void
     private let onResetPosition: () -> Void
     private var window: NSWindow?
 
-    init(store: SettingsStore, onResetPosition: @escaping () -> Void) {
+    init(store: SettingsStore, onPreviewSound: @escaping (PetState) -> Void, onResetPosition: @escaping () -> Void) {
         self.store = store
+        self.onPreviewSound = onPreviewSound
         self.onResetPosition = onResetPosition
         recorder = HotKeyRecorder(store: store)
     }
@@ -30,7 +32,7 @@ final class SettingsWindowController {
     }
 
     private func makeWindow() -> NSWindow {
-        let view = SettingsView(store: store, recorder: recorder, onResetPosition: onResetPosition)
+        let view = SettingsView(store: store, recorder: recorder, onPreviewSound: onPreviewSound, onResetPosition: onResetPosition)
         let hosting = NSHostingController(rootView: view)
         hosting.sizingOptions = [.preferredContentSize]
         let window = NSWindow(contentViewController: hosting)
@@ -100,6 +102,7 @@ final class HotKeyRecorder {
 struct SettingsView: View {
     @Bindable var store: SettingsStore
     let recorder: HotKeyRecorder
+    let onPreviewSound: (PetState) -> Void
     let onResetPosition: () -> Void
 
     var body: some View {
@@ -117,14 +120,16 @@ struct SettingsView: View {
             Section {
                 Toggle("提示音", isOn: $store.soundEnabled)
                 Group {
-                    Toggle("等你确认", isOn: $store.soundOnWaiting)
-                    Toggle("做完了", isOn: $store.soundOnDone)
-                    Toggle("出错", isOn: $store.soundOnError)
+                    Picker("声音", selection: $store.soundTheme) {
+                        ForEach(SoundTheme.allCases, id: \.self) { theme in
+                            Text(theme.label).tag(theme)
+                        }
+                    }
+                    soundToggle(.waiting, isOn: $store.soundOnWaiting)
+                    soundToggle(.done, isOn: $store.soundOnDone)
+                    soundToggle(.error, isOn: $store.soundOnError)
                 }
                 .disabled(!store.soundEnabled)
-                Text("系统音效占位，后续可替换")
-                    .font(.footnote)
-                    .foregroundStyle(.secondary)
             }
 
             Section {
@@ -164,5 +169,25 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// One state's switch, with a ▶ that plays its sound from the chosen set.
+    private func soundToggle(_ state: PetState, isOn: Binding<Bool>) -> some View {
+        LabeledContent(state.label) {
+            HStack {
+                Button {
+                    onPreviewSound(state)
+                } label: {
+                    Image(systemName: "play.fill")
+                }
+                .buttonStyle(.borderless)
+                .help("试听")
+                .accessibilityLabel("试听\(state.label)")
+                // Out of its own form row a toggle would draw as a checkbox.
+                Toggle(state.label, isOn: isOn)
+                    .labelsHidden()
+                    .toggleStyle(.switch)
+            }
+        }
     }
 }

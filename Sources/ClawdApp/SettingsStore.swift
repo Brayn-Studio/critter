@@ -23,6 +23,7 @@ final class SettingsStore {
         static let soundOnWaiting = "soundOnWaiting"
         static let soundOnDone = "soundOnDone"
         static let soundOnError = "soundOnError"
+        static let soundTheme = "soundTheme"
         /// Same key the pet has read since before the settings window existed.
         static let mergeThreshold = "mergeThreshold"
         static let hotKey = "hotKey"
@@ -48,6 +49,10 @@ final class SettingsStore {
     }
     var soundOnError: Bool {
         didSet { save(soundOnError, Key.soundOnError, changed: soundOnError != oldValue, .sounds) }
+    }
+    /// Which set of sounds plays ("声音"), Clawd's own voice by default.
+    var soundTheme: SoundTheme {
+        didSet { save(soundTheme.rawValue, Key.soundTheme, changed: soundTheme != oldValue, .sounds) }
     }
     /// Above this many sessions the flock merges into a pile (2…10, default 4).
     var mergeThreshold: Int {
@@ -92,6 +97,7 @@ final class SettingsStore {
         soundOnWaiting = bool(Key.soundOnWaiting)
         soundOnDone = bool(Key.soundOnDone)
         soundOnError = bool(Key.soundOnError)
+        soundTheme = SoundTheme(storedValue: defaults.string(forKey: Key.soundTheme))
         mergeThreshold = Self.clampThreshold(defaults.object(forKey: Key.mergeThreshold) == nil ? 4 : defaults.integer(forKey: Key.mergeThreshold))
         hotKey = defaults.string(forKey: Key.hotKey).flatMap(Self.decode) ?? .default
         launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
@@ -129,6 +135,9 @@ final class SettingsStore {
             case Key.soundOnDone: soundOnDone = on
             default: soundOnError = on
             }
+        case Key.soundTheme:
+            guard let theme = SoundTheme(rawValue: value) else { return false }
+            soundTheme = theme
         case Key.hotKey:
             // "<keyCode>,<Carbon modifier mask>", e.g. "35,0x1a00" for ⌃⌥⇧P.
             let parts = value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }

@@ -213,7 +213,7 @@ final class PetController {
             DiagnosticLog.shared.log("sound skipped state=\(mostUrgent.rawValue) reason=\(reason)")
             return
         }
-        soundPlayer.play(state)
+        soundPlayer.play(state, theme: settings.soundTheme)
     }
 
     // MARK: - Interaction

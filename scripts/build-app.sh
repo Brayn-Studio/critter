@@ -10,11 +10,12 @@ swift build -c release --product Clawd
 
 APP="$ROOT/dist/Clawd.app"
 rm -rf "$APP"
-mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Skins"
+mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources/Skins" "$APP/Contents/Resources/Sounds"
 
 cp "$ROOT/.build/release/Clawd" "$APP/Contents/MacOS/Clawd"
 cp "$ROOT/Support/Info.plist" "$APP/Contents/Info.plist"
 cp -R "$ROOT/Skins/." "$APP/Contents/Resources/Skins/"
+cp -R "$ROOT/Sounds/." "$APP/Contents/Resources/Sounds/"
 
 codesign --force --sign - "$APP"
 
