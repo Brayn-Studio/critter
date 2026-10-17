@@ -173,6 +173,8 @@ final class FlockView: NSView {
             batch { choreographer.surface() }
             clock.start()
         } else {
+            // A press can't outlive the pet being put away (its mouse-up may never come).
+            cancelPress()
             clock.stop()
             batch { choreographer.settle() }
             requestRender()

@@ -23,6 +23,20 @@ struct FlockPointer {
     var pettingId: String?
     /// The gaze zone each visible Clawd was last given.
     var gaze: [String: GazeZone] = [:]
+    /// The press comes from a debug replay, not the mouse button (see `pointerMoved`).
+    var simulated = false
+
+    /// The button is up: forget the press and the drag (hover, rubbing and gaze stay).
+    mutating func endPress() {
+        pressLocation = nil
+        windowOriginAtPress = nil
+        isDragging = false
+        pressedId = nil
+        grabbedId = nil
+        followers = []
+        lastDragPoint = nil
+        simulated = false
+    }
 
     /// `id`'s Clawd is gone (or renamed): forget it.
     mutating func forget(_ id: String) {
@@ -93,13 +107,10 @@ extension FlockView {
 
     /// Button down: remember where, and squeeze the Clawd under it.
     func pointerDown(at screen: NSPoint) {
+        // A press whose release never arrived lets go first.
+        cancelPress()
         pointer.pressLocation = screen
         pointer.windowOriginAtPress = window?.frame.origin
-        pointer.isDragging = false
-        pointer.pressedId = nil
-        pointer.grabbedId = nil
-        pointer.followers = []
-        pointer.lastDragPoint = nil
         guard isRunning, let point = viewPoint(screen: screen), let id = pressTarget(at: point) else { return }
         batch {
             endPet()
@@ -160,6 +171,11 @@ extension FlockView {
             for id in pointer.gaze.keys { actors[id]?.setGaze(nil) }
             pointer.gaze = [:]
             guard let id = pointer.pressedId, isFree(id), let grabbed = actors[id] else {
+                // The pressed Clawd stopped being free since the press (a hop after a state or
+                // width change, a pile seat, a hide): it lets go of the squeeze, and the window
+                // moves on its own.
+                if let id = pointer.pressedId { releaseMode(id) }
+                pointer.pressedId = nil
                 pointer.grabbedId = nil
                 return
             }
@@ -182,13 +198,7 @@ extension FlockView {
     /// otherwise the pressed Clawd boops and the click does what it always did.
     func pointerUp(at screen: NSPoint) {
         let press = pointer
-        pointer.pressLocation = nil
-        pointer.windowOriginAtPress = nil
-        pointer.isDragging = false
-        pointer.pressedId = nil
-        pointer.grabbedId = nil
-        pointer.followers = []
-        pointer.lastDragPoint = nil
+        pointer.endPress()
         guard press.pressLocation != nil else { return }
 
         if press.isDragging {
@@ -200,6 +210,12 @@ extension FlockView {
                     if isFree(id) { actor.play(skin.interactions.drop) }
                 }
                 for id in press.followers { actors[id]?.releaseFollow() }
+            }
+            // The Clawd under the pointer now counts as hovered already, so the first move
+            // after the drop doesn't play its notice on top of the landing.
+            if let point = viewPoint(screen: screen) {
+                pointer.hoverId = hoverTarget(at: point)
+                pointer.rub.reset()
             }
             requestRender()
             DiagnosticLog.shared.log("pointer drop \(press.grabbedId ?? "-")")
@@ -217,6 +233,34 @@ extension FlockView {
         }
         guard let point = viewPoint(screen: screen) else { return }
         click(at: point)
+    }
+
+    /// The button went up without the view hearing it (the pet was hidden or rebuilt mid-press,
+    /// or the release went elsewhere): let go as if released, without the click, so no Clawd
+    /// stays squeezed or lifted and gaze and hover come back.
+    func cancelPress() {
+        guard pointer.pressLocation != nil else { return }
+        let old = pointer
+        pointer.endPress()
+        batch {
+            for id in [old.pressedId, old.grabbedId].compactMap({ $0 }) {
+                guard let actor = actors[id] else { continue }
+                actor.lift = 0
+                actor.lag = 0
+                releaseMode(id)
+            }
+            for id in old.followers { actors[id]?.releaseFollow() }
+        }
+        requestRender()
+        DiagnosticLog.shared.log("pointer press cancelled")
+        if old.isDragging { onDragStateChange?(false) }
+    }
+
+    /// Ends `id`'s press or held mode (no other mode is the pointer's to end).
+    private func releaseMode(_ id: String) {
+        guard let actor = actors[id], let mode = actor.modeName,
+              mode == skin.interactions.press || mode == skin.interactions.held else { return }
+        actor.setMode(nil)
     }
 
     /// The click's own action: jump back to the session, expand the pile, or merge.
@@ -243,6 +287,10 @@ extension FlockView {
     /// screen). Eyes follow it, the Clawd it arrives on notices it (or wakes up), and rubbing
     /// back and forth over one pets it. Ignored while a button is down or the pet is hidden.
     func pointerMoved(screenPoint screen: NSPoint) {
+        // A real press with the button already up: its mouse-up went missing.
+        if pointer.pressLocation != nil, !pointer.simulated, NSEvent.pressedMouseButtons & 1 == 0 {
+            cancelPress()
+        }
         guard isRunning, pointer.pressLocation == nil, window?.isVisible == true,
               let point = viewPoint(screen: screen) else { return }
         let t = now
@@ -265,7 +313,7 @@ extension FlockView {
                 }
             }
         }
-        if let hit, pointer.rub.move(x: point.x, at: t), pointer.pettingId != hit {
+        if let hit, pointer.rub.move(x: point.x, at: t), pointer.pettingId != hit, isFree(hit) {
             changes.append { [unowned self] in
                 guard isFree(hit), let actor = actors[hit] else { return }
                 actor.setMode(names.pet)
@@ -344,7 +392,7 @@ extension FlockView {
     /// (to notice the rubbing stop) or the held one still swings.
     func interactionTicksUntilCue() -> Int {
         if pointer.pettingId != nil { return 1 }
-        if pointer.isDragging, let id = pointer.grabbedId, let actor = actors[id], actor.lag != 0 { return 1 }
+        if pointer.isDragging, let id = pointer.grabbedId, let actor = actors[id], actor.drawnLag != 0 { return 1 }
         return TickGrid.maxSleepTicks
     }
 
@@ -394,27 +442,32 @@ extension FlockView {
             return true
         }
         pointerDown(at: center)
+        pointer.simulated = true
         pointerUp(at: center)
         return true
     }
 
-    /// Debug-only: presses on `target`, drags the pointer (dx, dy) points in `steps` even
-    /// steps `intervalMs` apart, holds still `holdMs`, and lets go -- through the same press,
-    /// drag and release handlers a real mouse uses. Returns false if there's no such target.
-    func simulateDrag(target: String, dx: CGFloat, dy: CGFloat, steps: Int, intervalMs: Int, holdMs: Int) -> Bool {
+    /// Debug-only: presses on `target`, waits `waitMs`, drags the pointer (dx, dy) points in
+    /// `steps` even steps `intervalMs` apart, holds still `holdMs`, and lets go -- through the
+    /// same press, drag and release handlers a real mouse uses. Returns false if there's no
+    /// such target.
+    func simulateDrag(target: String, dx: CGFloat, dy: CGFloat, steps: Int, intervalMs: Int, waitMs: Int,
+                      holdMs: Int) -> Bool {
         guard let start = screenCenter(of: target) else { return false }
         let steps = max(1, steps)
         let interval = max(1, intervalMs)
+        let wait = max(0, waitMs)
         pointerDown(at: start)
+        pointer.simulated = true
         for step in 1...steps {
             let point = NSPoint(x: start.x + dx * CGFloat(step) / CGFloat(steps), y: start.y + dy * CGFloat(step) / CGFloat(steps))
-            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(step * interval)) { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(wait + step * interval)) { [weak self] in
                 // Safe: `DispatchQueue.main` always runs on the main thread/actor.
                 MainActor.assumeIsolated { self?.pointerDragged(to: point) }
             }
         }
         let end = NSPoint(x: start.x + dx, y: start.y + dy)
-        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(steps * interval + max(0, holdMs))) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + .milliseconds(wait + steps * interval + max(0, holdMs))) { [weak self] in
             MainActor.assumeIsolated { self?.pointerUp(at: end) }
         }
         return true

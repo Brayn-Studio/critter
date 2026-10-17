@@ -277,9 +277,9 @@ final class PetController {
     }
 
     /// Debug-only (`clawd://debug-drag`): see `FlockView.simulateDrag`.
-    func debugDrag(target: String, dx: CGFloat, dy: CGFloat, steps: Int, intervalMs: Int, holdMs: Int) {
+    func debugDrag(target: String, dx: CGFloat, dy: CGFloat, steps: Int, intervalMs: Int, waitMs: Int, holdMs: Int) {
         let handled = flockView?.simulateDrag(
-            target: target, dx: dx, dy: dy, steps: steps, intervalMs: intervalMs, holdMs: holdMs
+            target: target, dx: dx, dy: dy, steps: steps, intervalMs: intervalMs, waitMs: waitMs, holdMs: holdMs
         ) ?? false
         DiagnosticLog.shared.log("debug-drag target=\(target) dx=\(dx) dy=\(dy) steps=\(steps) handled=\(handled)")
     }

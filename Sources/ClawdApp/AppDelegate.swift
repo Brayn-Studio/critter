@@ -319,8 +319,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             }
         case "debug-drag":
             // `clawd://debug-drag?target=<session id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N]
-            // [&interval=<ms>][&hold=<ms>]`: presses on the target, drags (dx, dy) in N steps,
-            // holds still, and lets go -- through the pet's real press/drag/release code.
+            // [&interval=<ms>][&wait=<ms>][&hold=<ms>]`: presses on the target, waits, drags
+            // (dx, dy) in N steps, holds still, and lets go -- through the pet's real
+            // press/drag/release code.
             guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
             let value = { (name: String) in query.first { $0.name == name }?.value }
@@ -331,6 +332,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 dy: value("dy").flatMap(Double.init).map { CGFloat($0) } ?? 0,
                 steps: value("steps").flatMap(Int.init) ?? 10,
                 intervalMs: value("interval").flatMap(Int.init) ?? 30,
+                waitMs: value("wait").flatMap(Int.init) ?? 0,
                 holdMs: value("hold").flatMap(Int.init) ?? 0
             )
         case "debug-set":

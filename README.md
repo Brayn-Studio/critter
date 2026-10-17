@@ -247,7 +247,7 @@ make app               # 组装 dist/Clawd.app
   - `clawd://debug-set`：改设置；`clawd://debug-set?debugReduceMotion=1` 模拟打开"减少动态效果"（不动系统设置，`0` 关掉）；
   - `clawd://debug-snapshot?path=<绝对路径>.png[&count=N&interval=毫秒]`：把宠物窗口画成 PNG，截屏不可用时用来检查动画；
   - `clawd://debug-pointer?x=<屏幕 x>&y=<屏幕 y>`：在那里模拟一次指针移动（目光、悬停、来回蹭），屏幕坐标原点在左下角；
-  - `clawd://debug-drag?target=<会话 id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N&interval=毫秒&hold=毫秒]`：模拟按住、分 N 步拖动、停一会儿再松开。
+  - `clawd://debug-drag?target=<会话 id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N&interval=毫秒&wait=毫秒&hold=毫秒]`：模拟按住、等一会儿、分 N 步拖动、停一会儿再松开。
   - 这些都走真实的鼠标处理代码。发给开发版时用 `open -a dist/Clawd.app "clawd://…"`，否则会发给 `~/Applications` 里装的那份。
 - 在打开 `debugEnabled` 的基础上，再设置 `debugJumpDryRun`，跳回窗口时只记录方案，不实际执行。
 - 用完后用 `defaults delete local.clawd.pet debugEnabled` 关掉；用过 `debugReduceMotion` 的话，也用 `defaults delete local.clawd.pet debugReduceMotion` 删掉。
