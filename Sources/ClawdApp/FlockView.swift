@@ -261,9 +261,11 @@ final class FlockView: NSView {
     }
 
     /// Drops `id`'s Clawd. A one-shot still playing is cancelled first, so whoever waits on
-    /// its completion (a hop, a goodbye, a hide) hears back instead of waiting forever.
+    /// its completion (a hop, a goodbye, a hide) hears back instead of waiting forever; then
+    /// the choreographer forgets it.
     func removeActor(_ id: String) {
         actors[id]?.cancelOnce()
+        choreographer.forget(id)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }

@@ -106,6 +106,25 @@ final class FlockChoreographer {
         if let next = queue.submit(request) { run(next) }
     }
 
+    /// `id`'s Clawd has left the stage (`FlockView.removeActor`): nothing of it may linger
+    /// here, or a session coming back under the same id would get a Clawd that counts as busy
+    /// for good and ignores the pointer. Jobs still waiting on it end now.
+    func forget(_ id: String) {
+        sunk.remove(id)
+        leaving.remove(id)
+        joining.remove(id)
+        vanishing.remove(id)
+        seatRows[id] = nil
+        arriving[id] = nil
+        seatOccupants = seatOccupants.filter { $0.value != id }
+        let dust = settlingDust.filter { $0.id == id }
+        settlingDust.removeAll { $0.id == id }
+        let waiting = departures.filter { $0.id == id }
+        departures.removeAll { $0.id == id }
+        for job in dust { job.group.leave() }
+        for departure in waiting { departure.group.leave() }
+    }
+
     /// `id` just took a new state. A Clawd seated in (or hopping to) the pile stays there,
     /// dimmed and still: the new state's loop or entrance would put it on the ground.
     func stateDidChange(_ id: String) {
@@ -439,10 +458,7 @@ final class FlockChoreographer {
         view.holdChrome()
         let group = makeGroup(gen) { [weak self] in
             guard let self else { return }
-            for id in ids {
-                self.view.removeActor(id)
-                self.leaving.remove(id)
-            }
+            for id in ids { self.view.removeActor(id) }
             then()
         }
         for id in ids {
