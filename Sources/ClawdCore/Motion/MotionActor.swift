@@ -9,7 +9,9 @@ public final class MotionActor {
     public let skin: SkinManifest
     let rng: MotionRNG
 
-    public var reduceMotion: Bool
+    public var reduceMotion: Bool {
+        didSet { if reduceMotion && !oldValue { reduceMotionTurnedOn() } }
+    }
     public var tint: Tint?
     public var alpha: Double = 1
     public var z: Int = 2
@@ -59,6 +61,18 @@ public final class MotionActor {
     var desiredVariant = ""
     var desiredTicks = 0
     var variantShownTicks = 0
+
+    // Travel, follow and gaze (MotionActor+Interaction.swift).
+    public internal(set) var traveling = false
+    public internal(set) var following = false
+    var travelSeat: Seat?
+    /// Still dragging: keep following even when caught up.
+    var followHold = false
+    var followLook: String?
+    /// Follow offset in cells, y up.
+    var offX: Double = 0
+    var offY: Double = 0
+    var gazePose: String?
 
     public init(skin: SkinManifest, rng: MotionRNG, reduceMotion: Bool = false) {
         self.skin = skin
@@ -141,7 +155,10 @@ public final class MotionActor {
     /// Fires a particle effect. Unknown names are ignored; names starting with "@" are
     /// engine-internal events, never particles.
     public func emit(_ effect: String) {
-        if effect.hasPrefix("@") { return }
+        if effect.hasPrefix("@") {
+            if effect == MotionTravel.seatEffect, let travelSeat { applySeat(travelSeat) }
+            return
+        }
         guard !reduceMotion, let spec = skin.effects[effect] else { return }
         let turn = effectCycles[effect, default: 0]
         effectCycles[effect] = turn + 1
@@ -151,6 +168,7 @@ public final class MotionActor {
     // MARK: - Tick
 
     public func step() {
+        followStep()
         brainStep()
         clock += 1
         badgeAge += 1
@@ -195,7 +213,8 @@ public final class MotionActor {
             return d
         }
         return ActorSnapshot(
-            hidden: hidden, pose: f.pose, bodyX: f.dx + lag, bodyY: f.dy + lift, offsetX: 0, offsetY: 0,
+            hidden: hidden, pose: f.pose, bodyX: f.dx + lag, bodyY: f.dy + lift,
+            offsetX: jsRound(offX), offsetY: jsRound(offY),
             tint: tint, alpha: alpha, z: z, shadowWidth: Self.shadowWidth(air: f.dy + lift),
             accessory: markers ? accessoryDraw() : nil, badge: markers ? badgeDraw() : nil,
             particles: particleDraws, props: hidden ? [] : propDraws(dx: f.dx))
@@ -203,14 +222,15 @@ public final class MotionActor {
 
     /// The pose and key offset to show now.
     func frame() -> (pose: String, dx: Int, dy: Int) {
+        if following && !reduceMotion { return (followPose(), 0, 0) }
         if reduceMotion {
             if modeName == skin.interactions.held { return (skin.interactions.heldStill, 0, 0) }
             let st = skin.state(state)
             if asleep { return (st.sleep?.still ?? st.still, 0, 0) }
-            return (st.still, 0, st.stillDy ?? 0)
+            return (activeGaze ?? st.still, 0, st.stillDy ?? 0)
         }
         let key = currentKey
-        return (key?.pose ?? skin.interactions.lookCenter, key?.dx ?? 0, key?.dy ?? 0)
+        return (activeGaze ?? key?.pose ?? skin.interactions.lookCenter, key?.dx ?? 0, key?.dy ?? 0)
     }
 
     /// Shadow width in cells for a body `air` cells above the ground.
@@ -220,7 +240,7 @@ public final class MotionActor {
 
     /// Ticks until the snapshot can next change on its own (at least 1).
     public func ticksUntilChange() -> Int {
-        if !particles.isEmpty { return 1 }
+        if !particles.isEmpty || followMoving { return 1 }
         var n = Self.never
         if let key = currentKey { n = key.ticks - keyTicks } else if onceActive { n = 1 }
         n = Swift.min(n, markerTicksLeft(), brainTicksLeft())

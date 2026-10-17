@@ -93,7 +93,7 @@ extension MotionActor {
 
     // MARK: - Brain
 
-    var brainActive: Bool { brainEnabled && modeName == nil }
+    var brainActive: Bool { brainEnabled && modeName == nil && !traveling && !following }
 
     func brainStep() {
         guard brainActive else { return }
@@ -169,10 +169,10 @@ extension MotionActor {
 
     var accessorySpec: AccessorySpec? { accessoryName.flatMap { skin.accessories[$0] } }
 
-    /// Head marker and badge are hidden while merged, held, asleep, or when the key sinks or
-    /// rises too far.
+    /// Head marker and badge are hidden while merged, held, traveling, asleep, or when the key
+    /// sinks or rises too far.
     func markersAllowed(dy: Int) -> Bool {
-        !noAccessory && modeName != skin.interactions.held && !asleep && dy > -6 && dy < 7
+        !noAccessory && modeName != skin.interactions.held && !traveling && !asleep && dy > -6 && dy < 7
     }
 
     func accessoryDraw() -> GlyphDraw? {

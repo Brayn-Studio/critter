@@ -1,0 +1,414 @@
+import CoreGraphics
+import Foundation
+import Testing
+@testable import ClawdCore
+
+private func makeActor(seed: UInt64 = 7, reduceMotion: Bool = false) -> MotionActor {
+    MotionActor(skin: SkinLoader.builtin(), rng: MotionRNG(seed: seed), reduceMotion: reduceMotion)
+}
+
+@discardableResult
+private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
+    var n = 0
+    while a.isPlayingOnce && n < limit { a.step(); n += 1 }
+    return n
+}
+
+private func rows(_ k: MotionClip) -> [[String]] {
+    k.map { [$0.pose, "\($0.ticks)", "\($0.dx)", "\($0.dy)", $0.effect ?? ""] }
+}
+
+// MARK: - Travel
+
+@Test func travelKeysMatchPreview() {
+    let names = SkinLoader.builtin().interactions
+    let k = MotionTravel.keys(fromDx: 30, fromDy: 0, toDy: 0, delay: 2, hopLength: 14, names: names)
+    #expect(rows(k) == [
+        ["base", "2", "30", "0", ""], ["air", "1", "28", "2", ""], ["air", "1", "25", "3", ""], ["air", "1", "23", "2", ""], ["base", "1", "20", "0", ""],
+        ["air", "1", "17", "2", ""], ["air", "1", "15", "3", ""], ["air", "1", "12", "2", ""], ["base", "1", "10", "0", ""],
+        ["air", "1", "8", "2", ""], ["air", "1", "5", "3", ""], ["air", "1", "3", "2", ""], ["base", "1", "0", "0", ""],
+        ["base", "2", "0", "-2", "dust_small"], ["base", "1", "0", "0", ""], ["shut", "1", "0", "0", ""]])
+}
+
+@Test func seatKeysEndRaised() {
+    let names = SkinLoader.builtin().interactions
+    let k = MotionTravel.keys(fromDx: -20, fromDy: 0, toDy: 2, delay: 0, hopLength: 14, names: names)
+    #expect(rows(k) == [
+        ["air", "1", "-17", "2", ""], ["air", "1", "-15", "4", ""], ["air", "1", "-12", "3", ""], ["base", "1", "-10", "1", ""],
+        ["air", "1", "-7", "3", ""], ["air", "1", "-5", "5", ""], ["air", "1", "-2", "4", ""], ["base", "1", "0", "2", ""],
+        ["base", "1", "0", "1", "dust_small"], ["base", "1", "0", "2", "@seat"]])
+}
+
+@Test func travelCompletesAndClearsTraveling() {
+    let a = makeActor()
+    a.enterState(.waiting, quiet: true)
+    var ok: Bool?
+    a.travel(fromDx: 30, fromDy: 0, delay: 2) { ok = $0 }
+    #expect(a.traveling)
+    #expect(a.snapshot().bodyX == 30)
+    #expect(a.snapshot().accessory == nil)
+    #expect(a.snapshot().badge == nil)
+    #expect(stepUntilLoop(a) == 18)
+    #expect(ok == true)
+    #expect(!a.traveling)
+    #expect(a.currentClipName == "ask")
+    #expect(a.snapshot().accessory != nil)
+    #expect(a.snapshot().badge != nil)
+}
+
+@Test func travelInterruptedCompletesFalse() {
+    let a = makeActor()
+    var ok: Bool?
+    a.travel(fromDx: 30, fromDy: 0, delay: 0) { ok = $0 }
+    a.step()
+    a.play("blink")
+    #expect(ok == false)
+    #expect(!a.traveling)
+    // a new travel that replaces one in flight stays traveling
+    var first: Bool?, second: Bool?
+    a.travel(fromDx: 10, fromDy: 0, delay: 0) { first = $0 }
+    a.travel(fromDx: 20, fromDy: 0, delay: 0) { second = $0 }
+    #expect(first == false)
+    #expect(second == nil)
+    #expect(a.traveling)
+}
+
+@Test func noBrainWhileTravelingOrFollowing() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    let fidgetIn = a.fidgetIn
+    a.travel(fromDx: 30, fromDy: 0, delay: 0)
+    for _ in 0..<5 { a.step() }
+    #expect(a.traveling)
+    #expect(a.fidgetIn == fidgetIn)
+    #expect(a.idleTicks == 0)
+    stepUntilLoop(a)
+    a.startFollow(lookLeft: true)
+    for _ in 0..<300 { a.step() }
+    #expect(a.following)
+    #expect(a.fidgetIn == fidgetIn)
+    #expect(a.idleTicks == 0)
+    #expect(!a.isPlayingOnce)
+
+    let r = makeActor()
+    r.enterState(.running, quiet: true)
+    r.setActivity("think")
+    r.startFollow(lookLeft: false)
+    for _ in 0..<100 { r.step() }
+    #expect(r.variant == "laptop")
+}
+
+@Test func seatAppliesDimAlphaZAtLastKey() {
+    let a = makeActor()
+    a.enterState(.done, quiet: true)
+    a.fidgetIn = 10_000
+    var ok: Bool?
+    a.travel(fromDx: -20, fromDy: 0, delay: 0, seat: PileSeating.seat(row: 2)) { ok = $0 }
+    for _ in 0..<8 { a.step() }
+    #expect(a.tint == nil && a.alpha == 1 && a.z == 2)
+    a.step()                                   // the last key starts
+    #expect(a.tint == .dim)
+    #expect(a.alpha == 0.55)
+    #expect(a.z == 0)
+    #expect(a.traveling)
+    a.step()
+    #expect(ok == true)
+    #expect(!a.traveling)
+    for _ in 0..<50 { a.step() }
+    #expect(a.snapshot().bodyY == 2)
+    #expect(a.snapshot().pose == "base")
+    #expect(a.tint == .dim)
+}
+
+@Test func unseatRestoresStateLook() {
+    let a = makeActor()
+    a.enterState(.waiting, quiet: true)
+    a.noAccessory = true
+    a.travel(fromDx: -20, fromDy: 0, delay: 0, seat: PileSeating.seat(row: 1))
+    stepUntilLoop(a)
+    #expect(a.tint == .dim && a.alpha == 0.75 && a.z == 1)
+    #expect(a.snapshot().bodyY == 1)
+    a.unseat()
+    #expect(a.tint == nil)
+    #expect(a.alpha == 1)
+    #expect(a.z == 2)
+    #expect(!a.noAccessory)
+    #expect(a.currentClipName == "ask")
+    #expect(a.snapshot().bodyY == 0)
+
+    let idle = makeActor()
+    idle.enterState(.idle, quiet: true)
+    idle.travel(fromDx: 8, fromDy: 0, delay: 0, seat: PileSeating.seat(row: 2))
+    stepUntilLoop(idle)
+    idle.unseat()
+    #expect(idle.tint == .dim)                 // idle's own tint
+    #expect(idle.alpha == 1)
+}
+
+@Test func travelUnderReduceMotionCompletesImmediately() {
+    let a = makeActor(reduceMotion: true)
+    a.enterState(.waiting, quiet: true)
+    var ok: Bool?
+    a.travel(fromDx: 30, fromDy: 0, delay: 2, seat: PileSeating.seat(row: 1)) { ok = $0 }
+    #expect(ok == true)
+    #expect(!a.traveling)
+    #expect(!a.isPlayingOnce)
+    #expect(a.tint == .dim && a.alpha == 0.75 && a.z == 1)
+
+    var plain: Bool?
+    a.travel(fromDx: -12, fromDy: 0, delay: 0) { plain = $0 }
+    #expect(plain == true)
+    #expect(!a.traveling)
+}
+
+@Test func enablingReduceMotionFinishesTravel() {
+    let a = makeActor()
+    a.enterState(.done, quiet: true)
+    var ok: Bool?
+    a.travel(fromDx: -20, fromDy: 0, delay: 4, seat: PileSeating.seat(row: 2)) { ok = $0 }
+    a.emit("dust")
+    for _ in 0..<3 { a.step() }
+    #expect(a.traveling)
+    #expect(ok == nil)
+    a.reduceMotion = true
+    #expect(ok == true)
+    #expect(!a.traveling)
+    #expect(!a.isPlayingOnce)
+    #expect(a.tint == .dim && a.alpha == 0.55 && a.z == 0)
+    #expect(a.particles.isEmpty)
+
+    let b = makeActor()
+    var plain: Bool?
+    b.travel(fromDx: 30, fromDy: 0, delay: 0) { plain = $0 }
+    b.step()
+    b.reduceMotion = true
+    #expect(plain == true)
+    #expect(!b.traveling)
+    #expect(b.tint == .dim)                    // idle's own tint, untouched
+    #expect(b.alpha == 1)
+}
+
+// MARK: - Follow
+
+@Test func followWalksThenJogs() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.startFollow(lookLeft: false)
+    #expect(a.following)
+    a.followShift(dx: 10, dy: 0)
+    var s = a.snapshot()
+    #expect(s.offsetX == -10)
+    #expect(s.pose == "walk_r_b")              // trotting at clock 0
+    var xs: [Int] = [], poses: [String] = []
+    for _ in 0..<9 {
+        a.step()
+        s = a.snapshot()
+        xs.append(s.offsetX)
+        poses.append(s.pose)
+        #expect(s.bodyX == 0 && s.bodyY == 0 && s.offsetY == 0)
+    }
+    #expect(xs == [-8, -6, -5, -4, -3, -2, -1, 0, 0])
+    // trotting (|offset| > 6) swaps legs every tick, walking every 2 ticks
+    #expect(poses == ["walk_r_a", "walk_r_a", "walk_r_a", "walk_r_b", "walk_r_b", "walk_r_a", "walk_r_a", "look_r", "look_r"])
+    #expect(a.following)                       // still held: keeps following
+
+    let b = makeActor()
+    b.startFollow(lookLeft: true)
+    b.followShift(dx: -3, dy: 0)
+    #expect(b.snapshot().offsetX == 3)
+    #expect(b.snapshot().pose.hasPrefix("walk_l_"))
+}
+
+@Test func followCapsAt12And8() {
+    let a = makeActor()
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 30, dy: -20)
+    #expect(a.snapshot().offsetX == -12)
+    #expect(a.snapshot().offsetY == 8)
+    a.followShift(dx: -50, dy: 50)
+    #expect(a.snapshot().offsetX == 12)
+    #expect(a.snapshot().offsetY == -8)
+}
+
+@Test func verticalCatchUpHopsAndLandsWithDust() {
+    let a = makeActor()
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 0, dy: 3)                // the window went up 3 cells
+    #expect(a.snapshot().offsetY == -3)
+    #expect(a.snapshot().pose == "air")
+    a.step()
+    a.step()
+    #expect(a.snapshot().offsetY == -1)
+    #expect(a.snapshot().pose == "air")
+    #expect(a.particles.isEmpty)
+    a.step()
+    #expect(a.snapshot().offsetY == 0)
+    #expect(a.snapshot().pose == "look_l")
+    #expect(a.particles.count == 2)            // dust_small on landing
+}
+
+@Test func followEndsAfterReleaseAndBlinks() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 3, dy: 0)
+    for _ in 0..<5 { a.step() }
+    #expect(a.following)                       // caught up but still held
+    #expect(!a.isPlayingOnce)
+    a.releaseFollow()
+    a.step()
+    #expect(!a.following)
+    #expect(a.currentClipName == "blink")
+
+    let b = makeActor()
+    b.startFollow(lookLeft: true)
+    b.followShift(dx: 3, dy: 0)
+    b.releaseFollow()
+    b.step()
+    b.step()
+    #expect(b.following)
+    b.step()                                   // caught up on this tick
+    #expect(!b.following)
+    #expect(b.currentClipName == "blink")
+}
+
+@Test func reduceMotionFollowStaysPut() {
+    let a = makeActor()
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 10, dy: 4)
+    a.reduceMotion = true
+    #expect(a.snapshot().offsetX == 0 && a.snapshot().offsetY == 0)
+    a.followShift(dx: 10, dy: 4)
+    #expect(a.snapshot().offsetX == 0 && a.snapshot().offsetY == 0)
+    #expect(a.snapshot().pose == "base")       // idle's still, not a walk
+    a.releaseFollow()
+    a.step()
+    #expect(!a.following)
+    #expect(!a.isPlayingOnce)                  // no blink under reduced motion
+}
+
+@Test func followIgnoredWhileTraveling() {
+    let a = makeActor()
+    a.travel(fromDx: 30, fromDy: 0, delay: 0)
+    a.startFollow(lookLeft: true)
+    #expect(!a.following)
+    a.followShift(dx: 10, dy: 0)
+    #expect(a.snapshot().offsetX == 0)
+    #expect(a.traveling)
+
+    let h = makeActor()
+    h.hidden = true
+    h.startFollow(lookLeft: true)
+    #expect(!h.following)
+
+    let c = makeActor()
+    c.play("wink")
+    c.startFollow(lookLeft: true)              // a follower drops what it was doing
+    #expect(c.following)
+    #expect(!c.isPlayingOnce)
+}
+
+@Test func ticksUntilChangeWhileFollowing() {
+    let a = makeActor()
+    a.enterState(.error, quiet: true)          // slump: a 40-tick key, a still marker
+    a.startFollow(lookLeft: true)
+    #expect(a.ticksUntilChange() == 40)        // caught up and held: nothing moves
+    a.followShift(dx: 2, dy: 0)
+    #expect(a.ticksUntilChange() == 1)
+    a.step()
+    a.step()
+    #expect(a.snapshot().offsetX == 0)
+    #expect(a.ticksUntilChange() == 38)
+    a.releaseFollow()
+    #expect(a.ticksUntilChange() == 1)         // ends (and blinks) on the next tick
+}
+
+// MARK: - Gaze
+
+@Test func gazeZones() {
+    let c = CGPoint(x: 100, y: 100)
+    func zone(_ x: CGFloat, _ y: CGFloat) -> GazeZone? { MotionGaze.zone(pointer: CGPoint(x: x, y: y), center: c, unit: 3) }
+    #expect(zone(300, 100) == nil)             // 200 pt away
+    #expect(zone(100, 140) == .up)             // 40 above
+    #expect(zone(70, 100) == .left)            // 30 left
+    #expect(zone(130, 100) == .right)          // 30 right
+    #expect(zone(100, 80) == .down)            // 20 below
+    #expect(zone(105, 100) == .center)
+    #expect(zone(100, 95) == .center)          // only 5 below
+    #expect(zone(100, 120) == .center)         // 20 above is not above enough
+    #expect(zone(150, 140) == .right)          // above, but more sideways than up
+}
+
+@Test func gazeOnlyWhenCalm() {
+    let w = makeActor()
+    w.enterState(.waiting, quiet: true)
+    w.setGaze(.left)
+    #expect(w.snapshot().pose == "raise")
+
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.setGaze(.left)
+    #expect(a.snapshot().pose == "look_l")
+    a.setGaze(.up)
+    #expect(a.snapshot().pose == "look_up")
+    a.play("blink")
+    #expect(a.snapshot().pose == "shut")       // no gaze over a one-shot
+    a.cancelOnce()
+    a.setMode("pet")
+    #expect(a.snapshot().pose == "happy")      // nor over a mode
+    a.setMode(nil)
+    a.setGaze(nil)
+    #expect(a.snapshot().pose == "base")
+
+    let d = makeActor()
+    d.enterState(.done, quiet: true)
+    d.setGaze(.right)
+    #expect(d.snapshot().pose == "look_r")
+
+    let r = makeActor(reduceMotion: true)
+    r.enterState(.idle, quiet: true)
+    r.setGaze(.down)
+    #expect(r.snapshot().pose == "look_down")
+}
+
+// MARK: - Rubbing
+
+@Test func rubNeedsThreeReversalsInOneSecond() {
+    var r = RubDetector()
+    // x positions at 0.1 s steps: right, left (1), right (2), left (3)
+    let rubbing = [0.0, 5, 0, 5, 0].enumerated().map { i, x in r.move(x: x, at: 0.1 * Double(i)) }
+    #expect(rubbing == [false, false, false, false, true])
+
+    var slow = RubDetector()
+    let slowRubbing = [(0.0, 0.0), (5, 0.1), (0, 0.6), (5, 1.2), (0, 1.8)].map { x, t in slow.move(x: x, at: t) }
+    #expect(slowRubbing == [false, false, false, false, false])   // the first reversal is over a second old
+}
+
+@Test func rubIgnoresSmallMovesAndEndsAfter700ms() {
+    var r = RubDetector()
+    let jitter = (0...10).map { i in r.move(x: i % 2 == 0 ? 0 : 2, at: 0.05 * Double(i)) }
+    #expect(!jitter.contains(true))
+    #expect(!r.shouldEnd(at: 2))               // nothing counted yet
+
+    for (i, x) in [5.0, 0, 5, 0].enumerated() { _ = r.move(x: x, at: 1 + 0.1 * Double(i)) }
+    let smallMove = r.move(x: 1, at: 1.35)
+    #expect(smallMove)                         // still rubbing
+    #expect(!r.shouldEnd(at: 1.95))            // last counted move at 1.3
+    #expect(r.shouldEnd(at: 2.01))
+    r.reset()
+    #expect(!r.shouldEnd(at: 5))
+    let afterReset = r.move(x: 40, at: 5)
+    #expect(!afterReset)
+}
+
+// MARK: - Pile seating
+
+@Test func pileSeatsFarthestBackFirst() {
+    #expect(PileSeating.seats(departureOrder: ["d", "c", "b", "a"], lead: "b", total: 4) == ["b": 0, "d": 2, "c": 1, "a": 1])
+    #expect(PileSeating.seats(departureOrder: ["x", "y"], lead: "y", total: 2) == ["y": 0, "x": 1])
+    #expect(PileSeating.backRows(total: 1) == 0)
+    #expect(PileSeating.backRows(total: 2) == 1)
+    #expect(PileSeating.backRows(total: 7) == 2)
+    #expect(PileSeating.seat(row: 2) == Seat(row: 2, alpha: 0.55, z: 0))
+    #expect(PileSeating.seat(row: 1) == Seat(row: 1, alpha: 0.75, z: 1))
+}
