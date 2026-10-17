@@ -26,7 +26,8 @@ final class PetController {
     private let monitor: SessionMonitor
     private let settings: SettingsStore
     private let soundPlayer: SoundPlayer
-    private var skin: SkinManifest?
+    /// The skin being worn (nil until the first one has loaded).
+    private(set) var skin: SkinManifest?
     private var panel: PetPanel?
     private var flockView: FlockView?
     private var clickThrough: ClickThroughController?
@@ -102,6 +103,9 @@ final class PetController {
         clickThrough?.update()
     }
 
+    /// Whether `install(skin:)` has built the panel yet.
+    var isInstalled: Bool { panel != nil }
+
     /// Builds the panel once the skin has been loaded (off the main thread).
     func install(skin: SkinManifest) {
         self.skin = skin
@@ -168,7 +172,21 @@ final class PetController {
     /// Critter's size changed (the settings slider). Sprites are drawn for one scale, so the
     /// flock view is rebuilt at the new one; the window keeps its anchor.
     func scaleDidChange() {
-        guard let skin, let panel else { return }
+        guard let skin else { return }
+        rebuildFlockView(skin: skin)
+    }
+
+    /// The pet wears `skin` from now on ("形象" in settings, loaded off the main thread):
+    /// the flock view is rebuilt with it, keeping the sessions, the anchor and whether the
+    /// pet is shown. Before the panel exists it is only remembered.
+    func setSkin(_ skin: SkinManifest) {
+        self.skin = skin
+        rebuildFlockView(skin: skin)
+    }
+
+    /// Swaps in a new flock view for `skin` (at the current scale) in place of the old one.
+    private func rebuildFlockView(skin: SkinManifest) {
+        guard let panel else { return }
         // A hide still sinking ends now: the old view's clock stops below, so its animation
         // would never finish and the panel would stay up while the pet counts as hidden.
         if isVanishing { finishHiding() }

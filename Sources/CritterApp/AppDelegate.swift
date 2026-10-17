@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let loginItemQueue = DispatchQueue(label: "local.critter.pet.login-item", qos: .utility)
     private lazy var settingsWindow = SettingsWindowController(
         store: settings,
+        skinSearchDirs: skinSearchDirs,
         onPreviewSound: { [weak self] state in self?.previewSound(state) },
         onResetPosition: { [weak self] in self?.petController.resetPosition() }
     )
@@ -34,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private var visibilityMenuItem: NSMenuItem?
     private var heartbeatTimer: Timer?
     private var isTerminating = false
+    /// Counts `loadSkin` requests, so only the latest one's skin is put on.
+    private var skinRequest = 0
     /// Held for the app's whole lifetime: opts out of App Nap, which could otherwise hold a
     /// hidden pet's heartbeat timer back past the hook's stale threshold and get a healthy
     /// app restarted by `/pet` (also declared via `LSAppNapIsDisabled` in Info.plist).
@@ -103,33 +106,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         sessionMonitor.start()
         refreshHotKey()
         applyLaunchAtLogin()
-
-        // `SkinLoader.load` does blocking file I/O (`Data(contentsOf:)`), so it must not
-        // run on the main thread (Global Constraint: main thread is UI-only; file/process/
-        // AppleScript work goes on a background queue). `Bundle.main.resourceURL` is just
-        // path arithmetic (no I/O), but it can be nil outside a real .app bundle, so it's
-        // folded in only when present rather than force-unwrapped.
-        let searchDirs: [URL] = Bundle.main.resourceURL
-            .map { [paths.skinsDir, $0.appending(path: "Skins")] } ?? [paths.skinsDir]
-
-        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let skin = SkinLoader.load(name: "clawd", searchDirs: searchDirs)
-            DispatchQueue.main.async {
-                // Safe: `DispatchQueue.main` always runs on the main thread/actor, even
-                // though the closure's static type isn't actor-isolated (same reasoning
-                // as the heartbeat timer below).
-                MainActor.assumeIsolated {
-                    self?.finishLaunch(with: skin)
-                }
-            }
-        }
-    }
-
-    /// Builds the panel once the skin has finished loading off the main thread;
-    /// `PetController` then applies whatever visibility was requested in the meantime (the
-    /// default, or a `critter://hide`/`critter://toggle` that arrived before the panel existed).
-    private func finishLaunch(with skin: SkinManifest) {
-        petController.install(skin: skin)
+        loadSkin()
+        // Listed ahead of time, so the settings open with the skins already in place.
+        settingsWindow.reloadSkins()
     }
 
     /// Removes `~/.critter/app.json` (best effort), so a pid that outlives this process can't
@@ -152,7 +131,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func buildStatusItem() {
         let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
-        item.button?.image = Self.statusBarImage()
+        // The builtin until the chosen skin has loaded (`wear`).
+        item.button?.image = Self.statusBarImage(SkinLoader.builtin())
         item.button?.toolTip = "Critter"
 
         let menu = NSMenu()
@@ -176,16 +156,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         visibilityMenuItem = toggleItem
     }
 
-    /// A 16pt template image of Critter's base frame, for the status-bar item.
-    private static func statusBarImage() -> NSImage {
-        let skin = SkinLoader.builtin()
-        guard let grid = SkinRenderer.grid(pose: "base", in: skin),
+    /// A template image of the skin's standing pose fitted into 16×16 pt, for the
+    /// status-bar item.
+    private static func statusBarImage(_ skin: SkinManifest) -> NSImage {
+        guard let grid = SkinRenderer.portrait(of: skin),
               let cgImage = SkinRenderer.image(grid, palette: skin.palette, dim: false)
         else {
             return NSImage(size: NSSize(width: 16, height: 16))
         }
-        let aspect = Double(grid.height) / Double(grid.width)
-        let image = NSImage(cgImage: cgImage, size: NSSize(width: 16, height: 16 * aspect))
+        let scale = 16 / Double(max(grid.width, grid.height))
+        let image = NSImage(cgImage: cgImage, size: NSSize(width: Double(grid.width) * scale, height: Double(grid.height) * scale))
         image.isTemplate = true
         return image
     }
@@ -200,6 +180,58 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func quit() {
         NSApp.terminate(nil)
+    }
+
+    // MARK: - Skin
+
+    /// Where skins are looked for, first match wins: `~/.critter/skins`, then the ones
+    /// bundled with the app. `Bundle.main.resourceURL` is just path arithmetic (no I/O), but
+    /// it can be nil outside a real .app bundle, so it's folded in only when present rather
+    /// than force-unwrapped.
+    private var skinSearchDirs: [URL] {
+        Bundle.main.resourceURL.map { [paths.skinsDir, $0.appending(path: "Skins")] } ?? [paths.skinsDir]
+    }
+
+    /// Loads the chosen skin (`settings.skin`; the builtin if that one is missing or invalid)
+    /// and puts it on. `SkinLoader.load` does blocking file I/O (`Data(contentsOf:)`), so it
+    /// must not run on the main thread (Global Constraint: main thread is UI-only; file/
+    /// process/AppleScript work goes on a background queue). Only the latest request is put
+    /// on, so skins picked quickly in a row can't end on an earlier one that loaded last.
+    private func loadSkin() {
+        skinRequest += 1
+        let request = skinRequest
+        let name = settings.skin
+        let searchDirs = skinSearchDirs
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let found = SkinLoader.find(name: name, searchDirs: searchDirs)
+            let skin = found ?? SkinLoader.builtin()
+            // Asking for the builtin by name isn't falling back to it.
+            let fellBack = found == nil && name.caseInsensitiveCompare(skin.name) != .orderedSame
+            DispatchQueue.main.async {
+                // Safe: `DispatchQueue.main` always runs on the main thread/actor, even
+                // though the closure's static type isn't actor-isolated (same reasoning
+                // as the heartbeat timer below).
+                MainActor.assumeIsolated {
+                    guard let self, request == self.skinRequest else { return }
+                    self.wear(skin, named: name, fellBack: fellBack)
+                }
+            }
+        }
+    }
+
+    /// Puts on a freshly loaded skin, menu-bar icon included, unless it's the one already
+    /// worn. The first one builds the panel; `PetController` then applies whatever visibility
+    /// was requested in the meantime (the default, or a `critter://hide`/`critter://toggle`
+    /// that arrived before the panel existed). Later ones switch the pet over in place.
+    private func wear(_ skin: SkinManifest, named name: String, fellBack: Bool) {
+        DiagnosticLog.shared.log("event skin=\(name)" + (fellBack ? " fallback=\(skin.name)" : ""))
+        guard skin != petController.skin else { return }
+        statusItem.button?.image = Self.statusBarImage(skin)
+        if petController.isInstalled {
+            petController.setSkin(skin)
+        } else {
+            petController.install(skin: skin)
+        }
     }
 
     // MARK: - Settings
@@ -217,6 +249,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func settingsChanged(_ change: SettingsStore.Change) {
         switch change {
+        case .skin:
+            loadSkin()
         case .petScale:
             petController.scaleDidChange()
         case .mergeThreshold:

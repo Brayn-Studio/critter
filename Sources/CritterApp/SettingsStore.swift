@@ -10,14 +10,17 @@ import Observation
 @Observable
 final class SettingsStore {
     enum Change {
-        case petScale, sounds, mergeThreshold, hotKey, launchAtLogin
+        case skin, petScale, sounds, mergeThreshold, hotKey, launchAtLogin
     }
 
     static let scaleRange: ClosedRange<Double> = 0.5...2.0
     static let scaleStep = 0.25
     static let mergeThresholdRange: ClosedRange<Int> = 2...10
+    /// The builtin skin's name (`SkinLoader.builtinJSON`).
+    static let defaultSkin = "clawd"
 
     private enum Key {
+        static let skin = "skin"
         static let petScale = "petScale"
         static let soundEnabled = "soundEnabled"
         static let soundOnWaiting = "soundOnWaiting"
@@ -30,6 +33,11 @@ final class SettingsStore {
         static let launchAtLogin = "launchAtLogin"
     }
 
+    /// The skin the pet wears ("形象"): a skin directory name (`SkinChoice.name`), the
+    /// builtin "clawd" by default. One that can't be loaded shows the builtin.
+    var skin: String {
+        didSet { save(skin, Key.skin, changed: skin != oldValue, .skin) }
+    }
     /// Critter's size: 0.5…2.0 in steps of 0.25, 1.0 ("中") by default.
     var petScale: Double {
         didSet {
@@ -92,6 +100,7 @@ final class SettingsStore {
         func bool(_ key: String) -> Bool {
             defaults.object(forKey: key) == nil ? true : defaults.bool(forKey: key)
         }
+        skin = defaults.string(forKey: Key.skin).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultSkin
         petScale = Self.snapScale(defaults.object(forKey: Key.petScale) == nil ? 1.0 : defaults.double(forKey: Key.petScale))
         soundEnabled = bool(Key.soundEnabled)
         soundOnWaiting = bool(Key.soundOnWaiting)
@@ -121,6 +130,9 @@ final class SettingsStore {
     func applyDebugValue(_ value: String, forKey key: String) -> Bool {
         func flag() -> Bool? { ["1", "true", "yes"].contains(value) ? true : ["0", "false", "no"].contains(value) ? false : nil }
         switch key {
+        case Key.skin:
+            guard !value.isEmpty else { return false }
+            skin = value
         case Key.petScale:
             guard let scale = Double(value) else { return false }
             petScale = scale
