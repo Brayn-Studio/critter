@@ -66,4 +66,28 @@ public enum PileSeating {
     }
 
     public static func seat(row: Int) -> Seat { Seat(row: row, alpha: row == 2 ? 0.55 : 0.75, z: 2 - row) }
+
+    /// Who each back row of a still pile stands for (row → id, each id at most once), from the
+    /// Critters behind `lead` in `order`: whoever sat there when a collapse ended
+    /// (`occupants`) while still behind, else whoever a collapse in `order` would seat there
+    /// last, else anyone not shown yet (the last in `order` first) -- so no row is left without
+    /// someone of its own while there are enough Critters behind.
+    public static func shown(order: [String], lead: String, total: Int, occupants: [Int: String]) -> [Int: String] {
+        let rows = backRows(total: total)
+        guard rows > 0 else { return [:] }
+        let behind = order.filter { $0 != lead }
+        let seated = seats(departureOrder: behind, lead: lead, total: total)
+        var out: [Int: String] = [:]
+        func free(_ id: String) -> Bool { !out.values.contains(id) }
+        for row in 1...rows {
+            if let id = occupants[row], behind.contains(id), free(id) { out[row] = id }
+        }
+        for row in 1...rows where out[row] == nil {
+            if let id = behind.last(where: { seated[$0] == row && free($0) }) { out[row] = id }
+        }
+        for row in 1...rows where out[row] == nil {
+            if let id = behind.last(where: free) { out[row] = id }
+        }
+        return out
+    }
 }

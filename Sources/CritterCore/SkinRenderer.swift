@@ -68,26 +68,32 @@ public enum SkinRenderer {
         grid(pose: "base", in: skin) ?? grid(pose: skin.interactions.lookCenter, in: skin)
     }
 
-    public static func image(_ grid: PixelGrid, palette: [String: String], dim: Bool) -> CGImage? {
-        bitmap(rows: grid.rows) { ch in
+    /// `grid` in `palette`'s colors. With `dim` (the `dim` tint), each color is mixed
+    /// `0.5 × dimStrength` with mid grey and its alpha multiplied by `1 − 0.15 × dimStrength`:
+    /// strength 1 (the default) is the full tint, 0 the plain colors ("空闲淡化" in settings).
+    public static func image(_ grid: PixelGrid, palette: [String: String], dim: Bool, dimStrength: Double = 1) -> CGImage? {
+        let strength = dim ? min(max(dimStrength, 0), 1) : 0
+        return bitmap(rows: grid.rows) { ch in
             guard let hex = palette[String(ch)] else { return nil }
-            return color(hex: hex, dim: dim)
+            return color(hex: hex, dim: strength)
         }
     }
 
     /// A glyph in one color: `#` is drawn, everything else is transparent.
     public static func glyphImage(_ rows: [String], color hex: String) -> CGImage? {
         bitmap(rows: rows) { ch in
-            ch == "#" ? color(hex: hex, dim: false) : nil
+            ch == "#" ? color(hex: hex, dim: 0) : nil
         }
     }
 
-    private static func color(hex: String, dim: Bool) -> (UInt8, UInt8, UInt8, UInt8)? {
+    /// The color, dimmed by `dim` (0…1, see `image`).
+    private static func color(hex: String, dim: Double) -> (UInt8, UInt8, UInt8, UInt8)? {
         guard let (r, g, b) = rgb(fromHex: hex) else { return nil }
-        guard dim else { return (r, g, b, 255) }
+        guard dim > 0 else { return (r, g, b, 255) }
         let mid: Double = 127.5
-        func mix(_ c: UInt8) -> UInt8 { UInt8((Double(c) * 0.5 + mid * 0.5).rounded()) }
-        return (mix(r), mix(g), mix(b), UInt8((255 * 0.85).rounded()))
+        let grey = 0.5 * dim
+        func mix(_ c: UInt8) -> UInt8 { UInt8((Double(c) * (1 - grey) + mid * grey).rounded()) }
+        return (mix(r), mix(g), mix(b), UInt8((255 * (1 - 0.15 * dim)).rounded()))
     }
 
     private static func bitmap(rows: [String], pixel: (Character) -> (UInt8, UInt8, UInt8, UInt8)?) -> CGImage? {

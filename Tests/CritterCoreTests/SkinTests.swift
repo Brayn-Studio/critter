@@ -125,6 +125,16 @@ private func rgba(_ image: CGImage?) -> [UInt8] {
     #expect(rgba(SkinRenderer.image(g, palette: palette, dim: false)) == [217, 119, 87, 255])
 }
 
+@Test func dimStrengthScalesTheTint() {
+    // "空闲淡化": 1 is today's tint, 0 the plain color, 0.5 halfway (mixed 25%, alpha × 0.925).
+    let g = PixelGrid(minX: 0, minY: 0, width: 1, height: 1, rows: ["#"])
+    let palette = ["#": "#D97757"]
+    #expect(rgba(SkinRenderer.image(g, palette: palette, dim: true, dimStrength: 1)) == [172, 123, 107, 217])
+    #expect(rgba(SkinRenderer.image(g, palette: palette, dim: true, dimStrength: 0)) == [217, 119, 87, 255])
+    #expect(rgba(SkinRenderer.image(g, palette: palette, dim: true, dimStrength: 0.5)) == [195, 121, 97, 236])
+    #expect(rgba(SkinRenderer.image(g, palette: palette, dim: false, dimStrength: 0.5)) == [217, 119, 87, 255])
+}
+
 @Test func imageIsGridSized() {
     let g = SkinRenderer.grid(pose: "base", in: SkinLoader.builtin())!
     let img = SkinRenderer.image(g, palette: SkinLoader.builtin().palette, dim: false)

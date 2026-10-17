@@ -641,6 +641,31 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     #expect(PileSeating.seat(row: 1) == Seat(row: 1, alpha: 0.75, z: 1))
 }
 
+@Test func pileShowsWhoeverACollapseWouldSeatLast() {
+    // a → row 2, b, c → row 1 (c covers b).
+    #expect(PileSeating.shown(order: ["a", "b", "c"], lead: "l", total: 4, occupants: [:]) == [2: "a", 1: "c"])
+    #expect(PileSeating.shown(order: ["a"], lead: "l", total: 2, occupants: [:]) == [1: "a"])
+    #expect(PileSeating.shown(order: [], lead: "l", total: 1, occupants: [:]).isEmpty)
+}
+
+@Test func pileKeepsTheCollapsesOccupants() {
+    #expect(PileSeating.shown(order: ["a", "b", "c"], lead: "l", total: 4, occupants: [2: "c", 1: "a"]) == [2: "c", 1: "a"])
+    // An occupant that left (or became the lead) gives its row to someone else behind.
+    #expect(PileSeating.shown(order: ["a", "b", "c"], lead: "l", total: 4, occupants: [2: "x", 1: "a"]) == [2: "c", 1: "a"])
+}
+
+@Test func pileFillsEveryRowWhileSomeoneIsLeft() {
+    // Merged [A, B, C] seated row 2 = B, row 1 = C; then C became the lead: B keeps row 2, and
+    // row 1 (whose only seat candidate is B) goes to A rather than to the lead's look.
+    #expect(PileSeating.shown(order: ["A", "B"], lead: "C", total: 3, occupants: [2: "B", 1: "C"]) == [2: "B", 1: "A"])
+    // Back rows grew from 1 to 2: the old row-1 occupant stays, the new row gets the other.
+    #expect(PileSeating.shown(order: ["B", "C"], lead: "A", total: 3, occupants: [1: "B"]) == [1: "B", 2: "C"])
+    // Never the same Critter twice.
+    let shown = PileSeating.shown(order: ["a", "b"], lead: "l", total: 3, occupants: [1: "a", 2: "a"])
+    #expect(Set(shown.values).count == shown.count)
+    #expect(shown.count == 2)
+}
+
 // MARK: - Under ground
 
 @Test func heldUnderGroundNothingBringsItBackUp() {
