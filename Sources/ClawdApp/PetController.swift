@@ -97,6 +97,7 @@ final class PetController {
         guard isVanishing, !visible, let panel else { return }
         isVanishing = false
         panel.orderOut(nil)
+        DiagnosticLog.shared.log("event hidden")
         flockView?.setRunning(false)
         clickThrough?.update()
     }

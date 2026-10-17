@@ -28,6 +28,17 @@ struct FlockRequest {
 /// `stateDidChange` keeps a Clawd seated in the pile seated.
 @MainActor
 final class FlockChoreographer {
+    /// A Clawd waiting in the pile for its turn to hop out to its column (expand).
+    private struct Departure {
+        var id: String
+        var ticksLeft: Int
+        var row: Int
+        var from: CGPoint
+        var to: CGPoint
+        var group: JobGroup
+        var gen: Int
+    }
+
     /// Cells per hop when hopping somewhere else.
     private static let hopLength = 14
     /// Ticks between two Clawds setting off.
@@ -57,6 +68,8 @@ final class FlockChoreographer {
     /// A collapse whose Clawds are all seated, waiting for their landing dust to settle
     /// before the still pile replaces them.
     private var pendingCollapseEnd: (() -> Void)?
+    /// Clawds still in the pile during an expand, each waiting for its turn to hop out.
+    private var departures: [Departure] = []
     /// Clawds kept under ground after sinking (goodbye or hide) until shown again.
     private var sunk: Set<String> = []
     /// Sunk Clawds whose job ends once their last particles (the poof) have faded.
@@ -113,10 +126,13 @@ final class FlockChoreographer {
 
     // MARK: - Per tick
 
-    /// Called after every tick's step. A Clawd takes its pile row on the very tick its seat
-    /// is applied (covering whoever sat there), and a finished collapse switches to the
-    /// still pile once no seated Clawd has dust in the air.
+    /// Called after every tick's step. Clawds waiting in the pile set off when their turn
+    /// comes; a Clawd takes its pile row on the very tick its seat is applied (covering
+    /// whoever sat there), and a finished collapse switches to the still pile once no seated
+    /// Clawd has dust in the air.
     func didStep() {
+        for index in departures.indices { departures[index].ticksLeft -= 1 }
+        launchDue()
         for (id, row) in arriving {
             let seat = PileSeating.seat(row: row)
             guard let actor = view.actors[id] else {
@@ -137,6 +153,11 @@ final class FlockChoreographer {
         }
     }
 
+    /// Ticks until the next Clawd waiting in the pile sets off (so the clock wakes for it).
+    func ticksUntilCue() -> Int {
+        departures.map(\.ticksLeft).min().map { max(1, $0) } ?? TickGrid.maxSleepTicks
+    }
+
     /// The pet is being shown: a hide still sinking is called off, and sunk Clawds come back
     /// up to their state's loop. (After `playAppear` there is no hide left to call off.)
     func surface() {
@@ -145,6 +166,7 @@ final class FlockChoreographer {
             vanishGroup = nil
             for id in vanishing { view.actors[id]?.cancelOnce() }
             vanishing.removeAll()
+            settle()
         }
         for id in sunk where !leaving.contains(id) {
             guard let actor = view.actors[id] else { continue }
@@ -264,6 +286,7 @@ final class FlockChoreographer {
         seatRows.removeAll()
         seatOccupants.removeAll()
         arriving.removeAll()
+        departures.removeAll()
     }
 
     /// `id` has sunk into the ground (goodbye or hide): it stays there -- its loop would pop it
@@ -431,8 +454,11 @@ final class FlockChoreographer {
         group.seal()
     }
 
-    /// Pile → row. The window moves first; every Clawd hops from its pile seat (the lead
-    /// from the front, the others from row nb, nb − 1, … in departure order) to its column.
+    /// Pile → row. The window moves first; then every Clawd hops from its pile seat (the lead
+    /// from the front, the others from row nb, nb − 1, … in departure order) to its column,
+    /// nearest first, `stagger` ticks apart. Until its own turn each seated Clawd looks exactly
+    /// like the still back row it replaces (dimmed, no shadow, one per row: the next one in a
+    /// row shows when the one in front of it leaves).
     private func expand(_ item: FlockRequest, gen: Int, _ done: @escaping () -> Void) {
         guard case .merged(let oldLead, _, _) = view.presentation,
               let oldFront = view.layoutResult.slots.first?.clawd.origin
@@ -452,17 +478,59 @@ final class FlockChoreographer {
             self?.view.releaseChrome(fade: true)
             done()
         }
+        var shownRows: Set<Int> = []
         for (k, slot) in order.enumerated() {
             guard let actor = view.actors[slot.id] else { continue }
-            let row = rows[slot.id] ?? 1
+            let row = slot.id == oldLead.id ? 0 : rows[slot.id] ?? 1
+            let spot = CGPoint(x: pile.x + CGFloat(4 * row) * u, y: pile.y)
+            view.setGroundOrigin(slot.id, spot)
+            if row == 0 {
+                actor.z = 3
+                actor.hidden = view.restHidden(slot.id)
+            } else {
+                actor.cancelOnce()
+                seat(actor, row: row)
+                seatRows[slot.id] = row
+                view.setSeatRow(slot.id, row)
+                actor.noAccessory = true
+                actor.hidden = shownRows.contains(row) || view.restHidden(slot.id)
+                shownRows.insert(row)
+            }
+            group.enter()
+            departures.append(Departure(
+                id: slot.id, ticksLeft: view.reduceMotion ? 0 : Self.stagger * k, row: row,
+                from: spot, to: slot.clawd.origin, group: group, gen: gen
+            ))
+        }
+        launchDue()
+        group.seal()
+    }
+
+    /// Starts every departure whose wait is over, in departure order.
+    private func launchDue() {
+        while let index = departures.firstIndex(where: { $0.ticksLeft <= 0 }) {
+            takeOff(departures.remove(at: index))
+        }
+    }
+
+    /// `departure`'s Clawd leaves its seat: back to its own look and loop, and hop.
+    private func takeOff(_ departure: Departure) {
+        let id = departure.id
+        guard departure.gen == generation, let actor = view.actors[id] else { return departure.group.leave() }
+        if seatRows.removeValue(forKey: id) != nil {
             actor.unseat()
             actor.brainEnabled = true
-            actor.hidden = view.restHidden(slot.id)
-            if slot.id == oldLead.id { actor.z = 3 }
-            hop(slot.id, from: CGPoint(x: pile.x + CGFloat(4 * row) * u, y: pile.y), to: slot.clawd.origin,
-                raise: row, delay: Self.stagger * k, reveal: true, group: group)
+            view.setSeatRow(id, nil)
         }
-        group.seal()
+        actor.noAccessory = false
+        actor.hidden = view.restHidden(id)
+        // The next Clawd waiting in this back row now shows in its place.
+        if departure.row > 0, let next = departures.first(where: { $0.row == departure.row }) {
+            view.actors[next.id]?.hidden = view.restHidden(next.id)
+        }
+        hop(id, from: departure.from, to: departure.to, raise: departure.row, delay: 0, reveal: true,
+            group: departure.group)
+        departure.group.leave()
     }
 
     /// Row → pile. The window stays until everyone is seated: nearest first, the lead hops to
@@ -606,6 +674,7 @@ final class FlockChoreographer {
             }
         }
         vanishGroup = group
+        holdForHide()
         let ids = view.restVisibleIds().filter { view.actors[$0]?.hidden == false }
         for (index, id) in ids.enumerated() {
             group.enter()
@@ -619,6 +688,15 @@ final class FlockChoreographer {
             }
         }
         group.seal()
+    }
+
+    /// Keeps the queue busy while the hide plays, so no expand, join, leave… runs on top of
+    /// sinking Clawds; requests wait as `latest`, and whatever ends the hide (the panel going
+    /// away, a show) settles to it.
+    private func holdForHide() {
+        guard let latest, queue.submit(latest) != nil else { return }
+        runningKind = "hide"
+        DiagnosticLog.shared.log("choreo hide start")
     }
 
     private func sinkOut(_ id: String, generation: Int) {

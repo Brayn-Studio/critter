@@ -116,7 +116,7 @@ final class FlockView: NSView {
         addSubview(chipsView)
 
         clock.onTick = { [weak self] ticks in
-            self?.tick(ticks) ?? MotionClock.maxSleepTicks
+            self?.tick(ticks) ?? TickGrid.maxSleepTicks
         }
     }
 
@@ -168,7 +168,7 @@ final class FlockView: NSView {
     /// settles any choreography at once: nobody is watching it.
     func setRunning(_ running: Bool) {
         if running {
-            choreographer.surface()
+            batch { choreographer.surface() }
             clock.start()
         } else {
             clock.stop()
@@ -256,7 +256,10 @@ final class FlockView: NSView {
         return created
     }
 
+    /// Drops `id`'s Clawd. A one-shot still playing is cancelled first, so whoever waits on
+    /// its completion (a hop, a goodbye, a hide) hears back instead of waiting forever.
     func removeActor(_ id: String) {
+        actors[id]?.cancelOnce()
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         defer { CATransaction.commit() }
@@ -417,8 +420,11 @@ final class FlockView: NSView {
     // MARK: Sequencing
 
     /// Runs `body`, then any work it deferred: completions fired while actors step or take
-    /// new states must not rearrange the stage under them.
+    /// new states must not rearrange the stage under them. From outside a tick, the clock
+    /// first catches up, so whatever `body` starts begins now instead of being stepped
+    /// through the ticks the clock slept.
     func batch(_ body: () -> Void) {
+        if deferDepth == 0 && !inTick { clock.catchUp() }
         deferDepth += 1
         body()
         if deferDepth == 1 {
@@ -459,11 +465,11 @@ final class FlockView: NSView {
 
         render()
 
-        var next = MotionClock.maxSleepTicks
+        var next = TickGrid.maxSleepTicks
         for actor in actors.values where !actor.hidden || actor.isPlayingOnce {
             next = min(next, actor.ticksUntilChange())
         }
-        return min(next, pileTicksUntilChange())
+        return min(next, pileTicksUntilChange(), choreographer.ticksUntilCue())
     }
 
     /// Keeps the sprite layers in `zPosition` order (stable): Core Animation sorts siblings by
@@ -546,12 +552,12 @@ final class FlockView: NSView {
     }
 
     private func pileTicksUntilChange() -> Int {
-        guard let pile, pile.rows > 0, !pile.lead.hidden else { return MotionClock.maxSleepTicks }
+        guard let pile, pile.rows > 0, !pile.lead.hidden else { return TickGrid.maxSleepTicks }
         let clock = pile.lead.clock
         let changes = (1...Self.pileBlinkPeriod).first { ahead in
             (1...pile.rows).contains { pileBlinks(row: $0, clock: clock + ahead) != pileBlinks(row: $0, clock: clock) }
         }
-        return changes ?? MotionClock.maxSleepTicks
+        return changes ?? TickGrid.maxSleepTicks
     }
 
     // MARK: - Mouse
