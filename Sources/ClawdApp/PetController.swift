@@ -66,7 +66,7 @@ final class PetController {
     func setVisible(_ visible: Bool, animated: Bool = true) {
         self.visible = visible
         if let panel, let flockView {
-            let animate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            let animate = animated && !Self.reduceMotion
             if visible {
                 let appearing = !panel.isVisible || isVanishing
                 isVanishing = false
@@ -122,7 +122,7 @@ final class PetController {
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated {
-                self?.flockView?.setReduceMotion(NSWorkspace.shared.accessibilityDisplayShouldReduceMotion)
+                self?.reduceMotionDidChange()
             }
         })
         // Displays added/removed/rearranged or resolution changed: pull the pet back on screen.
@@ -148,6 +148,22 @@ final class PetController {
     }
 
     // MARK: - Settings
+
+    /// "Reduce motion" (System Settings › Accessibility › Display) -- or, in debug mode only,
+    /// the `debugReduceMotion` default, so the reduced path can be checked without changing
+    /// the system setting (`clawd://debug-set?debugReduceMotion=1`).
+    private static var reduceMotion: Bool {
+        let defaults = UserDefaults.standard
+        return NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            || (defaults.bool(forKey: "debugEnabled") && defaults.bool(forKey: "debugReduceMotion"))
+    }
+
+    /// The reduce-motion setting (or its debug override) changed: every Clawd follows.
+    func reduceMotionDidChange() {
+        let reduce = Self.reduceMotion
+        DiagnosticLog.shared.log("event reduce-motion \(reduce ? "on" : "off")")
+        flockView?.setReduceMotion(reduce)
+    }
 
     /// Clawd's size changed (the settings slider). Sprites are drawn for one scale, so the
     /// flock view is rebuilt at the new one; the window keeps its anchor.
@@ -203,7 +219,7 @@ final class PetController {
         let view = FlockView(
             skin: skin,
             metrics: metrics,
-            reduceMotion: NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+            reduceMotion: Self.reduceMotion
         )
         wire(view)
         return view

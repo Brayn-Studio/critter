@@ -338,6 +338,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // store the settings window binds to (debug only; see `applyDebugValue`).
             guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
             for item in URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? [] {
+                if item.name == "debugReduceMotion" {
+                    // Not a setting: stands in for the system's "Reduce motion" (debug only).
+                    UserDefaults.standard.set(["1", "true", "yes"].contains(item.value ?? ""), forKey: item.name)
+                    DiagnosticLog.shared.log("debug-set \(item.name)=\(item.value ?? "") ok=true")
+                    petController.reduceMotionDidChange()
+                    continue
+                }
                 let ok = settings.applyDebugValue(item.value ?? "", forKey: item.name)
                 DiagnosticLog.shared.log("debug-set \(item.name)=\(item.value ?? "") ok=\(ok)")
             }

@@ -357,7 +357,10 @@ extension FlockView {
         let origins = actors.keys.sorted().compactMap { id -> String? in
             guard let origin = groundOrigin(id), let window else { return nil }
             let screen = window.convertPoint(toScreen: convert(origin, to: nil))
-            return "\(id)@\(Int(screen.x)),\(Int(screen.y))"
+            guard let actor = actors[id] else { return nil }
+            let s = actor.snapshot()
+            let look = "\(s.hidden ? "hidden" : "shown") a=\(s.alpha) z=\(s.z) \(s.pose) \(actor.state.rawValue)\(actor.asleep ? "/asleep" : "")"
+            return "\(id.prefix(8))@\(Int(screen.x)),\(Int(screen.y))(\(look))"
         }.joined(separator: " ")
         return "hover=\(pointer.hoverId ?? "-") pet=\(pointer.pettingId ?? "-") gaze=[\(gaze)] origins=[\(origins)] unit=\(unit)"
     }
