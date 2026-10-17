@@ -150,17 +150,17 @@ final class FlockView: NSView {
     // MARK: - Presenting
 
     /// Shows `presentation`: every Clawd takes its new state and every bubble/tag its new
-    /// text right away; the structural change (and the window move, `place`) is handed to
-    /// the choreographer, which runs one choreography at a time and keeps only the latest
-    /// request while one plays.
+    /// text right away; the structural change (and the window move, `place`, to `frame`) is
+    /// handed to the choreographer, which runs one choreography at a time and keeps only the
+    /// latest request while one plays.
     func present(_ presentation: FlockPresentation, layout: FlockLayout.Result, sessions: [PetSession],
-                 anchorSide: Anchor.Side, place: @escaping () -> Void) {
+                 frame: @escaping () -> CGRect, place: @escaping () -> Void) {
         sessionsById = Dictionary(sessions.map { ($0.id, $0) }) { first, _ in first }
         batch {
             applyStates()
             refreshTexts()
             choreographer.submit(FlockRequest(
-                presentation: presentation, layout: layout, sessions: sessions, anchorSide: anchorSide, place: place
+                presentation: presentation, layout: layout, sessions: sessions, frame: frame, place: place
             ))
         }
         requestRender()

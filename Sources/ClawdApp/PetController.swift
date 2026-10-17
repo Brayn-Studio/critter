@@ -317,37 +317,45 @@ final class PetController {
         flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).content.width <= maxWidth
         // States show at once; the window follows when the flock view's choreography is
         // ready for the new layout (`place`).
-        let side = (anchor ?? PositionModel.defaultAnchor(visible: visibleFrame)).side
-        flockView.present(presentation, layout: layout, sessions: sessions, anchorSide: side) { [weak self] in
-            self?.place(presentation, layout: layout)
-        }
+        flockView.present(
+            presentation, layout: layout, sessions: sessions,
+            frame: { [weak self] in self?.placement(for: layout).frame ?? .zero },
+            place: { [weak self] in self?.place(presentation, layout: layout) }
+        )
     }
 
-    /// Moves and resizes the panel for `layout` (anchored, kept on screen), updates where it
-    /// takes clicks, and logs the change.
+    /// Moves and resizes the panel for `layout` (see `placement`), updates where it takes
+    /// clicks, and logs the change.
     private func place(_ presentation: FlockPresentation, layout: FlockLayout.Result) {
         guard let panel else { return }
-        let previousLayout = currentLayout
-        currentLayout = layout
-        let visibleFrame = anchorVisibleFrame()
-        // The flock (not the transparent margin) is what gets anchored and clamped on screen.
-        let contentFrame = placementFrame(size: layout.content.size, visible: visibleFrame)
-        var placement = (frame: layout.windowFrame(contentFrame: contentFrame), visible: visibleFrame)
+        let placement = placement(for: layout)
         if isDragging {
-            // Mid-drag the window follows the mouse; a resized flock keeps its anchored side
-            // and bottom edge where they are (where a collapse seated the pile), and the drag
-            // carries on from there.
-            let old = previousLayout?.contentFrame(windowFrame: panel.frame) ?? layout.contentFrame(windowFrame: panel.frame)
-            let side = (anchor ?? PositionModel.defaultAnchor(visible: visibleFrame)).side
-            let x = side == .left ? old.minX : old.maxX - layout.content.width
-            placement.frame = layout.windowFrame(contentFrame: CGRect(origin: CGPoint(x: x, y: old.minY), size: layout.content.size))
+            // The drag carries on from where the window is put.
             flockView?.windowShiftedDuringDrag(by: CGVector(
                 dx: placement.frame.minX - panel.frame.minX, dy: placement.frame.minY - panel.frame.minY
             ))
         }
+        currentLayout = layout
         panel.setFrame(placement.frame, display: true)
         clickThrough?.setHitRects(layout.hitRects)
         logIfChanged(presentation, placement: placement)
+    }
+
+    /// The panel frame for `layout` now (and the visible area it is kept in): the flock (not
+    /// the transparent margin) anchored and clamped on screen. Mid-drag the window follows the
+    /// mouse instead: a resized flock keeps its anchored side and bottom edge where they are
+    /// (where a collapse seated the pile).
+    private func placement(for layout: FlockLayout.Result) -> (frame: NSRect, visible: NSRect) {
+        let visibleFrame = anchorVisibleFrame()
+        guard isDragging, let panel else {
+            let contentFrame = placementFrame(size: layout.content.size, visible: visibleFrame)
+            return (layout.windowFrame(contentFrame: contentFrame), visibleFrame)
+        }
+        let old = (currentLayout ?? layout).contentFrame(windowFrame: panel.frame)
+        let side = (anchor ?? PositionModel.defaultAnchor(visible: visibleFrame)).side
+        let x = side == .left ? old.minX : old.maxX - layout.content.width
+        let frame = layout.windowFrame(contentFrame: CGRect(origin: CGPoint(x: x, y: old.minY), size: layout.content.size))
+        return (frame, visibleFrame)
     }
 
     /// The visible area of the saved anchor's screen -- or of the main screen if that

@@ -7,7 +7,9 @@ struct FlockRequest {
     var presentation: FlockPresentation
     var layout: FlockLayout.Result
     var sessions: [PetSession]
-    var anchorSide: Anchor.Side
+    /// The window frame `place` would set if called now (screen coordinates): anchored and
+    /// kept on screen, so a collapse can seat the pile exactly where it will stand.
+    var frame: () -> CGRect
     var place: () -> Void
 
     /// The Clawds this presentation needs: every session, or the empty state's placeholder.
@@ -569,12 +571,12 @@ final class FlockChoreographer {
         guard case .merged(let lead, _, let total) = item.presentation,
               let mergedFront = item.layout.slots.first?.clawd.origin
         else { return snap(item, done) }
-        // Where the pile will stand, in today's window: aligned on the anchored side.
+        // Where the pile will stand, in today's window: its spot in the window `place` will
+        // set (anchored, and kept on screen like it), so the still pile takes over in place.
         let old = view.layoutResult
-        let alignX = item.anchorSide == .right
-            ? old.content.maxX - item.layout.content.maxX
-            : old.content.minX - item.layout.content.minX
-        let pile = CGPoint(x: mergedFront.x + alignX, y: mergedFront.y + old.content.minY - item.layout.content.minY)
+        let now = view.window?.frame.origin ?? .zero
+        let then = item.frame().origin
+        let pile = CGPoint(x: mergedFront.x + then.x - now.x, y: mergedFront.y + then.y - now.y)
         let u = view.unit
 
         let keep = Set(item.ids)
