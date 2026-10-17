@@ -176,12 +176,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// A 16pt template image of Clawd's base frame, for the status-bar item.
     private static func statusBarImage() -> NSImage {
         let skin = SkinLoader.builtin()
-        guard let frame = skin.frames["base"],
-              let cgImage = SkinRenderer.image(frame: frame, palette: skin.palette, dim: false)
+        guard let grid = SkinRenderer.grid(pose: "base", in: skin),
+              let cgImage = SkinRenderer.image(grid, palette: skin.palette, dim: false)
         else {
             return NSImage(size: NSSize(width: 16, height: 16))
         }
-        let aspect = Double(ClawdLayer.pixelRows * 2) / Double(ClawdLayer.pixelColumns)
+        let aspect = Double(grid.height) / Double(grid.width)
         let image = NSImage(cgImage: cgImage, size: NSSize(width: 16, height: 16 * aspect))
         image.isTemplate = true
         return image
