@@ -35,4 +35,11 @@ final class PetPanel: NSPanel {
 
     /// Never becomes main, for the same reason.
     override var canBecomeMain: Bool { false }
+
+    /// Stays exactly where `PetController` puts it: only the flock is kept on screen, and the
+    /// transparent margin around it may hang off the edge (design §5.2) -- AppKit pulling the
+    /// window's top back on screen would move the flock.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        frameRect
+    }
 }
