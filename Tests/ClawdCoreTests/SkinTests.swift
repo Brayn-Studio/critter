@@ -146,6 +146,50 @@ private func mutated(_ change: (inout SkinManifest) -> Void) -> [String] {
 @Test func validatorCatchesUnknownInteractionClip() { #expect(!mutated { $0.interactions.notice = "nope" }.isEmpty) }
 @Test func validatorCatchesUnknownGlyphInEffect() { #expect(!mutated { $0.effects["dust"]!.particles![0].glyph = "nope" }.isEmpty) }
 
+@Test func validatorPinsTheGridTo18By10() {
+    // The renderer, layout, hover and gaze all draw an 18×10 box with the ground on row 10.
+    #expect(mutated { $0.grid = [20, 10] }.contains { $0.contains("grid") })
+    #expect(mutated { $0.grid = [18, 12] }.contains { $0.contains("grid") })
+    #expect(mutated { $0.grid = [18] }.contains { $0.contains("grid") })
+}
+
+@Test func validatorBoundsEveryNumber() {
+    // Each would trap (an Int conversion or overflow) or hog the CPU at runtime; out of range,
+    // the skin is rejected instead, so the builtin is used.
+    let cases: [(field: String, change: (inout SkinManifest) -> Void)] = [
+        ("tickMs", { $0.tickMs = 1 }),
+        ("tickMs", { $0.tickMs = 100_000 }),
+        ("part body at", { $0.parts["body"]!.at = [Int.max, 0] }),
+        ("part body", { $0.parts["body"]!.rows = [String(repeating: "#", count: 65)] }),
+        ("glyph dot", { $0.glyphs["dot"] = Array(repeating: "#", count: 65) }),
+        ("clip idle key ticks", { $0.clips["idle"] = [ClipKey(pose: "base", ticks: Int.max)] }),
+        ("clip idle key dy", { $0.clips["idle"] = [ClipKey(pose: "base", ticks: 1, dx: 0, dy: Int.min)] }),
+        ("clip idle key dx", { $0.clips["idle"] = [ClipKey(pose: "base", ticks: 1, dx: 1_000, dy: 0)] }),
+        ("particle life", { $0.effects["dust"]!.particles![0].life = Span(1, 1e12) }),
+        ("particle count", { $0.effects["dust"]!.particles![0].count = 1_000_000 }),
+        ("particle x", { $0.effects["dust"]!.particles![0].x = Span(-1e300, 0) }),
+        ("particle vy", { $0.effects["dust"]!.particles![0].vy = Span(1e300) }),
+        ("particle ay", { $0.effects["dust"]!.particles![0].ay = .nan }),
+        ("particle sway", { $0.effects["dust"]!.particles![0].sway = 1e9 }),
+        ("accessory spinner box", { $0.accessories["spinner"]!.box = Int.max }),
+        ("accessory spinner periodMs", { $0.accessories["spinner"]!.periodMs = 0 }),
+        ("accessory q bobEvery", { $0.accessories["q"]!.bobEvery = Int.max }),
+        ("accessory check twinkleEvery", { $0.accessories["check"]!.twinkleEvery = -1 }),
+        ("fidget.every", { $0.states["idle"]!.fidget!.every = [1, Int.max] }),
+        ("fidget weight", { $0.states["idle"]!.fidget!.pick[0].weight = Int.max }),
+        ("sleep.after", { $0.states["idle"]!.sleep!.after = Int.max }),
+        ("impatient.after", { $0.states["waiting"]!.impatient!.after = Int.min }),
+        ("badge x", { $0.states["waiting"]!.badge!.x = Int.max }),
+        ("badge hopEvery", { $0.states["waiting"]!.badge!.hopEvery = Int.max }),
+        ("badge impatientHopEvery", { $0.states["waiting"]!.badge!.impatientHopEvery = 0 }),
+        ("stillDy", { $0.states["error"]!.stillDy = Int.min }),
+    ]
+    for c in cases {
+        let problems = mutated(c.change)
+        #expect(problems.contains { $0.contains(c.field) }, "\(c.field): \(problems)")
+    }
+}
+
 // MARK: - Loader
 
 @Test func loaderFallsBackOnInvalidSkin() throws {

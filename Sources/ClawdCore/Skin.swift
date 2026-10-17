@@ -266,14 +266,31 @@ public struct PropSpec: Codable, Sendable, Equatable {
 /// partial custom skin can be safely rejected (falling back to the builtin) instead of
 /// crashing or rendering garbage. Effect names starting with "@" are reserved for effects
 /// the engine generates at runtime, so a manifest may neither define nor reference them.
+///
+/// Every number is bounded too, so no skin can trap (an Int conversion or overflow) or hog
+/// the CPU at runtime: `tickMs` 16…1000, offsets within ±64 cells, pixel art at most 64×64,
+/// durations and periods 1…100000 (ticks, or ms for a spinner), badge hops 1…1000 ticks,
+/// fidget weights 1…1000, at most 64 particles per spec living 1…300 ticks, and particle
+/// positions, speeds, acceleration and sway within ±1000.
 public enum SkinValidator {
     public static func problems(_ m: SkinManifest) -> [String] {
         var out: [String] = []
         func bad(_ s: String) { out.append(s) }
+        func number<T: Comparable>(_ v: T, _ range: ClosedRange<T>, _ what: String) {
+            if !range.contains(v) { bad("\(what) must be within \(range.lowerBound)…\(range.upperBound)") }
+        }
+        func span(_ s: Span?, _ range: ClosedRange<Double>, _ what: String) {
+            guard let s else { return }
+            if !range.contains(s.min) || !range.contains(s.max) {
+                bad("\(what) must be within \(range.lowerBound)…\(range.upperBound)")
+            }
+        }
+        let cells = -64...64, ticks = 1...100_000, motion = -1000.0...1000.0
 
         if m.schema != 2 { bad("unsupported schema \(m.schema) (need 2)") }
-        if m.tickMs <= 0 { bad("tickMs must be positive") }
-        if m.grid.count != 2 || m.grid.contains(where: { $0 <= 0 }) { bad("grid must be [width, height], both positive") }
+        number(m.tickMs, 16...1000, "tickMs")
+        // The renderer, layout, hover and gaze all draw an 18×10 box with the ground on row 10.
+        if m.grid != [18, 10] { bad("grid must be [18, 10]") }
 
         let paletteChars = Set(m.palette.keys.compactMap { $0.count == 1 ? $0.first : nil })
         if paletteChars.contains(".") { bad("palette must not define '.' (transparent)") }
@@ -283,6 +300,7 @@ public enum SkinValidator {
             if rows.isEmpty { bad("\(what) has no rows"); return }
             let width = rows[0].count
             if width == 0 || rows.contains(where: { $0.count != width }) { bad("\(what) has ragged rows") }
+            if rows.count > 64 || width > 64 { bad("\(what) is larger than 64×64") }
             for ch in Set(rows.joined()) where ch != "." && !allowed(ch) {
                 bad("\(what) uses character '\(ch)' not allowed")
             }
@@ -290,6 +308,7 @@ public enum SkinValidator {
 
         for (name, part) in m.parts {
             if part.at.count != 2 { bad("part \(name) needs at: [x, y]") }
+            for v in part.at { number(v, cells, "part \(name) at") }
             checkRows(part.rows, "part \(name)") { paletteChars.contains($0) }
         }
         for (name, glyph) in m.glyphs { checkRows(glyph, "glyph \(name)") { $0 == "#" } }
@@ -309,7 +328,9 @@ public enum SkinValidator {
             if keys.isEmpty { bad("clip \(name) has no keys") }
             for key in keys {
                 pose(key.pose, "clip \(name)")
-                if key.ticks <= 0 { bad("clip \(name) has a key with non-positive ticks") }
+                number(key.ticks, ticks, "clip \(name) key ticks")
+                number(key.dx, cells, "clip \(name) key dx")
+                number(key.dy, cells, "clip \(name) key dy")
                 if let e = key.effect { effect(e, "clip \(name)") }
             }
         }
@@ -325,7 +346,14 @@ public enum SkinValidator {
                 if let c = p.color { color(c, "effect \(name)") }
                 for c in p.colors ?? [] { color(c, "effect \(name)") }
                 if p.color == nil && (p.colors ?? []).isEmpty { bad("effect \(name) has a particle without a color") }
-                if p.life.min < 1 { bad("effect \(name) has a particle with life < 1") }
+                if let n = p.count { number(n, 1...64, "effect \(name) particle count") }
+                span(p.life, 1...300, "effect \(name) particle life")
+                span(p.x, motion, "effect \(name) particle x")
+                span(p.y, motion, "effect \(name) particle y")
+                span(p.vx, motion, "effect \(name) particle vx")
+                span(p.vy, motion, "effect \(name) particle vy")
+                if let v = p.ay { number(v, motion, "effect \(name) particle ay") }
+                if let v = p.sway { number(v, motion, "effect \(name) particle sway") }
             }
         }
 
@@ -336,6 +364,10 @@ public enum SkinValidator {
             for g in a.frames ?? [] { glyph(g, "accessory \(name)") }
             if let g = a.reduced { glyph(g, "accessory \(name)") }
             if let e = a.twinkle { effect(e, "accessory \(name)") }
+            if let v = a.periodMs { number(v, 1...100_000, "accessory \(name) periodMs") }
+            if let v = a.box { number(v, 1...64, "accessory \(name) box") }
+            if let v = a.bobEvery { number(v, ticks, "accessory \(name) bobEvery") }
+            if let v = a.twinkleEvery { number(v, ticks, "accessory \(name) twinkleEvery") }
         }
 
         for state in PetState.allCases where m.states[state.rawValue] == nil {
@@ -350,21 +382,31 @@ public enum SkinValidator {
             if s.loop == nil && (s.variants ?? [:]).isEmpty { bad("\(ctx) has neither loop nor variants") }
             pose(s.still, ctx)
             if let a = s.accessory, m.accessories[a] == nil { bad("\(ctx) references unknown accessory \(a)") }
+            if let d = s.stillDy { number(d, cells, "\(ctx) stillDy") }
             if let f = s.fidget {
-                if f.every.count != 2 || f.every[0] <= 0 || f.every[1] < f.every[0] { bad("\(ctx) fidget.every must be [min, max]") }
+                if f.every.count != 2 || !f.every.allSatisfy(ticks.contains) || f.every[1] < f.every[0] {
+                    bad("\(ctx) fidget.every must be [min, max] within \(ticks.lowerBound)…\(ticks.upperBound)")
+                }
                 if f.pick.isEmpty { bad("\(ctx) fidget has nothing to pick") }
                 for w in f.pick {
                     clip(w.clip, ctx)
-                    if w.weight <= 0 { bad("\(ctx) fidget weight must be positive") }
+                    number(w.weight, 1...1000, "\(ctx) fidget weight")
                 }
             }
             if let z = s.sleep {
                 clip(z.doze, ctx); clip(z.loop, ctx); clip(z.wake, ctx); pose(z.still, ctx)
+                number(z.after, ticks, "\(ctx) sleep.after")
             }
-            if let i = s.impatient { clip(i.loop, ctx) }
+            if let i = s.impatient {
+                clip(i.loop, ctx)
+                number(i.after, ticks, "\(ctx) impatient.after")
+            }
             if let b = s.badge {
                 glyph(b.glyph, ctx); color(b.color, ctx)
-                if b.hopEvery <= 0 || b.impatientHopEvery <= 0 { bad("\(ctx) badge hop periods must be positive") }
+                number(b.x, cells, "\(ctx) badge x")
+                // Scanned tick by tick for the next hop, so kept short.
+                number(b.hopEvery, 1...1000, "\(ctx) badge hopEvery")
+                number(b.impatientHopEvery, 1...1000, "\(ctx) badge impatientHopEvery")
             }
             if let variants = s.variants {
                 for (vn, v) in variants {
