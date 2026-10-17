@@ -22,7 +22,10 @@ enum DebugSnapshot {
                 // Safe: `DispatchQueue.main` always runs on the main thread/actor.
                 MainActor.assumeIsolated {
                     let ok = write(window, to: target)
-                    DiagnosticLog.shared.log(ok ? "debug-snapshot wrote \(target)" : "debug-snapshot failed \(target)")
+                    let f = window.frame
+                    DiagnosticLog.shared.log(ok
+                        ? "debug-snapshot wrote \(target) frame=\(f.minX),\(f.minY),\(f.width)x\(f.height)"
+                        : "debug-snapshot failed \(target)")
                 }
             }
         }

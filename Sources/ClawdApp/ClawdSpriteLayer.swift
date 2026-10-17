@@ -38,6 +38,12 @@ final class ClawdSpriteLayer: CALayer {
         }
     }
 
+    /// Set while this Clawd sits in (or hops to) pile row `seatRow`: once seated it casts no
+    /// shadow, exactly like the still pile it turns into.
+    var seatRow: Int? {
+        didSet { if seatRow != oldValue { last = nil } }
+    }
+
     init(atlas: SpriteAtlas, unit: CGFloat) {
         self.atlas = atlas
         self.unit = unit
@@ -71,6 +77,11 @@ final class ClawdSpriteLayer: CALayer {
         atlas = other.atlas
         unit = other.unit
         super.init(layer: layer)
+    }
+
+    /// Whether `s` would change anything on screen.
+    func needsRender(_ s: ActorSnapshot) -> Bool {
+        s != last
     }
 
     /// Draws `s`. Cheap when nothing changed.
@@ -111,7 +122,8 @@ final class ClawdSpriteLayer: CALayer {
         }
 
         // Shadow: just below the ground, centred under the body.
-        if s.shadowWidth > 0 {
+        let seated = seatRow.map { s.bodyX == 0 && s.bodyY == $0 } ?? false
+        if s.shadowWidth > 0 && !seated {
             let width = CGFloat(s.shadowWidth)
             let height = max(2, u / 2)
             shadowLayer.frame = CGRect(x: bx + (bodyX + 9 - width / 2) * u, y: by - height, width: width * u, height: height)

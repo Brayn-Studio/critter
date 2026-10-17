@@ -39,6 +39,8 @@ final class PetController {
     /// Where the user last dropped the pet (UserDefaults `anchor`); nil → default corner.
     private var anchor: Anchor? = AnchorStore.load()
     private var isDragging = false
+    /// The hide animation is playing; the panel goes away when it ends.
+    private var isVanishing = false
     /// The layout currently on screen (its `content` rect maps the panel to the flock).
     private var currentLayout: FlockLayout.Result?
     /// False until the monitor's first snapshot arrives, so the log doesn't record the
@@ -58,20 +60,45 @@ final class PetController {
     }
 
     /// Shows or hides the pet. Safe before the panel exists: the request is remembered and
-    /// applied by `install(skin:)`.
-    func setVisible(_ visible: Bool) {
+    /// applied by `install(skin:)`. Animated (unless `animated` is false or "Reduce motion"
+    /// is on): showing drops every Clawd in from above, hiding sinks them into the ground
+    /// before the panel goes away.
+    func setVisible(_ visible: Bool, animated: Bool = true) {
         self.visible = visible
-        if let panel {
+        if let panel, let flockView {
+            let animate = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
             if visible {
+                let appearing = !panel.isVisible || isVanishing
+                isVanishing = false
+                // Set up (and commit) the first frame before the panel shows, so it never
+                // flashes the flock standing in place first.
+                if animate && appearing { flockView.playAppear() }
+                flockView.setRunning(true)
+                CATransaction.flush()
                 panel.orderFrontRegardless()
+            } else if animate && panel.isVisible {
+                if !isVanishing {
+                    isVanishing = true
+                    flockView.playVanish { [weak self] in self?.finishHiding() }
+                }
             } else {
+                isVanishing = false
                 panel.orderOut(nil)
+                // The clock only runs while the pet can be seen.
+                flockView.setRunning(false)
             }
-            // The clock only runs while the pet can be seen.
-            flockView?.setRunning(visible)
             clickThrough?.update()
         }
         onVisibilityChange?(visible)
+    }
+
+    /// The hide animation is over: put the panel away (unless shown again meanwhile).
+    private func finishHiding() {
+        guard isVanishing, !visible, let panel else { return }
+        isVanishing = false
+        panel.orderOut(nil)
+        flockView?.setRunning(false)
+        clickThrough?.update()
     }
 
     /// Builds the panel once the skin has been loaded (off the main thread).
@@ -100,7 +127,8 @@ final class PetController {
         })
 
         render()
-        setVisible(visible)
+        // At launch the pet is simply there; the drop-in is for showing it later.
+        setVisible(visible, animated: false)
     }
 
     func show(sessions: [PetSession]) {
@@ -241,15 +269,26 @@ final class PetController {
             maxWidth: maxWidth
         )
         let layout = FlockLayout.layout(presentation, metrics: metrics)
-        guard let panel, let flockView else {
+        guard let flockView else {
             logIfChanged(presentation, placement: nil)
             return
         }
         // Whether "展开" can do anything: the expanded flock would fit on this screen.
         flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).content.width <= maxWidth
-        flockView.update(presentation, layout: layout, sessions: sessions)
+        // States show at once; the window follows when the flock view's choreography is
+        // ready for the new layout (`place`).
+        let side = (anchor ?? PositionModel.defaultAnchor(visible: visibleFrame)).side
+        flockView.present(presentation, layout: layout, sessions: sessions, anchorSide: side) { [weak self] in
+            self?.place(presentation, layout: layout)
+        }
+    }
 
+    /// Moves and resizes the panel for `layout` (anchored, kept on screen), updates where it
+    /// takes clicks, and logs the change.
+    private func place(_ presentation: FlockPresentation, layout: FlockLayout.Result) {
+        guard let panel else { return }
         currentLayout = layout
+        let visibleFrame = anchorVisibleFrame()
         // The flock (not the transparent margin) is what gets anchored and clamped on screen.
         let contentFrame = placementFrame(size: layout.content.size, visible: visibleFrame)
         var placement = (frame: layout.windowFrame(contentFrame: contentFrame), visible: visibleFrame)
