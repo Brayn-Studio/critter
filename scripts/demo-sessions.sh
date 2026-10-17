@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Fakes Claude Code sessions for the pet, without running Claude: each demo session is a
 # `sleep 3600` process (standing in for the claude process, so exit detection works) plus
-# an atomically written state file $CLAWD_HOME/sessions/demo-<i>.json.
+# an atomically written state file $CRITTER_HOME/sessions/demo-<i>.json.
 #
 #   demo-sessions.sh N [state…]          replace any demo sessions with N new ones; states
 #                                        default to waiting/done/running/idle/error, cycling
@@ -16,9 +16,9 @@
 #                                        lock) files
 set -euo pipefail
 
-CLAWD_HOME="${CLAWD_HOME:-$HOME/.clawd}"
-SESSIONS="$CLAWD_HOME/sessions"
-PIDS_FILE="$CLAWD_HOME/demo.pids"
+CRITTER_HOME="${CRITTER_HOME:-$HOME/.critter}"
+SESSIONS="$CRITTER_HOME/sessions"
+PIDS_FILE="$CRITTER_HOME/demo.pids"
 DEFAULT_STATES=(waiting done running idle error)
 
 usage() {
@@ -76,7 +76,7 @@ clean() {
     rm -f "$PIDS_FILE"
   fi
   # StateStore never unlinks its per-session lock files; nothing else uses demo ones.
-  rm -f "$CLAWD_HOME"/locks/demo-*.lock
+  rm -f "$CRITTER_HOME"/locks/demo-*.lock
 }
 
 start() {

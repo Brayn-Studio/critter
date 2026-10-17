@@ -1,14 +1,14 @@
 {
-  "name": "clawd-pet",
-  "description": "Clawd 桌面宠物插件市场",
+  "name": "critter-pet",
+  "description": "Critter 桌面宠物插件市场",
   "owner": {
-    "name": "Clawd"
+    "name": "Critter"
   },
   "plugins": [
     {
-      "name": "clawd",
+      "name": "critter",
       "source": "./plugin",
-      "description": "Clawd 桌面宠物：上报 Claude Code 会话状态",
+      "description": "Critter 桌面宠物：上报 Claude Code 会话状态",
       "version": "0.2.0"
     }
   ]

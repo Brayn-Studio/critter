@@ -1,5 +1,5 @@
 // Builds the schema 2 skin manifest from the approved motion preview. Usage:
-//   node scripts/dev/make-manifest-from-preview.js docs/superpowers/specs/2026-10-17-clawd-motion-preview.html Skins/clawd/manifest.json
+//   node scripts/dev/make-manifest-from-preview.js docs/superpowers/specs/2026-10-17-critter-motion-preview.html Skins/clawd/manifest.json
 const fs = require('fs');
 const [,, previewPath, outPath] = process.argv;
 const src = fs.readFileSync(previewPath, 'utf8');

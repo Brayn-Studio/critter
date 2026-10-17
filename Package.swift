@@ -2,18 +2,18 @@
 import PackageDescription
 
 let package = Package(
-    name: "Clawd",
+    name: "Critter",
     platforms: [.macOS(.v14)],
     products: [
-        .library(name: "ClawdCore", targets: ["ClawdCore"]),
-        .executable(name: "clawd-hook", targets: ["clawd-hook"]),
-        .executable(name: "Clawd", targets: ["ClawdApp"]),
+        .library(name: "CritterCore", targets: ["CritterCore"]),
+        .executable(name: "critter-hook", targets: ["critter-hook"]),
+        .executable(name: "Critter", targets: ["CritterApp"]),
     ],
     targets: [
-        .target(name: "ClawdCore"),
-        .executableTarget(name: "clawd-hook", dependencies: ["ClawdCore"]),
-        .executableTarget(name: "ClawdApp", dependencies: ["ClawdCore"]),
-        .testTarget(name: "ClawdCoreTests", dependencies: ["ClawdCore"]),
-        .testTarget(name: "ClawdHookTests", dependencies: ["clawd-hook", "ClawdCore"]),
+        .target(name: "CritterCore"),
+        .executableTarget(name: "critter-hook", dependencies: ["CritterCore"]),
+        .executableTarget(name: "CritterApp", dependencies: ["CritterCore"]),
+        .testTarget(name: "CritterCoreTests", dependencies: ["CritterCore"]),
+        .testTarget(name: "CritterHookTests", dependencies: ["critter-hook", "CritterCore"]),
     ]
 )

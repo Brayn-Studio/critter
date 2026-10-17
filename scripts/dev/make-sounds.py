@@ -198,7 +198,7 @@ def mallet(f, partials=MARIMBA, dur=None, click=0.12, bend=None):
     return out
 
 
-# ---------- voice: Clawd's own little voice ----------
+# ---------- voice: Critter's own little voice ----------
 
 def voice_waiting():
     b = Buf(0.6)

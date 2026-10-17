@@ -1,6 +1,8 @@
-# Clawd 桌面宠物
+# Critter
 
-一只常驻在屏幕最上层的 Clawd（Claude Code 的吉祥物）。本机每个 Claude Code 会话都对应一只小 Clawd，不管会话开在终端、VS Code 还是 Claude Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Clawd，就能跳回那个会话所在的窗口。
+Claude Code 的桌面宠物（a desktop pet for Claude Code）。
+
+一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"）。本机每个 Claude Code 会话都对应一只小 Critter，不管会话开在终端、VS Code 还是 Claude Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
 
 这是一个原生 macOS 应用（Swift），没有任何第三方依赖。它只占大约 20 MB 内存，空闲时几乎不占 CPU。
 
@@ -16,15 +18,15 @@
 
 每个动作的细节和各种交互见下面的"动画"。
 
-- 每个会话一只 Clawd，排成一排。脚下的标签显示会话名和来源（终端 / VS Code / Desktop）。
+- 每个会话一只 Critter，排成一排。脚下的标签显示会话名和来源（终端 / VS Code / Desktop）。
 - 气泡会一直显示，直到该会话的状态再次变化。超长的文字最多显示 2 行，鼠标悬停可以看到全文。
-- 会话数超过合并阈值（默认 4）时，所有 Clawd 会合并成"一堆"：
+- 会话数超过合并阈值（默认 4）时，所有 Critter 会合并成"一堆"：
   - 最前面那只显示最急的状态，上方显示各状态的数量。
   - 点这一堆可以展开；展开后末尾有"⇥ 收起"把手，点它（或右键菜单里的"收起"）再合并回去。
-  - 展开后如果一排放不下（比如会话很多、屏幕较窄），会保持合并，不会有 Clawd 跑到屏幕外；这时右键菜单里的"展开"是灰的。
-- 会话关闭后，对应的 Clawd 会在几秒内自己离开。三种关闭方式都算：`/exit`、直接关掉终端、`kill -9`。
+  - 展开后如果一排放不下（比如会话很多、屏幕较窄），会保持合并，不会有 Critter 跑到屏幕外；这时右键菜单里的"展开"是灰的。
+- 会话关闭后，对应的 Critter 会在几秒内自己离开。三种关闭方式都算：`/exit`、直接关掉终端、`kill -9`。
 - 如果它没离开，可以右键点它，选"关闭"。
-- 透明的地方可以点穿到下面的窗口。整排 Clawd 可以拖到任意位置，位置会被记住。
+- 透明的地方可以点穿到下面的窗口。整排 Critter 可以拖到任意位置，位置会被记住。
 - 显示器拔掉或分辨率变化后，宠物会自动回到屏幕内。
 
 ## 动画
@@ -59,17 +61,17 @@ hooks 在状态文件里多写一个可选字段 `activity`，表示会话正在
 
 ### 交互
 
-- **目光**：指针在宠物附近（约 170 pt 内）时，醒着的空闲 Clawd 和做完了的 Clawd 眼睛跟着指针往左、右、上、下看；忙着的不分心。
+- **目光**：指针在宠物附近（约 170 pt 内）时，醒着的空闲 Critter 和做完了的 Critter 眼睛跟着指针往左、右、上、下看；忙着的不分心。
 - **注意到你**：指针移到某只身上，它抬手往上一顶；睡着的会被吵醒。
 - **来回蹭**：在同一只身上左右来回晃（1 秒内换向 3 次以上），它会眯眼脸红、冒小爱心；停手 0.7 秒后结束。
 - **按下 / 点击**：按下时它眯眼蹲下、扬起灰尘；松开时如果没拖动，它往左看一眼，同时执行原来的点击（跳回会话；点那一堆则展开）。
 - **拎起来**：按住拖动超过 3 pt，被按的那只被拎高 3 格、两脚乱蹬，身体比指针慢半拍，往拖动的反方向甩。合并成一堆时只有最前面那只被拎起，后面那一堆整体跟着窗口走。
-- **其余的跟着走**：没被抓住的几只先留在原地，再迈小碎步追上来（落后超过 6 格改成小跑，最多落后 12 格；往上拖时跳着跟上，追平那一格落地扬尘），气泡和标签跟着各自的 Clawd；追上后转头看着被拎着的那只。
+- **其余的跟着走**：没被抓住的几只先留在原地，再迈小碎步追上来（落后超过 6 格改成小跑，最多落后 12 格；往上拖时跳着跟上，追平那一格落地扬尘），气泡和标签跟着各自的 Critter；追上后转头看着被拎着的那只。
 - **放下**：松手后被拎的那只落地扬尘、左右看看；其余的追平后眨眨眼。
 - **展开 / 合并**：展开时离那一堆最近的先跳，一只接一只蹦到自己的位置；合并时大家一只只蹦回去，落地就坐进那一堆的后排、变暗垫高，最急的那只站在最前面。
-- **加入 / 离开**：新会话的 Clawd 从地面下探头、蹦上来；会话结束时它挥挥手、沉进地面，噗一下没了，旁边的跳过来补位。
+- **加入 / 离开**：新会话的 Critter 从地面下探头、蹦上来；会话结束时它挥挥手、沉进地面，噗一下没了，旁边的跳过来补位。
 - **显示 / 隐藏**：显示时一只只从天上掉下来；隐藏时一只只沉进地面。
-- 正在跳（展开、合并、补位）或正在加入、离开的 Clawd 不理会悬停和按下，拖动时也不跟着走；窗口随时都能拖。
+- 正在跳（展开、合并、补位）或正在加入、离开的 Critter 不理会悬停和按下，拖动时也不跟着走；窗口随时都能拖。
 
 ### 减少动态效果
 
@@ -90,17 +92,17 @@ make install
 安装会做下面几件事，可以重复执行（再跑一次就是升级）：
 
 1. 编译 release 版。
-2. 把 `Clawd.app` 装进 `~/Applications`，并注册 `clawd://` URL scheme。
-   - 如果 Clawd 正在运行，会自动重启，换成新版本。
-3. 把 `clawd-hook` 装到 `~/.clawd/bin/`。
+2. 把 `Critter.app` 装进 `~/Applications`，并注册 `critter://` URL scheme。
+   - 如果 Critter 正在运行，会自动重启，换成新版本。
+3. 把 `critter-hook` 装到 `~/.critter/bin/`。
 4. 把 `/pet` 装成用户级命令：`~/.claude/commands/pet.md`。
-5. 把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `clawd` 插件。插件里是上报状态用的 hooks。
-   - 插件按版本号缓存在 `~/.claude/plugins/cache/clawd-pet/clawd/<版本>/`。改了 `plugin/` 里的 hooks，要同时把 `plugin/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 里的版本号加一，重新安装后才会生效。
+5. 把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `critter` 插件。插件里是上报状态用的 hooks。
+   - 插件按版本号缓存在 `~/.claude/plugins/cache/critter-pet/critter/<版本>/`。改了 `plugin/` 里的 hooks，要同时把 `plugin/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 里的版本号加一，重新安装后才会生效。
 
 装完后：
 
 - **已经打开的 Claude Code 会话要重启，才会加载 hooks。** 没重启的会话仍然会出现，但标签上会多一个"·未接入"，状态一直显示为空闲。
-- 在任意会话里输入 `/pet`，或者运行 `open ~/Applications/Clawd.app`，就能启动 Clawd。
+- 在任意会话里输入 `/pet`，或者运行 `open ~/Applications/Critter.app`，就能启动 Critter。
 
 ## 卸载
 
@@ -108,11 +110,11 @@ make install
 make uninstall
 ```
 
-卸载会移除插件、插件市场、`Clawd.app`（并从 Launch Services 注销 `clawd://`）、`/pet` 命令、`~/.clawd` 和开机自启项（`~/Library/LaunchAgents/local.clawd.pet.plist`）。
+卸载会移除插件、插件市场、`Critter.app`（并从 Launch Services 注销 `critter://`）、`/pet` 命令、`~/.critter` 和开机自启项（`~/Library/LaunchAgents/local.critter.pet.plist`）。
 
-**卸载后请重启仍然开着的 Claude Code 会话。** 这些会话启动时已经加载了插件的 hooks，卸载后它们还会继续触发；hooks 发现 `~/.clawd/bin/clawd-hook` 不在了会直接跳过，不会报错，但要重启会话才会彻底不再调用。
+**卸载后请重启仍然开着的 Claude Code 会话。** 这些会话启动时已经加载了插件的 hooks，卸载后它们还会继续触发；hooks 发现 `~/.critter/bin/critter-hook` 不在了会直接跳过，不会报错，但要重启会话才会彻底不再调用。
 
-设置保存在 UserDefaults 里，卸载时会保留。要一起清掉，运行 `defaults delete local.clawd.pet`。
+设置保存在 UserDefaults 里，卸载时会保留。要一起清掉，运行 `defaults delete local.critter.pet`。
 
 ## 使用
 
@@ -121,17 +123,17 @@ make uninstall
 有三个入口：
 
 - **`/pet`**：设计上终端、VS Code、Desktop 里的 Claude Code 会话都能用；目前只在终端 CLI 里实测过。
-  - 它会被 hook 直接拦下，**不会触发模型回复**，你只会看到一行"Clawd 已显示"或"Clawd 已隐藏"。
-  - Clawd 没在运行时，`/pet` 会先把它启动起来。
-  - Clawd 卡死时，`/pet` 会把它强制重启，见下面的"稳定性"。
+  - 它会被 hook 直接拦下，**不会触发模型回复**，你只会看到一行"Critter 已显示"或"Critter 已隐藏"。
+  - Critter 没在运行时，`/pet` 会先把它启动起来。
+  - Critter 卡死时，`/pet` 会把它强制重启，见下面的"稳定性"。
 - **全局快捷键 ⌃⌥C**：可以在设置里改。
-- **菜单栏图标**：菜单里有"显示宠物 / 隐藏宠物"、"设置…"和"退出 Clawd"。
+- **菜单栏图标**：菜单里有"显示宠物 / 隐藏宠物"、"设置…"和"退出 Critter"。
 
-隐藏只是把窗口收起来。Clawd 仍在菜单栏里，会话状态照常记录，但隐藏期间不会响提示音。
+隐藏只是把窗口收起来。Critter 仍在菜单栏里，会话状态照常记录，但隐藏期间不会响提示音。
 
-### 点击 Clawd
+### 点击 Critter
 
-- **左键**点 Clawd 或它的气泡：跳回该会话的窗口。如果它的状态是"做完了"，同时标记为已看过，变回空闲。
+- **左键**点 Critter 或它的气泡：跳回该会话的窗口。如果它的状态是"做完了"，同时标记为已看过，变回空闲。
 - **右键**：菜单里有"跳回会话"、"关闭"、"隐藏宠物"和"设置…"。
 
 不同来源的会话，跳回的效果不同：
@@ -144,7 +146,7 @@ make uninstall
 | 其它终端，例如 Ghostty、Warp | 激活该应用 |
 | Claude Desktop | 激活 Claude.app |
 
-第一次跳回 Terminal 或 iTerm2 时，macOS 会弹出"自动化"授权，问是否允许 Clawd 控制该终端，选"好"即可。
+第一次跳回 Terminal 或 iTerm2 时，macOS 会弹出"自动化"授权，问是否允许 Critter 控制该终端，选"好"即可。
 
 如果当时点了"不允许"，可以到 系统设置 › 隐私与安全性 › 自动化 里重新打开。没打开之前，点击只会激活终端，不会切换到对应的标签页。
 
@@ -160,58 +162,58 @@ make uninstall
 
 | 项 | 默认 | 说明 |
 |---|---|---|
-| Clawd 大小 | 中（1.0） | 滑块，范围 0.5–2.0，拖动时实时生效 |
+| Critter 大小 | 中（1.0） | 滑块，范围 0.5–2.0，拖动时实时生效 |
 | 提示音 | 开 | 总开关 |
-| 声音 | Clawd 的声音 | 选用哪一套提示音，见下 |
+| 声音 | Critter 的声音 | 选用哪一套提示音，见下 |
 | 等你确认 / 做完了 / 出错 | 都开 | 只在会话**变成**这个状态时响一次；同一时刻有多个，只响最急的那个。旁边的 ▶ 可以试听当前这一套里的这个声音 |
 | 自动合并阈值 | 4 | 会话数超过这个值就合并，范围 2–10 |
 | 全局快捷键 | ⌃⌥C | 点"录制"，然后按下新的组合键。组合里必须有 ⌃、⌥ 或 ⌘；按 Esc 取消。"恢复默认"可改回 ⌃⌥C |
-| 登录时自动启动 | 关 | 打开后写入 `~/Library/LaunchAgents/local.clawd.pet.plist`，下次登录时生效 |
+| 登录时自动启动 | 关 | 打开后写入 `~/Library/LaunchAgents/local.critter.pet.plist`，下次登录时生效 |
 | 重置位置 | — | 把宠物放回主屏幕右下角 |
 
 提示音有四套，每套都不到一秒半，比系统音效轻一点：
 
 | 声音 | 等你确认 | 做完了 | 出错 |
 |---|---|---|---|
-| Clawd 的声音 | 往上扬的"噗—哇？" | "耶耶耶～"，带几下亮晶晶的尾音 | 泄了气的"呜…哇" |
+| Critter 的声音 | 往上扬的"噗—哇？" | "耶耶耶～"，带几下亮晶晶的尾音 | 泄了气的"呜…哇" |
 | 软像素 | 两声往上跳的"哔—哔" | 60 ms 一个音的小音阶，和动画同一个节拍 | 往下滑、带颤音的"呜——" |
 | 小木琴 | 往上敲两下 | 四个音往上走，再加几下亮晶晶的尾音 | 两下闷闷的、往下走的木琴 |
 | 系统音效 | Ping | Glass | Basso |
 
-前三套是 `Sounds/<套名>/<状态>.wav`，打包时复制进 `Clawd.app`；找不到文件时（比如直接运行没打包的二进制）会改用系统音效，不会没声音。
+前三套是 `Sounds/<套名>/<状态>.wav`，打包时复制进 `Critter.app`；找不到文件时（比如直接运行没打包的二进制）会改用系统音效，不会没声音。
 
 ## 调试日志
 
 ```sh
-touch ~/.clawd/debug    # 打开日志，不用重启
-rm ~/.clawd/debug       # 关闭日志
+touch ~/.critter/debug    # 打开日志，不用重启
+rm ~/.critter/debug       # 关闭日志
 ```
 
 打开后会写两份日志：
 
-- **`~/.clawd/app.log`**：Clawd 应用的日志。每次显示内容变化记一行（展开或合并、每个会话的状态、窗口位置），还会记下这些事件：
+- **`~/.critter/app.log`**：Critter 应用的日志。每次显示内容变化记一行（展开或合并、每个会话的状态、窗口位置），还会记下这些事件：
   - 会话退出、被 Esc 打断、被关闭；
   - 跳回窗口的方案和结果（`jump-plan`、`jump-result`）；
   - 提示音播放或跳过的原因（`sound`）；
   - 快捷键注册结果（`hotkey register`）；
   - 展开、合并、加入、离开等编排的开始和结束（`choreo … start` / `choreo … end`）；
   - 指针交互（`pointer notice`、`pointer wake`、`pointer pet`、`pointer petEnd`、`pointer lift`、`pointer drop`）。
-- **`~/.clawd/hook.log`**：每次 hook 调用记一行，包括事件名和处理结果。
+- **`~/.critter/hook.log`**：每次 hook 调用记一行，包括事件名和处理结果。
 
 ## 稳定性
 
 - **主线程只做界面。** 读写文件、查询进程、执行 AppleScript、播放音效都放在后台队列。
-- **卡死兜底。** App 每 2 秒写一次心跳，写到 `~/.clawd/app.json`（App 已关闭 App Nap，隐藏时心跳也不会被系统推迟）。如果心跳超过 10 秒没更新，下一次 `/pet` 会先照常把请求发过去，再等最多 1.5 秒：App 回了新心跳，就只是慢了一下，不做处理；没回，才强制结束 Clawd 并重新启动它，同时提示"Clawd 无响应，已重启"。
-  - 强制结束前会核对进程身份：只有可执行文件是 `…/Contents/MacOS/Clawd`、而且启动时间和 `app.json` 里记的一致，才算是 Clawd。`app.json` 里的进程号可能早已被别的程序占用（例如重启电脑后），这时 `/pet` 只会重新启动 Clawd，绝不会结束那个程序。
-- **hooks 不依赖 App。** hooks 只负责写状态文件。Clawd 没运行或崩溃了，Claude Code 会话照常工作；Clawd 再次启动时，会立刻显示每个会话当前的状态。
-- **坏数据不会让它崩溃。** 状态文件或 `~/.claude/sessions` 里的文件损坏、格式未知或缺字段时，Clawd 会跳过那个文件，其余会话照常显示。
+- **卡死兜底。** App 每 2 秒写一次心跳，写到 `~/.critter/app.json`（App 已关闭 App Nap，隐藏时心跳也不会被系统推迟）。如果心跳超过 10 秒没更新，下一次 `/pet` 会先照常把请求发过去，再等最多 1.5 秒：App 回了新心跳，就只是慢了一下，不做处理；没回，才强制结束 Critter 并重新启动它，同时提示"Critter 无响应，已重启"。
+  - 强制结束前会核对进程身份：只有可执行文件是 `…/Contents/MacOS/Critter`、而且启动时间和 `app.json` 里记的一致，才算是 Critter。`app.json` 里的进程号可能早已被别的程序占用（例如重启电脑后），这时 `/pet` 只会重新启动 Critter，绝不会结束那个程序。
+- **hooks 不依赖 App。** hooks 只负责写状态文件。Critter 没运行或崩溃了，Claude Code 会话照常工作；Critter 再次启动时，会立刻显示每个会话当前的状态。
+- **坏数据不会让它崩溃。** 状态文件或 `~/.claude/sessions` 里的文件损坏、格式未知或缺字段时，Critter 会跳过那个文件，其余会话照常显示。
 
 ## 开发
 
 ```sh
 swift build            # 调试版
 swift test             # 全部单元测试
-make app               # 组装 dist/Clawd.app
+make app               # 组装 dist/Critter.app
 ```
 
 `python3 scripts/dev/make-sounds.py Sounds` 重新合成三套提示音。它需要 numpy，但只在开发时用；生成的文件已经提交，App 本身不依赖它。
@@ -223,7 +225,7 @@ make app               # 组装 dist/Clawd.app
   - `scripts/demo-sessions.sh clean`：清掉所有假会话。
 - `scripts/measure.sh [--sessions N]`：测量内存（`phys_footprint`）和平均 CPU。加了 `--sessions N` 会先造 N 个假会话，`0` 表示清空。
 
-本机实测（2026-10-17，Apple Silicon，Clawd 大小 1.75，除了假会话还有 2 个真实会话）：
+本机实测（2026-10-17，Apple Silicon，Critter 大小 1.75，除了假会话还有 2 个真实会话）：
 
 | 场景 | 内存 | CPU（`measure.sh`） | CPU（30–60 秒累计） |
 |---|---|---|---|
@@ -239,35 +241,35 @@ make app               # 组装 dist/Clawd.app
 
 | 目录 | 内容 |
 |---|---|
-| `Sources/ClawdCore` | 纯逻辑，全部有单元测试 |
-| `Sources/clawd-hook` | hook 可执行文件 |
-| `Sources/ClawdApp` | 菜单栏应用 |
+| `Sources/CritterCore` | 纯逻辑，全部有单元测试 |
+| `Sources/critter-hook` | hook 可执行文件 |
+| `Sources/CritterApp` | 菜单栏应用 |
 | `plugin/` | Claude Code 插件（hooks） |
 | `Skins/` | 形象素材 |
 | `Sounds/` | 提示音素材 |
 
 测试用的环境变量（**只用于测试，不要在日常环境里设置**）：
 
-- `CLAWD_HOME`：替换 `~/.clawd`；`CLAUDE_CONFIG_DIR`：替换 `~/.claude`。单元测试靠它们把文件写进临时目录。
-- 插件 hooks 里写死的是 `$HOME/.clawd/bin/clawd-hook`，而 `Clawd.app` 由 Launch Services 启动，拿不到 shell 里的环境变量，始终读 `~/.clawd` 和 `~/.claude`。设了这两个变量，hooks 和 App 就会各看各的目录。
-- 所以 `make install` / `make uninstall` 会忽略 `CLAWD_HOME`（并给出提示），始终使用 `~/.clawd`；设了 `CLAUDE_CONFIG_DIR` 时也会提示 App 看不到那些会话。
+- `CRITTER_HOME`：替换 `~/.critter`；`CLAUDE_CONFIG_DIR`：替换 `~/.claude`。单元测试靠它们把文件写进临时目录。
+- 插件 hooks 里写死的是 `$HOME/.critter/bin/critter-hook`，而 `Critter.app` 由 Launch Services 启动，拿不到 shell 里的环境变量，始终读 `~/.critter` 和 `~/.claude`。设了这两个变量，hooks 和 App 就会各看各的目录。
+- 所以 `make install` / `make uninstall` 会忽略 `CRITTER_HOME`（并给出提示），始终使用 `~/.critter`；设了 `CLAUDE_CONFIG_DIR` 时也会提示 App 看不到那些会话。
 
 调试开关：
 
-- `defaults write local.clawd.pet debugEnabled -bool true` 打开下面几个调试用 URL：
-  - `clawd://debug-hang`：让主线程卡死，用来测试卡死兜底；
-  - `clawd://debug-click?target=<会话 id|handle|chips>[&item=<菜单项>]`：模拟点击（或右键菜单里的某一项）；
-  - `clawd://debug-set`：改设置；`clawd://debug-set?debugReduceMotion=1` 模拟打开"减少动态效果"（不动系统设置，`0` 关掉）；
-  - `clawd://debug-snapshot?path=<绝对路径>.png[&count=N&interval=毫秒]`：把宠物窗口画成 PNG，截屏不可用时用来检查动画；
-  - `clawd://debug-pointer?x=<屏幕 x>&y=<屏幕 y>`：在那里模拟一次指针移动（目光、悬停、来回蹭），屏幕坐标原点在左下角；
-  - `clawd://debug-drag?target=<会话 id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N&interval=毫秒&wait=毫秒&hold=毫秒]`：模拟按住、等一会儿、分 N 步拖动、停一会儿再松开。
-  - 这些都走真实的鼠标处理代码。发给开发版时用 `open -a dist/Clawd.app "clawd://…"`，否则会发给 `~/Applications` 里装的那份。
+- `defaults write local.critter.pet debugEnabled -bool true` 打开下面几个调试用 URL：
+  - `critter://debug-hang`：让主线程卡死，用来测试卡死兜底；
+  - `critter://debug-click?target=<会话 id|handle|chips>[&item=<菜单项>]`：模拟点击（或右键菜单里的某一项）；
+  - `critter://debug-set`：改设置；`critter://debug-set?debugReduceMotion=1` 模拟打开"减少动态效果"（不动系统设置，`0` 关掉）；
+  - `critter://debug-snapshot?path=<绝对路径>.png[&count=N&interval=毫秒]`：把宠物窗口画成 PNG，截屏不可用时用来检查动画；
+  - `critter://debug-pointer?x=<屏幕 x>&y=<屏幕 y>`：在那里模拟一次指针移动（目光、悬停、来回蹭），屏幕坐标原点在左下角；
+  - `critter://debug-drag?target=<会话 id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N&interval=毫秒&wait=毫秒&hold=毫秒]`：模拟按住、等一会儿、分 N 步拖动、停一会儿再松开。
+  - 这些都走真实的鼠标处理代码。发给开发版时用 `open -a dist/Critter.app "critter://…"`，否则会发给 `~/Applications` 里装的那份。
 - 在打开 `debugEnabled` 的基础上，再设置 `debugJumpDryRun`，跳回窗口时只记录方案，不实际执行。
-- 用完后用 `defaults delete local.clawd.pet debugEnabled` 关掉；用过 `debugReduceMotion` 的话，也用 `defaults delete local.clawd.pet debugReduceMotion` 删掉。
+- 用完后用 `defaults delete local.critter.pet debugEnabled` 关掉；用过 `debugReduceMotion` 的话，也用 `defaults delete local.critter.pet debugReduceMotion` 删掉。
 
 ## 已知限制
 
-- **Claude Desktop：关掉对话后 Clawd 不会自动离开。** 实测（2026-10-17）Desktop 的 Code 会话能正常上报状态，来源显示正确，点击能跳回 Claude.app。但在 Desktop 里关掉一个对话并不会结束它背后的 Claude Code 进程，所以收不到会话结束事件。退出 Desktop App，或者右键那只 Clawd →「关闭」，它就会离开。
+- **Claude Desktop：关掉对话后 Critter 不会自动离开。** 实测（2026-10-17）Desktop 的 Code 会话能正常上报状态，来源显示正确，点击能跳回 Claude.app。但在 Desktop 里关掉一个对话并不会结束它背后的 Claude Code 进程，所以收不到会话结束事件。退出 Desktop App，或者右键那只 Critter →「关闭」，它就会离开。
 - **VS Code 插件未单独验收。** 终端里的全流程已实测通过：状态流转、提示音、跳回 Terminal 标签页、退出后离开。VS Code 面板内的 `/pet` 与关闭面板后离开，按同一机制视为通过，但没有逐项实测。
 - **部分视觉和交互效果还没有逐项验收。** 下面这些在开发时只用日志验证过：
   - 设置窗口；
@@ -284,9 +286,11 @@ make app               # 组装 dist/Clawd.app
 
 ## 品牌说明
 
-Clawd 是 Anthropic 的吉祥物。本项目目前仅供自用；如果要开源发布，需要先遵循 Anthropic 的品牌规范，或者换成自绘的致敬版形象。
+Critter 是非官方的粉丝作品，与 Anthropic 无关联，也未获其认可或背书。默认皮肤画的是 Clawd，Anthropic 为 Claude Code 设计的吉祥物，形象归 Anthropic 所有；Claude 和 Claude Code 是 Anthropic 的商标。
 
-所有形象素材都只放在 `Skins/` 目录。`Skins/clawd/manifest.json` 这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.clawd/skins/clawd/`，它的优先级高于内置皮肤；清单不完整或有错时，会退回内置皮肤。
+Critter is an unofficial fan project, not affiliated with or endorsed by Anthropic. The default skin depicts Clawd, the Claude Code mascot, which is the property of Anthropic. Claude and Claude Code are trademarks of Anthropic.
+
+所有形象素材都只放在 `Skins/` 目录。`Skins/clawd/manifest.json` 这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.critter/skins/clawd/`，它的优先级高于内置皮肤；清单不完整或有错时，会退回内置皮肤。
 
 给皮肤作者：
 

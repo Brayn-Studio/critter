@@ -3,13 +3,13 @@
 <plist version="1.0">
 <dict>
 	<key>CFBundleIdentifier</key>
-	<string>local.clawd.pet</string>
+	<string>local.critter.pet</string>
 	<key>CFBundleExecutable</key>
-	<string>Clawd</string>
+	<string>Critter</string>
 	<key>CFBundleName</key>
-	<string>Clawd</string>
+	<string>Critter</string>
 	<key>CFBundleDisplayName</key>
-	<string>Clawd</string>
+	<string>Critter</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleInfoDictionaryVersion</key>
@@ -27,15 +27,15 @@
 	<key>NSHighResolutionCapable</key>
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
-	<string>Clawd 需要控制终端，才能在你点击时跳回对应的会话标签页。</string>
+	<string>Critter 需要控制终端，才能在你点击时跳回对应的会话标签页。</string>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>
 			<key>CFBundleURLName</key>
-			<string>local.clawd.pet.url</string>
+			<string>local.critter.pet.url</string>
 			<key>CFBundleURLSchemes</key>
 			<array>
-				<string>clawd</string>
+				<string>critter</string>
 			</array>
 		</dict>
 	</array>

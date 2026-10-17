@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# Prints Clawd's memory footprint (the number Activity Monitor's "Memory" column shows)
+# Prints Critter's memory footprint (the number Activity Monitor's "Memory" column shows)
 # and its average CPU usage over 10 samples, per the Global Constraints' memory/CPU budget
 # (≤ 50 MB with 5 sessions expanded and animating; idle CPU ≈ 0, animating < 1%).
 #
-#   measure.sh                  measure Clawd as it is
+#   measure.sh                  measure Critter as it is
 #   measure.sh --sessions N     first replace the demo sessions with N fake ones
 #                               (scripts/demo-sessions.sh; 0 removes them), give the pet a
 #                               few seconds to settle, then measure. The demo sessions stay
@@ -37,9 +37,9 @@ case "$SESSIONS" in
   *[!0-9]*) usage ;;
 esac
 
-PID="$(pgrep -x Clawd | head -1 || true)"
+PID="$(pgrep -x Critter | head -1 || true)"
 if [ -z "$PID" ]; then
-  echo "Clawd is not running (pgrep -x Clawd found nothing)" >&2
+  echo "Critter is not running (pgrep -x Critter found nothing)" >&2
   exit 1
 fi
 echo "pid: $PID"
