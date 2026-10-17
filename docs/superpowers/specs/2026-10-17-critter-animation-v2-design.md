@@ -3,6 +3,8 @@
 日期：2026-10-17
 状态：动作设计已由用户在可交互预览里逐项确认；本文把它落到 App 的规则写清楚。
 
+> **2026-10-17 更新：**除了默认的 Clawd，又加了四个可在设置里选择的原创形象（小芽、团子、啾啾、刺球，见 `2026-10-17-sprig-skin-design.md`）。下文的引擎规则全部沿用，只多了一个可选字段：状态的 `gaze`（§3、§4.11）。
+
 > 记号：**【用户定】** 用户明确做的决定；**【Claude 定】** Claude 代为决定、用户没有逐条确认的；未标记的是两边都认可的事实。
 
 ---
@@ -51,7 +53,7 @@
 | `clips` | 动作 = 关键格列表 `[姿势, 格数, dx?, dy?, 特效?]`。dx/dy 单位 u，dy 正为向上，**dy 负为沉入地面**（见 §4.1 地面裁切）。特效在该关键格开始时触发一次。 |
 | `effects` | 粒子特效：`particles`（每次触发全部发出）或 `cycle`（每个 Critter 每次触发轮到下一组）。数值字段可以是数字或 `[min, max]`（均匀随机；`life` 取整数闭区间）；`count` 重复；`colors` 按粒子序号轮流；`pop`、`sway`、`shrinkTo` 见 §4.6。 |
 | `accessories` | 头顶标记：`spinner`（按余弦节奏换帧）、`q`（跳动）、`check`（定时闪 ✦）、`bang`。 |
-| `states` | 五个状态各自的 `enter` / `loop` / `tint` / `accessory` / `still`（减少动态效果时的姿势），以及可选的 `fidget`、`sleep`、`impatient`、`badge`、`seen`、`stillDy`；`running` 另有 `variants`（每个变体自己的 `loop`、可选 `enter`/`exit`/`prop`）和 `defaultVariant`。 |
+| `states` | 五个状态各自的 `enter` / `loop` / `tint` / `accessory` / `still`（减少动态效果时的姿势），以及可选的 `fidget`、`sleep`、`impatient`、`badge`、`seen`、`stillDy`、`gaze`（这个状态目光跟随用的一组姿势 `left` / `right` / `up` / `down` / `center`，替代 `interactions` 里的 `look*`）；`running` 另有 `variants`（每个变体自己的 `loop`、可选 `enter`/`exit`/`prop`）和 `defaultVariant`。 |
 | `interactions` | 引擎在交互和编排中要用的动作/姿势/特效名：`notice`、`pet`、`petEnd`、`press`、`boopEnd`、`held`、`heldStill`、`drop`、`blink`、`join`、`leave`、`appear`、`vanish`、`hop`、`land`、`blinkPose`、`landDust`、`walkLeft`、`walkRight`、`look*`。 |
 | `props` | 跟动作绑定的道具，目前只有 `juggle`（三颗球）。 |
 
@@ -91,7 +93,7 @@
 ### 4.5 头顶标记与常驻 `!`
 - 位置：水平居中在第 9 列（`x = round(9 − 宽/2)`，.5 向上取整），底边在第 −2 行；`spinner` 在 5 行高的框里垂直居中。随身体的 dx 不动，随 lag、lift、跟随偏移移动。
 - 不画的情况：没有标记；合并成一堆时（计数小标签占了这一行）；被拎起；移动中；睡着；当前关键格 dy ≤ −6 或 ≥ 7。
-- `spinner`：帧号 = `round((1 − cos(2π·t/periodMs)) / 2 × 5)`，t = 格数 × tickMs；减少动态效果时画 `reduced`。
+- `spinner`：帧号 = `round((1 − cos(2π·t/periodMs)) / 2 × (帧数 − 1))`，t = 格数 × tickMs；减少动态效果时画 `reduced`。
 - `q`：每 `bobEvery` 格交替上移 1 u。`check`：每 `twinkleEvery` 格触发一次 `twinkle` 特效。
 - 等待状态的常驻 `!`（`badge`）：在第 `x` 列、底边第 −2 行；从进场动作开始那一刻出现（安静进入或减少动态效果时立即出现），出现后前 2 格上移 1 u；之后每 `hopEvery` 格（着急时 `impatientHopEvery`）有 2 格上移 1 u；一直留到离开等待状态。
 
@@ -127,7 +129,7 @@
 - 减少动态效果：被拎的那只停在 `heldStill`，其余不产生偏移。
 
 ### 4.11 悬停、目光、来回蹭、点击
-- 目光：指针到 Critter 中心（锚点 + (9 u, −7 u)）的距离 > 170 pt 时不跟随。否则：竖直方向在头顶上方超过 max(28 pt, 1.1·|水平距离|) → `lookUp`；水平 < −6 u → `lookLeft`；> 6 u → `lookRight`；指针在下方超过 10 pt → `lookDown`；其余 → `lookCenter`。
+- 目光：所在状态有 `gaze` 时用它的那组姿势，否则用 `interactions` 的 `look*`；目光记的是方向，状态改变后按新状态取姿势。指针到 Critter 中心（锚点 + (9 u, −7 u)）的距离 > 170 pt 时不跟随。否则：竖直方向在头顶上方超过 max(28 pt, 1.1·|水平距离|) → `lookUp`；水平 < −6 u → `lookLeft`；> 6 u → `lookRight`；指针在下方超过 10 pt → `lookDown`；其余 → `lookCenter`。
 - 指针进入某只的区域（基准框横向 1…17 u、竖向锚点上方 11 u 到下方 2 pt）：睡着的被吵醒；否则在没有单次动作和模式循环时播 `notice`。
 - 来回蹭：在同一只身上，水平移动 ≥ 3 pt 记一次方向，1 秒内反向 ≥ 3 次 → 模式循环 `pet`；离开这只或 0.7 秒没动 → 结束模式、播 `petEnd`。
 - 按下：取消单次动作，模式循环 `press`。松开且没拖动：结束模式、播 `boopEnd`，同时执行原来的点击行为（跳回会话；点那一堆则展开）。

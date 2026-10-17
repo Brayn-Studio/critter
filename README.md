@@ -2,7 +2,7 @@
 
 Claude Code 的桌面宠物（a desktop pet for Claude Code）。
 
-一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"）。本机每个 Claude Code 会话都对应一只小 Critter，不管会话开在终端、VS Code 还是 Claude Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
+一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"），也可以在设置里换成另外四个原创形象：小芽、团子、啾啾、刺球。本机每个 Claude Code 会话都对应一只小 Critter，不管会话开在终端、VS Code 还是 Claude Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
 
 这是一个原生 macOS 应用（Swift），没有任何第三方依赖。它只占大约 20 MB 内存，空闲时几乎不占 CPU。
 
@@ -31,7 +31,21 @@ Claude Code 的桌面宠物（a desktop pet for Claude Code）。
 
 ## 动画
 
-所有动作都由形象清单 `Skins/clawd/manifest.json` 描述，以 60 ms 为一格逐格播放；代码里只有"怎么播放、怎么跳、怎么跟随"这些规则。画面不变的时候时钟不会醒来，只有下一次变化的那一格才会。
+所有动作都由形象清单 `Skins/<形象>/manifest.json` 描述，以 60 ms 为一格逐格播放；代码里只有"怎么播放、怎么跳、怎么跟随"这些规则。画面不变的时候时钟不会醒来，只有下一次变化的那一格才会。
+
+### 可选形象
+
+在设置里选，选中后立即换上：
+
+| 形象 | 样子 | 头顶那样东西 |
+|---|---|---|
+| Clawd（默认） | Claude Code 的吉祥物 | — |
+| 小芽 Sprig | 淡紫色的圆豆子 | 两片嫩叶：有事时竖起、出错时蔫下、睡觉时合拢、思考时像螺旋桨一样转；做完了开一朵花 |
+| 团子 Mochi | 蓝灰色的圆猫 | 一对耳朵：竖起、压成飞机耳、收起、抖一只；做完了头上别一朵花 |
+| 啾啾 Peep | 黄色的圆小鸡 | 一撮呆毛，喙会跟着表情张开；做完了呆毛旁开一朵花 |
+| 刺球 Bristle | 刺猬 | 一排刺：竖起、趴下、缩起；做完了刺上扎一颗苹果 |
+
+后四个是为本项目原创的形象，共用同一套动作：起跳前压扁、腾空时拉长；"运行中"头顶是一颗一胀一缩的小太阳；读文件时举放大镜、跑命令时原地小跑、派子任务时抛种子；新会话从地里钻出来，结束时钻回地里。每个动作都能在可交互的设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html` 里看到（用浏览器打开，顶部可以切换形象）。下面几节描述的是默认的 Clawd。
 
 ### 状态 → 动作
 
@@ -162,6 +176,7 @@ make uninstall
 
 | 项 | 默认 | 说明 |
 |---|---|---|
+| 形象 | Clawd | 列出所有形象（带缩略图），点一下立即换上，菜单栏图标也跟着换。`~/.critter/skins/` 里的自定义皮肤也会出现在这里 |
 | Critter 大小 | 中（1.0） | 滑块，范围 0.5–2.0，拖动时实时生效 |
 | 提示音 | 开 | 总开关 |
 | 声音 | Critter 的声音 | 选用哪一套提示音，见下 |
@@ -272,7 +287,7 @@ make app               # 组装 dist/Critter.app
 - **Claude Desktop：关掉对话后 Critter 不会自动离开。** 实测（2026-10-17）Desktop 的 Code 会话能正常上报状态，来源显示正确，点击能跳回 Claude.app。但在 Desktop 里关掉一个对话并不会结束它背后的 Claude Code 进程，所以收不到会话结束事件。退出 Desktop App，或者右键那只 Critter →「关闭」，它就会离开。
 - **VS Code 插件未单独验收。** 终端里的全流程已实测通过：状态流转、提示音、跳回 Terminal 标签页、退出后离开。VS Code 面板内的 `/pet` 与关闭面板后离开，按同一机制视为通过，但没有逐项实测。
 - **部分视觉和交互效果还没有逐项验收。** 下面这些在开发时只用日志验证过：
-  - 设置窗口；
+  - 设置窗口（其中的形象列表只离屏渲染检查过排版）；
   - 滑块拖动时的实时缩放；
   - 快捷键实际按下的效果；
   - 跳回 VS Code 窗口；
@@ -286,15 +301,18 @@ make app               # 组装 dist/Critter.app
 
 ## 品牌说明
 
-Critter 是非官方的粉丝作品，与 Anthropic 无关联，也未获其认可或背书。默认皮肤画的是 Clawd，Anthropic 为 Claude Code 设计的吉祥物，形象归 Anthropic 所有；Claude 和 Claude Code 是 Anthropic 的商标。
+Critter 是非官方的粉丝作品，与 Anthropic 无关联，也未获其认可或背书。默认皮肤画的是 Clawd，Anthropic 为 Claude Code 设计的吉祥物，形象归 Anthropic 所有；另外四个可选形象（小芽、团子、啾啾、刺球）是为本项目原创的。Claude 和 Claude Code 是 Anthropic 的商标。
 
-Critter is an unofficial fan project, not affiliated with or endorsed by Anthropic. The default skin depicts Clawd, the Claude Code mascot, which is the property of Anthropic. Claude and Claude Code are trademarks of Anthropic.
+Critter is an unofficial fan project, not affiliated with or endorsed by Anthropic. The default skin depicts Clawd, the Claude Code mascot, which is the property of Anthropic; the four other characters you can pick (Sprig, Mochi, Peep and Bristle) are original to this project. Claude and Claude Code are trademarks of Anthropic.
 
-所有形象素材都只放在 `Skins/` 目录。`Skins/clawd/manifest.json` 这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.critter/skins/clawd/`，它的优先级高于内置皮肤；清单不完整或有错时，会退回内置皮肤。
+所有形象素材都只放在 `Skins/` 目录，每个形象一个子目录。以 `Skins/clawd/manifest.json` 为例，这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.critter/skins/<名字>/`，它会出现在设置的形象列表里；名字和自带的相同时优先用它。清单不完整或有错的皮肤不会出现在列表里，已选中的皮肤出了错会退回 Clawd。
 
 给皮肤作者：
 
 - 自定义皮肤必须是 schema 2。第一版（schema 1）的自定义皮肤现在一律当作无效，会悄悄退回内置形象。
+- 可以写一个 `title`（1–40 个字符），设置的形象列表里显示它，不写就显示目录名。
+- 每个状态可以写一组自己的目光姿势 `gaze`（`left` / `right` / `up` / `down` / `center`），目光跟随时就用它们，不写则用 `interactions` 里的 `look*`。小芽它们"做完了"时用它让花一直开着。
+- 小芽、团子、啾啾、刺球的数据在设计稿里，改完后用 `node scripts/dev/make-skins-from-preview.js docs/superpowers/specs/2026-10-17-sprig-motion-preview.html Skins` 重新生成四份清单。
 - 校验比较严格，任何一条不满足，整份皮肤都退回内置：
   - 所有引用（部件、姿势、动作、特效、字形、颜色字符）都必须存在，五个状态齐全；
   - `grid` 必须是 `[18, 10]`，`tickMs` 在 16–1000 之间；
@@ -306,6 +324,6 @@ Critter is an unofficial fan project, not affiliated with or endorsed by Anthrop
 
 代码以 [MIT 许可证](LICENSE) 发布。
 
-例外：`Skins/clawd/` 里的 Clawd 形象（包括 `SkinLoader.builtinJSON` 里内置的那份副本，以及 `docs/superpowers/specs/` 里由它生成的清单和预览）不在 MIT 许可范围内，形象归 Anthropic 所有。`Sounds/` 里的提示音由 `scripts/dev/make-sounds.py` 合成，随代码一起以 MIT 发布。
+例外：`Skins/clawd/` 里的 Clawd 形象（包括 `SkinLoader.builtinJSON` 里内置的那份副本，以及 `docs/superpowers/specs/` 里由它生成的清单和预览）不在 MIT 许可范围内，形象归 Anthropic 所有。`Skins/` 里的小芽、团子、啾啾、刺球（`sprig`、`mochi`、`peep`、`bristle`，以及设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html`）是本项目原创，`Sounds/` 里的提示音由 `scripts/dev/make-sounds.py` 合成，都随代码一起以 MIT 发布。
 
-The source code is released under the [MIT License](LICENSE). The Clawd character artwork in `Skins/clawd/` (including its embedded copy in `SkinLoader.builtinJSON`, and the manifest and preview derived from it under `docs/superpowers/specs/`) is not covered by the MIT License; the character is the property of Anthropic.
+The source code is released under the [MIT License](LICENSE). The Clawd character artwork in `Skins/clawd/` (including its embedded copy in `SkinLoader.builtinJSON`, and the manifest and preview derived from it under `docs/superpowers/specs/`) is not covered by the MIT License; the character is the property of Anthropic. The Sprig, Mochi, Peep and Bristle skins in `Skins/` (and their design preview) are original to this project and released under the MIT License, like the alert sounds in `Sounds/`.
