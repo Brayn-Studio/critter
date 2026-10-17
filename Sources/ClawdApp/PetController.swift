@@ -169,6 +169,9 @@ final class PetController {
     /// flock view is rebuilt at the new one; the window keeps its anchor.
     func scaleDidChange() {
         guard let skin, let panel else { return }
+        // A hide still sinking ends now: the old view's clock stops below, so its animation
+        // would never finish and the panel would stay up while the pet counts as hidden.
+        if isVanishing { finishHiding() }
         flockView?.setRunning(false)
         let view = makeFlockView(skin: skin)
         panel.contentView = view
