@@ -67,6 +67,8 @@ final class PetController {
             } else {
                 panel.orderOut(nil)
             }
+            // The clock only runs while the pet can be seen.
+            flockView?.setRunning(visible)
             clickThrough?.update()
         }
         onVisibilityChange?(visible)
@@ -117,10 +119,12 @@ final class PetController {
     /// flock view is rebuilt at the new one; the window keeps its anchor.
     func scaleDidChange() {
         guard let skin, let panel else { return }
+        flockView?.setRunning(false)
         let view = makeFlockView(skin: skin)
         panel.contentView = view
         flockView = view
         render()
+        view.setRunning(visible)
     }
 
     /// The merge threshold changed.
@@ -215,6 +219,15 @@ final class PetController {
         DiagnosticLog.shared.log("debug-click target=\(target) item=\(menuItem ?? "-") handled=\(handled)")
     }
 
+    /// Debug-only (`clawd://debug-snapshot`): see `DebugSnapshot`.
+    func debugSnapshot(path: String, count: Int, intervalMs: Int) {
+        guard let panel else {
+            DiagnosticLog.shared.log("debug-snapshot skipped: no panel")
+            return
+        }
+        DebugSnapshot.capture(panel, path: path, count: count, intervalMs: intervalMs)
+    }
+
     // MARK: - Rendering
 
     private func render() {
@@ -234,7 +247,7 @@ final class PetController {
         }
         // Whether "展开" can do anything: the expanded flock would fit on this screen.
         flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).content.width <= maxWidth
-        flockView.update(presentation, layout: layout)
+        flockView.update(presentation, layout: layout, sessions: sessions)
 
         currentLayout = layout
         // The flock (not the transparent margin) is what gets anchored and clamped on screen.

@@ -2,18 +2,24 @@ import AppKit
 import ClawdCore
 import QuartzCore
 
-/// The pet window's content: places Clawd sprites, accessories, bubbles, name tags, the
-/// collapse handle and the merged pile's count chips exactly where `FlockLayout` says.
+/// The pet window's content: one animated Clawd per session (a `MotionActor` drawn by a
+/// `ClawdSpriteLayer`), plus bubbles, name tags, the collapse handle and the merged pile's
+/// count chips exactly where `FlockLayout` says.
 ///
-/// Sprites are reused across snapshots: a session keeps its `ClawdLayer` for as long as it
-/// is on screen and only gets `apply(state:)` again when its state actually changes, so a
-/// new snapshot never restarts a running animation.
+/// Actors live as long as their session: a new snapshot only feeds them their new state or
+/// activity, so it never restarts a running animation. `MotionClock` advances them all on
+/// the 60 ms tick grid, waking only when the picture can change.
 ///
 /// Mouse: every click inside the view lands here (never on the labels), and what it hit is
 /// decided from the layout geometry. A press that moves less than 3 pt before release is a
 /// click; anything further drags the whole panel. Right-click opens a context menu.
 final class FlockView: NSView {
     private static let dragThreshold: CGFloat = 3
+    /// The merged pile's back rows blink (`blinkPose`) for 2 of every 80 ticks, row k
+    /// 23·k ticks out of phase.
+    private static let pileBlinkPeriod = 80
+    private static let pileBlinkPhase = 23
+    private static let pileBlinkTicks = 2
 
     /// Left click on a session's Clawd, bubble or tag (expanded flock).
     var onClickSession: ((PetSession) -> Void)?
@@ -38,13 +44,17 @@ final class FlockView: NSView {
     private let skin: SkinManifest
     private let metrics: FlockLayout.Metrics
     private var reduceMotion: Bool
+    private let atlas: SpriteAtlas
+    private let clock: MotionClock
 
     /// Layer-hosting container for the sprites, below every subview.
     private let spriteHost = NSView()
-    private var clawds: [String: ClawdLayer] = [:]
-    private var appliedStates: [String: PetState] = [:]
-    /// The two dimmed Clawds stacked behind the front one in the merged pile.
+    /// One actor and sprite per shown session id (`""` = the empty state's placeholder).
+    private var actors: [String: MotionActor] = [:]
+    private var sprites: [String: ClawdSpriteLayer] = [:]
+    /// The merged pile's back rows (row 1, row 2), drawn as still dimmed poses.
     private let pileLayers: [CALayer] = [CALayer(), CALayer()]
+    private var pileImages: [CGImage?] = [nil, nil]
     private var bubbles: [String: BubbleView] = [:]
     private var tags: [String: TagView] = [:]
     private let handleView = HandleView()
@@ -52,11 +62,15 @@ final class FlockView: NSView {
 
     private(set) var presentation: FlockPresentation = .empty
     private(set) var layoutResult: FlockLayout.Result
+    /// The latest session list (merged presentations only carry the lead).
+    private var sessions: [PetSession] = []
 
     init(skin: SkinManifest, metrics: FlockLayout.Metrics, reduceMotion: Bool) {
         self.skin = skin
         self.metrics = metrics
         self.reduceMotion = reduceMotion
+        atlas = SpriteAtlas(skin: skin)
+        clock = MotionClock(tickMs: skin.tickMs)
         layoutResult = FlockLayout.layout(.empty, metrics: metrics)
         super.init(frame: NSRect(origin: .zero, size: layoutResult.size))
         wantsLayer = true
@@ -71,13 +85,18 @@ final class FlockView: NSView {
             pileLayer.magnificationFilter = .nearest
             pileLayer.minificationFilter = .nearest
             pileLayer.opacity = index == 0 ? 0.75 : 0.55
-            pileLayer.zPosition = -CGFloat(index + 1)
+            // Behind the lead (z 2), like the seats they stand for (z = 2 − row).
+            pileLayer.zPosition = CGFloat(1 - index)
             pileLayer.isHidden = true
             spriteHost.layer?.addSublayer(pileLayer)
         }
 
         addSubview(handleView)
         addSubview(chipsView)
+
+        clock.onTick = { [weak self] ticks in
+            self?.tick(ticks) ?? MotionClock.maxSleepTicks
+        }
     }
 
     required init?(coder: NSCoder) {
@@ -101,9 +120,15 @@ final class FlockView: NSView {
         return false
     }
 
-    func update(_ presentation: FlockPresentation, layout: FlockLayout.Result) {
+    private var unit: CGFloat { metrics.unit }
+
+    func update(_ presentation: FlockPresentation, layout: FlockLayout.Result, sessions: [PetSession]) {
         self.presentation = presentation
         layoutResult = layout
+        self.sessions = sessions
+
+        syncActors()
+        placeActors()
 
         // Standalone CALayers animate geometry changes implicitly; the flock should snap.
         CATransaction.begin()
@@ -112,15 +137,7 @@ final class FlockView: NSView {
 
         let entries = self.entries
         let liveIds = Set(entries.map(\.slot.id))
-        for (id, clawd) in clawds where !liveIds.contains(id) {
-            clawd.removeFromSuperlayer()
-            clawd.accessoryLayer.removeFromSuperlayer()
-            clawds[id] = nil
-            appliedStates[id] = nil
-        }
-
         for (slot, session) in entries {
-            placeClawd(slot: slot, state: session?.state ?? .idle)
             placeBubble(slot: slot, session: session)
             placeTag(slot: slot, session: session)
         }
@@ -133,8 +150,6 @@ final class FlockView: NSView {
             tags[id] = nil
         }
 
-        placePile()
-
         handleView.isHidden = layout.handle == nil
         if let handle = layout.handle { handleView.frame = handle }
 
@@ -143,20 +158,155 @@ final class FlockView: NSView {
             chipsView.configure(counts: counts)
             chipsView.frame = chips
         }
+        clock.poke()
     }
 
-    /// Re-applies every sprite's animation, e.g. after "Reduce motion" was toggled.
+    /// Starts or stops the animation clock (stopped while the pet is hidden).
+    func setRunning(_ running: Bool) {
+        if running {
+            clock.start()
+        } else {
+            clock.stop()
+        }
+    }
+
+    /// "Reduce motion" was toggled: every Clawd holds a still pose (or animates again).
     func setReduceMotion(_ reduceMotion: Bool) {
         guard reduceMotion != self.reduceMotion else { return }
         self.reduceMotion = reduceMotion
-        appliedStates.removeAll()
-        update(presentation, layout: layoutResult)
+        for actor in actors.values { actor.reduceMotion = reduceMotion }
+        clock.poke()
     }
 
-    override func viewDidChangeBackingProperties() {
-        super.viewDidChangeBackingProperties()
-        let scale = window?.backingScaleFactor ?? 2
-        for clawd in clawds.values { clawd.accessoryLayer.contentsScale = scale }
+    // MARK: - Actors
+
+    /// The ids that get a Clawd: every session, or the placeholder when there are none.
+    private var actorIds: [String] {
+        if case .empty = presentation { return [""] }
+        return sessions.map(\.id)
+    }
+
+    /// Creates a quiet actor for each new id, feeds the existing ones their new activity and
+    /// state, and drops the ones whose session is gone.
+    private func syncActors() {
+        let byId = Dictionary(sessions.map { ($0.id, $0) }) { first, _ in first }
+        let ids = actorIds
+        for id in ids {
+            let session = byId[id]
+            if let actor = actors[id] {
+                actor.setActivity(session?.activity)
+                let state = session?.state ?? .idle
+                if actor.state != state { actor.enterState(state) }
+            } else {
+                let actor = MotionActor(skin: skin, rng: .system(), reduceMotion: reduceMotion)
+                actor.setActivity(session?.activity)
+                actor.enterState(session?.state ?? .idle, quiet: true)
+                actors[id] = actor
+                let sprite = ClawdSpriteLayer(atlas: atlas, unit: unit)
+                spriteHost.layer?.addSublayer(sprite)
+                sprites[id] = sprite
+            }
+        }
+        let live = Set(ids)
+        for id in actors.keys where !live.contains(id) {
+            actors[id] = nil
+            sprites[id]?.removeFromSuperlayer()
+            sprites[id] = nil
+        }
+    }
+
+    /// Expanded: each Clawd stands in its column. Merged: only the lead shows, in front of
+    /// the pile (the others wait hidden); its head marker gives way to the count chips.
+    private func placeActors() {
+        switch presentation {
+        case .empty, .expanded:
+            for slot in layoutResult.slots {
+                guard let actor = actors[slot.id] else { continue }
+                actor.hidden = false
+                actor.noAccessory = false
+                sprites[slot.id]?.groundOrigin = slot.clawd.origin
+            }
+        case .merged(let lead, _, _):
+            let front = layoutResult.slots.first?.clawd.origin ?? .zero
+            for (id, actor) in actors {
+                actor.hidden = id != lead.id
+                actor.noAccessory = true
+                sprites[id]?.groundOrigin = front
+            }
+        }
+    }
+
+    // MARK: - Clock
+
+    /// Advances every actor `ticks` ticks, draws, and returns the ticks until the next change.
+    private func tick(_ ticks: Int) -> Int {
+        for _ in 0..<ticks {
+            for actor in actors.values { actor.step() }
+        }
+        for (id, actor) in actors {
+            sprites[id]?.render(actor.snapshot())
+        }
+        renderPile()
+
+        var next = MotionClock.maxSleepTicks
+        for actor in actors.values where !actor.hidden || actor.isPlayingOnce {
+            next = min(next, actor.ticksUntilChange())
+        }
+        return min(next, pileTicksUntilChange())
+    }
+
+    /// The merged pile's lead actor and back-row count, or nil when not merged.
+    private var pile: (lead: MotionActor, rows: Int, front: CGPoint)? {
+        guard case .merged(let lead, _, let total) = presentation, let actor = actors[lead.id],
+              let front = layoutResult.slots.first?.clawd.origin else { return nil }
+        return (actor, PileSeating.backRows(total: total), front)
+    }
+
+    private func pileBlinks(row: Int, clock: Int) -> Bool {
+        (clock + Self.pileBlinkPhase * row) % Self.pileBlinkPeriod < Self.pileBlinkTicks
+    }
+
+    /// Row k sits 4k cells right and k cells up from the lead, dimmed, as a still pose.
+    private func renderPile() {
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        defer { CATransaction.commit() }
+        let pile = self.pile
+        for (index, layer) in pileLayers.enumerated() {
+            let row = index + 1
+            guard let pile, row <= pile.rows, !pile.lead.hidden else {
+                layer.isHidden = true
+                continue
+            }
+            let names = skin.interactions
+            let poseName = pileBlinks(row: row, clock: pile.lead.clock) ? names.blinkPose : names.land
+            guard let pose = atlas.pose(poseName, dim: true) else {
+                layer.isHidden = true
+                continue
+            }
+            let u = unit
+            let grid = pose.grid
+            let frame = CGRect(
+                x: pile.front.x + CGFloat(4 * row + grid.minX) * u,
+                y: pile.front.y + CGFloat(row + 10 - grid.minY - grid.height) * u,
+                width: CGFloat(grid.width) * u, height: CGFloat(grid.height) * u
+            )
+            if layer.frame != frame { layer.frame = frame }
+            if pileImages[index] !== pose.image {
+                pileImages[index] = pose.image
+                layer.contents = pose.image
+            }
+            if layer.isHidden { layer.isHidden = false }
+        }
+    }
+
+    private func pileTicksUntilChange() -> Int {
+        guard let pile, pile.rows > 0, !pile.lead.hidden else { return MotionClock.maxSleepTicks }
+        let clock = pile.lead.clock
+        let changes = (1...Self.pileBlinkPeriod).first { ahead in
+            (1...pile.rows).contains { pileBlinks(row: $0, clock: clock + ahead) != pileBlinks(row: $0, clock: clock) }
+        }
+        return changes ?? MotionClock.maxSleepTicks
     }
 
     // MARK: - Mouse
@@ -278,47 +428,6 @@ final class FlockView: NSView {
     }
 
     // MARK: - Placement
-
-    private func placeClawd(slot: FlockLayout.Slot, state: PetState) {
-        let clawd = clawds[slot.id] ?? makeClawd(id: slot.id)
-        if appliedStates[slot.id] != state {
-            clawd.apply(state: state, reduceMotion: reduceMotion)
-            appliedStates[slot.id] = state
-        }
-        // In the pile, the front Clawd sits at the bottom-left corner of the pile rect.
-        let front = isMerged ? CGRect(origin: slot.clawd.origin, size: metrics.clawdSize) : slot.clawd
-        clawd.position = CGPoint(x: front.midX, y: front.midY)
-        clawd.accessoryLayer.frame = slot.accessory
-        clawd.accessoryLayer.isHidden = isMerged
-    }
-
-    private func makeClawd(id: String) -> ClawdLayer {
-        let clawd = ClawdLayer(skin: skin, scale: metrics.scale)
-        clawd.accessoryLayer.contentsScale = window?.backingScaleFactor ?? 2
-        spriteHost.layer?.addSublayer(clawd)
-        spriteHost.layer?.addSublayer(clawd.accessoryLayer)
-        clawds[id] = clawd
-        return clawd
-    }
-
-    private func placePile() {
-        guard isMerged, let slot = layoutResult.slots.first, let front = clawds[slot.id] else {
-            for pileLayer in pileLayers { pileLayer.isHidden = true }
-            return
-        }
-        let still = front.stillImage(for: .idle)
-        for (index, pileLayer) in pileLayers.enumerated() {
-            let step = CGFloat(index + 1)
-            pileLayer.contents = still
-            pileLayer.frame = CGRect(
-                x: slot.clawd.minX + step * metrics.pileStep.width,
-                y: slot.clawd.minY + step * metrics.pileStep.height,
-                width: metrics.clawdSize.width,
-                height: metrics.clawdSize.height
-            )
-            pileLayer.isHidden = false
-        }
-    }
 
     private func placeBubble(slot: FlockLayout.Slot, session: PetSession?) {
         guard let rect = slot.bubble, let session else { return }

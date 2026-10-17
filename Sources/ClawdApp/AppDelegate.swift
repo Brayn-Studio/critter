@@ -291,6 +291,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             if let target = value("target") {
                 petController.debugClick(target: target, menuItem: value("item"))
             }
+        case "debug-snapshot":
+            // `clawd://debug-snapshot?path=<absolute .png>[&count=N][&interval=<ms>]`: renders
+            // the pet's layer tree to PNG(s) (see `DebugSnapshot`), for verifying the
+            // animation where screen capture is unavailable.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in query.first { $0.name == name }?.value }
+            guard let path = value("path"), path.hasPrefix("/") else {
+                DiagnosticLog.shared.log("debug-snapshot needs an absolute path")
+                break
+            }
+            petController.debugSnapshot(
+                path: path,
+                count: value("count").flatMap(Int.init) ?? 1,
+                intervalMs: value("interval").flatMap(Int.init) ?? 150
+            )
         case "debug-set":
             // `clawd://debug-set?<setting>=<value>[&…]`: changes settings through the same
             // store the settings window binds to (debug only; see `applyDebugValue`).
