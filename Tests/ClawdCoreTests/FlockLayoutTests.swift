@@ -48,6 +48,7 @@ private func allPresentations() -> [FlockPresentation] {
             let bounds = CGRect(origin: .zero, size: r.size)
             for rect in r.hitRects + r.slots.map(\.accessory) {
                 #expect(bounds.contains(rect), "\(rect) escapes \(bounds) at scale \(scale) for \(p)")
+                #expect(r.content.contains(rect), "\(rect) escapes content \(r.content) at scale \(scale) for \(p)")
             }
         }
     }
@@ -64,6 +65,7 @@ private func allPresentations() -> [FlockPresentation] {
     #expect(r.handle == nil)
     // The pile is wider than one Clawd: two more are stacked behind it, offset 12·scale each.
     #expect(r.slots[0].clawd.width == CGFloat(54 + 24))
+    #expect(FlockLayout.Metrics(scale: 1).pileStep == CGSize(width: 12, height: 3))
 
     let idleLead = FlockLayout.layout(
         .merged(lead: s("0", state: .idle), counts: [StateCount(state: .idle, count: 5)], total: 5),
@@ -86,7 +88,7 @@ private func allPresentations() -> [FlockPresentation] {
     let r = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: m)
     // 3 bubble columns (132) + 1 bare column (54 + 12), gaps, the collapse handle, padding.
     let expectedWidth = m.padding * 2 + 132 * 3 + 66 + m.columnGap * 3 + m.columnGap + m.handleSize.width
-    #expect(r.size.width == expectedWidth)
+    #expect(r.content.width == expectedWidth)
     // Every bubble's bottom edge sits on the same line, above every accessory row.
     let bubbleBottoms = Set(r.slots.compactMap { $0.bubble?.minY })
     #expect(bubbleBottoms.count == 1)
@@ -100,7 +102,7 @@ private func allPresentations() -> [FlockPresentation] {
 @Test func withoutBubblesTheWindowIsShorter() {
     let idle = FlockLayout.layout(.expanded([s("0", state: .idle)], showCollapse: false), metrics: .init(scale: 1))
     let busy = FlockLayout.layout(.expanded([s("0", state: .running)], showCollapse: false), metrics: .init(scale: 1))
-    #expect(idle.size.height < busy.size.height)
+    #expect(idle.content.height < busy.content.height)
     #expect(idle.handle == nil)
 }
 
@@ -147,7 +149,7 @@ private func allPresentations() -> [FlockPresentation] {
     #expect(r.target(at: CGPoint(x: second.tag.midX, y: second.tag.midY)) == .slot(1))
     #expect(r.target(at: CGPoint(x: r.handle!.midX, y: r.handle!.midY)) == .handle)
     // Above an idle Clawd (no bubble) is empty space: click-through, no target.
-    #expect(r.target(at: CGPoint(x: second.clawd.midX, y: r.size.height - 10)) == nil)
+    #expect(r.target(at: CGPoint(x: second.clawd.midX, y: r.content.maxY - 10)) == nil)
 
     let merged = FlockLayout.layout(
         FlockModel.present((0..<5).map { s("\($0)", state: .running) }, threshold: 4, override: nil),
@@ -173,9 +175,10 @@ private func allPresentations() -> [FlockPresentation] {
             )
             let layout = FlockLayout.layout(presentation, metrics: metrics)
             for anchor in [PositionModel.defaultAnchor(visible: visible), Anchor(side: .left, x: 40, y: 60)] {
-                let frame = PositionModel.frame(size: layout.size, anchor: anchor, visible: visible)
+                let contentFrame = PositionModel.frame(size: layout.content.size, anchor: anchor, visible: visible)
+                let frame = layout.windowFrame(contentFrame: contentFrame)
                 func onScreen(_ rect: CGRect) -> Bool { visible.contains(rect.offsetBy(dx: frame.minX, dy: frame.minY)) }
-                #expect(visible.contains(frame), "count=\(count) override=\(String(describing: override))")
+                #expect(visible.contains(contentFrame), "count=\(count) override=\(String(describing: override))")
                 if let handle = layout.handle {
                     #expect(onScreen(handle), "handle off screen: count=\(count)")
                 }
@@ -198,4 +201,54 @@ private func allPresentations() -> [FlockPresentation] {
     let merged = FlockModel.present(sessions, threshold: 2, override: nil)
     #expect(FlockLayout.fitted(merged, metrics: metrics, maxWidth: 10) == merged)
     #expect(FlockLayout.fitted(.empty, metrics: metrics, maxWidth: 10) == .empty)
+}
+
+@Test func metricsUseSquarePixelUnit() {
+    let m = FlockLayout.Metrics(scale: 1)
+    #expect(m.unit == 3)
+    #expect(m.accessoryHeight == 24)
+    #expect(m.pileStep == CGSize(width: 12, height: 3))
+    #expect(FlockLayout.Metrics(scale: 2).accessoryHeight == 48)
+    #expect(FlockLayout.Metrics(scale: 1, accessoryHeight: 5).accessoryHeight == 5)
+    #expect(m.overscan == FlockLayout.Insets(top: 36, left: 36, bottom: 24, right: 36))
+}
+
+@Test func overscanSurroundsContent() {
+    for p in allPresentations() {
+        for scale in [1, 2] as [CGFloat] {
+            let r = FlockLayout.layout(p, metrics: .init(scale: scale))
+            #expect(r.size.width == r.content.width + 72 * scale)
+            #expect(r.size.height == r.content.height + 60 * scale)
+            #expect(r.content.origin == CGPoint(x: 36 * scale, y: 24 * scale))
+        }
+    }
+}
+
+@Test func everyRectLiesInsideContent() {
+    for scale in [0.5, 1, 2] as [CGFloat] {
+        for p in allPresentations() {
+            let r = FlockLayout.layout(p, metrics: .init(scale: scale))
+            let rects = r.hitRects + r.slots.flatMap { [$0.clawd, $0.accessory, $0.tag] + ($0.bubble.map { [$0] } ?? []) }
+                + (r.handle.map { [$0] } ?? []) + (r.chips.map { [$0] } ?? [])
+            #expect(rects.allSatisfy(r.content.contains))
+        }
+    }
+}
+
+@Test func windowContentRoundTrip() {
+    let r = FlockLayout.layout(.empty, metrics: .init(scale: 1))
+    let content = CGRect(x: 500, y: 40, width: r.content.width, height: r.content.height)
+    let window = r.windowFrame(contentFrame: content)
+    #expect(window.size == r.size)
+    #expect(window.origin == CGPoint(x: 464, y: 16))
+    #expect(r.contentFrame(windowFrame: window) == content)
+}
+
+@Test func fittedComparesContentWidth() {
+    let sessions = (0..<3).map { s("\($0)", state: .running) }
+    let expanded = FlockModel.present(sessions, threshold: 10, override: nil)
+    let m = FlockLayout.Metrics(scale: 1)
+    let width = FlockLayout.layout(expanded, metrics: m).content.width
+    #expect(FlockLayout.fitted(expanded, metrics: m, maxWidth: width) == expanded)
+    #expect(FlockLayout.fitted(expanded, metrics: m, maxWidth: width - 1) != expanded)
 }

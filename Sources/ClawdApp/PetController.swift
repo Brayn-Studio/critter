@@ -39,6 +39,8 @@ final class PetController {
     /// Where the user last dropped the pet (UserDefaults `anchor`); nil → default corner.
     private var anchor: Anchor? = AnchorStore.load()
     private var isDragging = false
+    /// The layout currently on screen (its `content` rect maps the panel to the flock).
+    private var currentLayout: FlockLayout.Result?
     /// False until the monitor's first snapshot arrives, so the log doesn't record the
     /// placeholder "empty" state the panel shows while the first scan is still running.
     private var hasSnapshot = false
@@ -197,8 +199,10 @@ final class PetController {
         clickThrough?.isDragging = dragging
         guard !dragging, let panel else { return }
         // Dropped: remember which corner it was dropped by, then snap fully on screen.
-        let screen = Self.screen(containing: CGPoint(x: panel.frame.midX, y: panel.frame.midY))
-        let dropped = PositionModel.anchor(for: panel.frame, in: screen?.frame ?? Self.fallbackScreen)
+        // The anchor follows the flock itself, not the transparent margin around it.
+        let flock = currentLayout?.contentFrame(windowFrame: panel.frame) ?? panel.frame
+        let screen = Self.screen(containing: CGPoint(x: flock.midX, y: flock.midY))
+        let dropped = PositionModel.anchor(for: flock, in: screen?.frame ?? Self.fallbackScreen)
         anchor = dropped
         AnchorStore.save(dropped)
         DiagnosticLog.shared.log("event moved anchor=\(dropped.side.rawValue),\(Int(dropped.x)),\(Int(dropped.y))")
@@ -229,10 +233,13 @@ final class PetController {
             return
         }
         // Whether "展开" can do anything: the expanded flock would fit on this screen.
-        flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).size.width <= maxWidth
+        flockView.canExpand = FlockLayout.layout(.expanded(sessions, showCollapse: true), metrics: metrics).content.width <= maxWidth
         flockView.update(presentation, layout: layout)
 
-        var placement = (frame: placementFrame(size: layout.size, visible: visibleFrame), visible: visibleFrame)
+        currentLayout = layout
+        // The flock (not the transparent margin) is what gets anchored and clamped on screen.
+        let contentFrame = placementFrame(size: layout.content.size, visible: visibleFrame)
+        var placement = (frame: layout.windowFrame(contentFrame: contentFrame), visible: visibleFrame)
         if isDragging {
             // Mid-drag the window follows the mouse; only its size may change.
             placement.frame = NSRect(origin: panel.frame.origin, size: layout.size)
@@ -253,8 +260,8 @@ final class PetController {
         return screens[index].visibleFrame
     }
 
-    /// The window frame for `size` at the saved anchor (or the default spot), clamped fully
-    /// into `visible`.
+    /// The frame for a flock of `size` at the saved anchor (or the default spot), clamped
+    /// fully into `visible`.
     private func placementFrame(size: CGSize, visible: NSRect) -> NSRect {
         PositionModel.frame(size: size, anchor: anchor ?? PositionModel.defaultAnchor(visible: visible), visible: visible)
     }

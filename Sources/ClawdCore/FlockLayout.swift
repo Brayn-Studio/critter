@@ -31,7 +31,7 @@ public struct FlockLayout {
             columnGap: CGFloat = 10,
             padding: CGFloat = 8,
             tagHeight: CGFloat = 24,
-            accessoryHeight: CGFloat = 14,
+            accessoryHeight: CGFloat? = nil,
             handleSize: CGSize = CGSize(width: 44, height: 18)
         ) {
             self.scale = scale
@@ -40,16 +40,33 @@ public struct FlockLayout {
             self.columnGap = columnGap
             self.padding = padding
             self.tagHeight = tagHeight
-            self.accessoryHeight = accessoryHeight
+            self.accessoryHeight = accessoryHeight ?? 8 * 3 * scale
             self.handleSize = handleSize
         }
 
-        /// One Clawd: 18×5 logical pixels of 3×6 pt each, times `scale`.
+        /// One square pixel cell: 3 pt times `scale`.
+        public var unit: CGFloat { 3 * scale }
+
+        /// The transparent margin around the flock, so animations can draw outside the content.
+        public var overscan: Insets { Insets(top: 12 * unit, left: 12 * unit, bottom: 8 * unit, right: 12 * unit) }
+
+        /// One Clawd: 18×10 square pixel cells of `unit` each.
         public var clawdSize: CGSize { CGSize(width: 54 * scale, height: 30 * scale) }
 
         /// In the merged pile, each of the two Clawds stacked behind the front one is
         /// shifted right and up by this much relative to the one in front of it.
-        public var pileStep: CGSize { CGSize(width: 12 * scale, height: 4 * scale) }
+        public var pileStep: CGSize { CGSize(width: 4 * unit, height: 1 * unit) }
+    }
+
+    public struct Insets: Equatable, Sendable {
+        public var top: CGFloat, left: CGFloat, bottom: CGFloat, right: CGFloat
+
+        public init(top: CGFloat, left: CGFloat, bottom: CGFloat, right: CGFloat) {
+            self.top = top
+            self.left = left
+            self.bottom = bottom
+            self.right = right
+        }
     }
 
     public struct Slot: Equatable, Sendable {
@@ -66,7 +83,10 @@ public struct FlockLayout {
     }
 
     public struct Result: Equatable, Sendable {
+        /// The whole window, transparent overscan margin included.
         public var size: CGSize
+        /// The flock proper (no margin), in window coordinates.
+        public var content: CGRect
         public var slots: [Slot]
         /// The "⇥ 收起" handle after the last column of an expanded flock.
         public var handle: CGRect?
@@ -74,6 +94,22 @@ public struct FlockLayout {
         public var chips: CGRect?
         /// Everything that should catch the mouse; the rest of the window is click-through.
         public var hitRects: [CGRect]
+
+        /// The window frame that puts `content` at `contentFrame` (same size as `content`).
+        public func windowFrame(contentFrame: CGRect) -> CGRect {
+            CGRect(
+                x: contentFrame.minX - content.minX, y: contentFrame.minY - content.minY,
+                width: size.width, height: size.height
+            )
+        }
+
+        /// Where `content` sits on screen when the window is at `windowFrame`.
+        public func contentFrame(windowFrame: CGRect) -> CGRect {
+            CGRect(
+                x: windowFrame.minX + content.minX, y: windowFrame.minY + content.minY,
+                width: content.width, height: content.height
+            )
+        }
 
         /// What a click at `point` (window coordinates) lands on: a slot's Clawd, bubble or
         /// tag, the collapse handle, or the count chips -- nil for click-through space.
@@ -130,12 +166,32 @@ public struct FlockLayout {
     /// "⇥ 收起" handle included -- would be pushed off screen, out of reach.
     public static func fitted(_ presentation: FlockPresentation, metrics: Metrics, maxWidth: CGFloat) -> FlockPresentation {
         guard case .expanded(let sessions, _) = presentation, sessions.count >= 2,
-              layout(presentation, metrics: metrics).size.width > maxWidth
+              layout(presentation, metrics: metrics).content.width > maxWidth
         else { return presentation }
         return FlockModel.merged(sessions)
     }
 
     public static func layout(_ p: FlockPresentation, metrics m: Metrics) -> Result {
+        withOverscan(unpadded(p, metrics: m), metrics: m)
+    }
+
+    /// Shifts everything by the overscan's left/bottom and grows the window by all four sides.
+    private static func withOverscan(_ r: Result, metrics m: Metrics) -> Result {
+        let o = m.overscan
+        func moved(_ rect: CGRect) -> CGRect { rect.offsetBy(dx: o.left, dy: o.bottom) }
+        return Result(
+            size: CGSize(width: r.size.width + o.left + o.right, height: r.size.height + o.top + o.bottom),
+            content: moved(CGRect(origin: .zero, size: r.size)),
+            slots: r.slots.map {
+                Slot(id: $0.id, clawd: moved($0.clawd), accessory: moved($0.accessory), tag: moved($0.tag), bubble: $0.bubble.map(moved))
+            },
+            handle: r.handle.map(moved),
+            chips: r.chips.map(moved),
+            hitRects: r.hitRects.map(moved)
+        )
+    }
+
+    private static func unpadded(_ p: FlockPresentation, metrics m: Metrics) -> Result {
         switch p {
         case .empty:
             return layoutColumns([Column(id: "", hasBubble: false, tagText: emptyTagText)], showHandle: false, metrics: m)
@@ -192,7 +248,7 @@ public struct FlockLayout {
 
         let size = CGSize(width: x + m.padding, height: rows.totalHeight)
         let hitRects = slots.flatMap { [$0.clawd, $0.tag] + ($0.bubble.map { [$0] } ?? []) } + (handle.map { [$0] } ?? [])
-        return Result(size: size, slots: slots, handle: handle, chips: nil, hitRects: hitRects)
+        return Result(size: size, content: CGRect(origin: .zero, size: size), slots: slots, handle: handle, chips: nil, hitRects: hitRects)
     }
 
     // MARK: - Merged pile
@@ -223,7 +279,7 @@ public struct FlockLayout {
 
         let size = CGSize(width: x + width + m.padding, height: rows.totalHeight)
         let hitRects = [slot.clawd, slot.tag] + (slot.bubble.map { [$0] } ?? []) + [chips]
-        return Result(size: size, slots: [slot], handle: nil, chips: chips, hitRects: hitRects)
+        return Result(size: size, content: CGRect(origin: .zero, size: size), slots: [slot], handle: nil, chips: chips, hitRects: hitRects)
     }
 
     // MARK: - Helpers
