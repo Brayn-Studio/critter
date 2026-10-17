@@ -73,6 +73,37 @@ private func rows(_ k: MotionClip) -> [[String]] {
     #expect(a.traveling)
 }
 
+@Test func travelReplacedFromACompletionLeavesNoStrayFlags() {
+    // travel 1's completion starts another clip while travel 2 is replacing it
+    let a = makeActor()
+    a.enterState(.done, quiet: true)
+    var first: Bool?, second: Bool?
+    a.travel(fromDx: 30, fromDy: 0, delay: 0) { [unowned a] ok in
+        first = ok
+        a.play("blink")
+    }
+    a.step()
+    a.travel(fromDx: -20, fromDy: 0, delay: 0, seat: PileSeating.seat(row: 2)) { second = $0 }
+    #expect(first == false)
+    #expect(second == false)
+    #expect(!a.traveling)
+    #expect(a.currentClipName == "blink")
+    #expect(a.travelSeat == nil)
+    a.reduceMotion = true                      // must not seat it or end the blink
+    #expect(a.tint == nil && a.alpha == 1 && a.z == 2)
+    #expect(a.currentClipName == "blink")
+
+    // ...or cancels the one-shot
+    let b = makeActor()
+    var cancelled: Bool?
+    b.travel(fromDx: 30, fromDy: 0, delay: 0) { [unowned b] _ in b.cancelOnce() }
+    b.travel(fromDx: 10, fromDy: 0, delay: 0) { cancelled = $0 }
+    #expect(cancelled == false)
+    #expect(!b.traveling)
+    #expect(!b.isPlayingOnce)
+    #expect(b.currentClipName == "idle")
+}
+
 @Test func noBrainWhileTravelingOrFollowing() {
     let a = makeActor()
     a.enterState(.idle, quiet: true)

@@ -23,14 +23,19 @@ extension MotionActor {
         }
         let keys = MotionTravel.keys(fromDx: fromDx, fromDy: fromDy, toDy: seat?.row ?? 0, delay: delay,
                                      hopLength: hopLength, names: skin.interactions)
-        play(clip: keys, name: nil) { [weak self] ok in
-            self?.traveling = false
-            self?.travelSeat = nil
-            completion?(ok)
-        }
-        // After `play`: a travel it replaced has already been told `false`.
+        // The flags belong to this travel only: a replaced travel's callback (or whatever it
+        // starts) must neither clear them for this one nor leave them set after it.
+        travelID += 1
+        let id = travelID
         travelSeat = seat
         traveling = true
+        play(clip: keys, name: nil) { [weak self] ok in
+            if let self, self.travelID == id {
+                self.traveling = false
+                self.travelSeat = nil
+            }
+            completion?(ok)
+        }
     }
 
     /// Back from a pile seat to the state's own look and loop.

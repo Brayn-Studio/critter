@@ -66,6 +66,8 @@ public final class MotionActor {
     public internal(set) var traveling = false
     public internal(set) var following = false
     var travelSeat: Seat?
+    /// Identifies the latest travel, so only its own completion clears the travel flags.
+    var travelID = 0
     /// Still dragging: keep following even when caught up.
     var followHold = false
     var followLook: String?

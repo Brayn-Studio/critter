@@ -60,6 +60,42 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     #expect(resting!.y == -7)
 }
 
+@Test func interruptedExitStillShowsBadge() {
+    // the exit is cancelled (e.g. another Clawd is dragged and this one starts following)
+    let a = makeActor()
+    a.enterState(.running, quiet: true)
+    a.enterState(.waiting)
+    for _ in 0..<3 { a.step() }
+    #expect(a.currentClipName == "lap_close")
+    a.cancelOnce()
+    #expect(a.badgeVisible)
+    #expect(a.currentClipName == "ask")        // the entrance is skipped, the loop goes on
+    #expect(a.snapshot().badge?.y == -8)       // just appeared: hopping
+    for _ in 0..<30 {
+        a.step()
+        #expect(a.currentClipName != "alert")
+        #expect(a.snapshot().badge != nil)
+    }
+
+    // the exit is replaced by a layout hop: the badge shows once it lands
+    let b = makeActor()
+    b.enterState(.running, quiet: true)
+    b.enterState(.waiting)
+    b.step()
+    b.travel(fromDx: 20, fromDy: 0, delay: 0)
+    #expect(b.badgeVisible)
+    stepUntilLoop(b)
+    #expect(b.snapshot().badge != nil)
+
+    // a newer state still drops the stale exit entirely
+    let c = makeActor()
+    c.enterState(.running, quiet: true)
+    c.enterState(.waiting)
+    c.enterState(.done, quiet: true)
+    c.cancelOnce()
+    #expect(c.snapshot().badge == nil)
+}
+
 @Test func staleEnterIsDropped() {
     let a = makeActor()
     a.enterState(.running, quiet: true)

@@ -46,8 +46,9 @@ extension MotionActor {
         let enter = s == .running ? variantSpec(variant)?.enter ?? st.enter : st.enter
         if let exit {
             play(exit) { [weak self] ok in
-                guard ok, let self, self.state == s else { return }
-                self.startEntrance(enter)
+                guard let self, self.state == s else { return }
+                // An interrupted exit skips the entrance, but the badge must still show.
+                if ok { self.startEntrance(enter) } else { self.revealBadge() }
             }
         } else if enter == nil, previous == .done, s == .idle, let seen = skin.state(.done).seen {
             play(seen)
@@ -59,11 +60,14 @@ extension MotionActor {
     /// Plays the entrance (or cancels the one-shot when there is none); the waiting badge
     /// appears the moment it starts.
     private func startEntrance(_ enter: String?) {
-        if skin.state(state).badge != nil {
-            badgeVisible = true
-            badgeAge = 0
-        }
+        revealBadge()
         if let enter { play(enter) } else { cancelOnce() }
+    }
+
+    private func revealBadge() {
+        guard skin.state(state).badge != nil else { return }
+        badgeVisible = true
+        badgeAge = 0
     }
 
     /// Records which kind of work the session is doing; nil or unknown means the default variant.
