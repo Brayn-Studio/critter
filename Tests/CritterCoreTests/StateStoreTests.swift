@@ -126,16 +126,19 @@ private func rec(_ sessionId: String, _ state: PetState, t: Int64) -> SessionRec
     try s.update(sessionId: "a") { _ in .write(rec("a", .idle, t: 1)) }
 
     let group = DispatchGroup()
+    let holding = DispatchSemaphore(value: 0)
     group.enter()
     DispatchQueue.global().async {
         try? s.update(sessionId: "a") { _ in
+            holding.signal()
             Thread.sleep(forTimeInterval: 0.1)
             return .write(rec("a", .running, t: 2))
         }
         group.leave()
     }
-    // Give the background update a head start so it is the one holding the lock first.
-    Thread.sleep(forTimeInterval: 0.02)
+    // Wait until the background update holds the lock (a fixed head start isn't enough
+    // when the other tests keep every core busy).
+    holding.wait()
 
     let deleteStart = Date()
     s.delete(sessionId: "a")
