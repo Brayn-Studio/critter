@@ -322,8 +322,9 @@ extension FlockView {
             }
         }
 
+        // Seated Clawds keep looking ahead (see `setSeatRow`).
         var zones: [String: GazeZone] = [:]
-        for (id, actor) in actors where !actor.hidden {
+        for (id, actor) in actors where !actor.hidden && !isSeated(id) {
             guard let origin = groundOrigin(id) else { continue }
             let center = CGPoint(x: origin.x + 9 * unit, y: origin.y + 7 * unit)
             zones[id] = MotionGaze.zone(pointer: point, center: center, unit: unit)

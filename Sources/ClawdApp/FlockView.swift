@@ -306,9 +306,19 @@ final class FlockView: NSView {
         sprites[id]?.groundOrigin = origin
     }
 
-    /// Marks `id` as seated in (or hopping to) pile row `row` (nil: not in the pile).
+    /// Marks `id` as seated in (or hopping to) pile row `row` (nil: not in the pile). Seated,
+    /// it looks straight ahead like the still pile it stands for, so its eyes don't shift when
+    /// one replaces the other.
     func setSeatRow(_ id: String, _ row: Int?) {
         sprites[id]?.seatRow = row
+        guard row != nil else { return }
+        pointer.gaze[id] = nil
+        actors[id]?.setGaze(nil)
+    }
+
+    /// Whether `id` is seated in (or hopping to) a pile row.
+    func isSeated(_ id: String) -> Bool {
+        sprites[id]?.seatRow != nil
     }
 
     /// Lays the view out for `presentation`: bubbles, tags, handle and chips (created hidden
