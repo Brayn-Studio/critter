@@ -1,0 +1,2113 @@
+<meta charset="utf-8">
+<title>Sprig 动作库</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: an animator's light table: one live desk at the top, then sheets of looping cels, each with its exposure strip */
+:root {
+  --bg: #E9EDF1;
+  --surface: #FBFCFD;
+  --ink: #181B21;
+  --muted: #59626E;
+  --line: #D0D6DE;
+  --accent: #6A4BC4;
+  --cel: #1F232B;
+  --cel-line: #2D323C;
+  --cel-ground: #3A404C;
+  --chip-common: #E3E7EC;
+  --chip-common-ink: #3E4652;
+  --chip-sig: #ECE6FD;
+  --chip-sig-ink: #4B3496;
+  --wait: #C77800;
+  --done: #248A3D;
+  --err: #D70015;
+  --font-pixel: "Silkscreen", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101216; --surface: #181B21; --ink: #E6E8EC; --muted: #98A0AC; --line: #2A2F38;
+    --accent: #B9A6FF; --cel: #1B1F26; --cel-line: #2C313B; --cel-ground: #3A404C;
+    --chip-common: #262B33; --chip-common-ink: #B4BCC8; --chip-sig: #2A2340; --chip-sig-ink: #CDBDFF;
+    --wait: #FFB340; --done: #4CD964; --err: #FF6B60;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101216; --surface: #181B21; --ink: #E6E8EC; --muted: #98A0AC; --line: #2A2F38;
+  --accent: #B9A6FF; --cel: #1B1F26; --cel-line: #2C313B; --cel-ground: #3A404C;
+  --chip-common: #262B33; --chip-common-ink: #B4BCC8; --chip-sig: #2A2340; --chip-sig-ink: #CDBDFF;
+  --wait: #FFB340; --done: #4CD964; --err: #FF6B60;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-pixel); font-size: 12px; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; }
+header.top { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 16px 40px; align-items: center; }
+header.top .intro { display: flex; flex-direction: column; gap: 12px; max-width: 720px; min-width: 0; }
+.hero { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.hero canvas { width: 260px; height: 200px; display: block; background: var(--cel); border-radius: 12px; cursor: pointer; }
+.hero-cap { font-family: var(--font-mono); font-size: 12px; color: var(--muted); min-height: 1.6em; }
+.skinpick { display: flex; flex-wrap: wrap; gap: 8px; }
+.skinpick button { display: inline-flex; align-items: center; gap: 8px; font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 4px 12px 4px 6px; cursor: pointer; }
+.skinpick button[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.skinpick canvas { width: 44px; height: 30px; display: block; }
+.skinnote { font-size: 13.5px; color: var(--muted); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 10px 14px; max-width: 72ch; }
+.swatches { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 12.5px; color: var(--muted); }
+.swatches span { display: inline-flex; align-items: center; gap: 6px; }
+.swatches i { width: 14px; height: 14px; border-radius: 3px; display: inline-block; box-shadow: inset 0 0 0 1px rgba(0,0,0,.15); }
+header.top h1 { font-size: 40px; line-height: 1.15; font-weight: 600; letter-spacing: -.01em; }
+header.top h1 .px { font-family: var(--font-pixel); font-weight: 400; font-size: 36px; letter-spacing: 0; }
+.lede { color: var(--muted); font-size: 16px; max-width: 68ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.src { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.src.common { background: var(--chip-common); color: var(--chip-common-ink); }
+.src.sig { background: var(--chip-sig); color: var(--chip-sig-ink); }
+
+section { display: flex; flex-direction: column; gap: 20px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.sec-head h2 { font-size: 24px; font-weight: 600; }
+.sec-head p { color: var(--muted); }
+
+/* ---------- desk stage ---------- */
+.desk {
+  position: relative; height: 340px; border-radius: 12px; overflow: hidden; touch-action: none;
+  background:
+    radial-gradient(120% 90% at 15% 10%, #3B4B6B 0%, transparent 60%),
+    radial-gradient(90% 80% at 90% 100%, #5A3B3A 0%, transparent 65%),
+    #26293A;
+  border: 1px solid var(--line);
+  user-select: none; -webkit-user-select: none;
+}
+.desk .win {
+  position: absolute; left: 4%; top: 7%; width: 54%; height: 62%;
+  border-radius: 10px; background: rgba(250, 250, 252, .08); border: 1px solid rgba(255, 255, 255, .12);
+}
+.desk .win::before {
+  content: ""; position: absolute; left: 12px; top: 11px; width: 42px; height: 10px;
+  background: radial-gradient(circle 5px at 5px 5px, #FF5F57 99%, transparent), radial-gradient(circle 5px at 21px 5px, #FEBC2E 99%, transparent), radial-gradient(circle 5px at 37px 5px, #28C840 99%, transparent);
+}
+.desk .win i { position: absolute; left: 16px; right: 30%; height: 7px; border-radius: 4px; background: rgba(255,255,255,.09); }
+.desk canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.overlay { position: absolute; inset: 0; pointer-events: none; }
+.bubble {
+  position: absolute; width: 132px; background: #FFFFFF; color: #1D1D1F; border-radius: 10px;
+  padding: 6px 9px 7px 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: auto; cursor: pointer;
+  transition: opacity .18s steps(3), transform .18s steps(3);
+}
+.bubble::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 3px 3px 0; background: var(--stripe, #8E8E93); }
+.bubble small { display: block; font-size: 9px; color: #6E6E73; line-height: 1.3; }
+.bubble span { display: block; font-size: 11px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tag {
+  position: absolute; height: 22px; border-radius: 6px; color: #FFFFFF; padding: 0 7px; display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 500; white-space: nowrap; pointer-events: auto; cursor: pointer;
+  transition: opacity .18s steps(3);
+}
+.tag em { font-style: normal; font-size: 8px; opacity: .8; }
+.handle {
+  position: absolute; width: 44px; height: 18px; border-radius: 8px; background: rgba(38, 38, 40, .75); color: #FFFFFF;
+  font-size: 10px; display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer;
+}
+.chips { position: absolute; display: flex; gap: 4px; pointer-events: auto; cursor: pointer; }
+.chips b { font-size: 9px; color: #FFFFFF; padding: 0 5px; height: 14px; line-height: 14px; border-radius: 7px; }
+.is-hidden { opacity: 0 !important; pointer-events: none !important; transform: translateY(4px); }
+.toast {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(20, 22, 28, .9); color: #F2F3F5;
+  font-size: 12px; padding: 6px 12px; border-radius: 8px; pointer-events: none; white-space: nowrap;
+}
+.hint { position: absolute; right: 16px; top: 14px; color: rgba(255,255,255,.6); font-size: 12px; pointer-events: none; max-width: 36%; line-height: 1.5; text-align: right; }
+
+.controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.srow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+.srow:first-of-type { border-top: 0; }
+.srow .nm { font-family: var(--font-mono); font-size: 13px; min-width: 96px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button, .btn {
+  font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 0; padding: 4px 10px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.btn { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-align: left; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:hover:not(:disabled), .seg button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.seg button[aria-pressed="true"]:hover { background: var(--ink); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
+.gbtns { display: flex; flex-direction: column; gap: 8px; }
+.gbtns label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+/* ---------- catalog ---------- */
+.group { display: flex; flex-direction: column; gap: 14px; }
+.group-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.group-head h2 { font-size: 22px; font-weight: 600; }
+.group-head .eyebrow { font-size: 11px; }
+.group-head p { grid-column: 1 / -1; color: var(--muted); font-size: 14px; max-width: 72ch; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.card canvas { display: block; width: 100%; height: 150px; background: var(--cel); cursor: pointer; }
+.card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.card h3 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .kind { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+.card .trig { font-size: 13px; color: var(--accent); }
+.card .desc { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+.card .foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.xs { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--line); gap: 1px; }
+.xs i { display: block; background: color-mix(in srgb, var(--ink) 14%, var(--surface)); min-width: 2px; }
+.xs i.on { background: var(--accent); }
+.meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+
+/* ---------- pose sheet ---------- */
+.poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.pose { background: var(--cel); border-radius: 8px; padding: 8px 6px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pose canvas { width: 100px; height: 76px; display: block; }
+.pose code { font-family: var(--font-mono); font-size: 11px; color: #AEB5C0; }
+
+/* ---------- notes ---------- */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.note h3 { font-size: 16px; font-weight: 600; }
+.note ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+.note li b { color: var(--ink); font-weight: 600; }
+.note a { color: var(--accent); overflow-wrap: anywhere; }
+.note code { font-family: var(--font-mono); font-size: 12.5px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  header.top { grid-template-columns: minmax(0, 1fr); }
+  .hero { justify-self: center; }
+  header.top h1 { font-size: 30px; }
+  header.top h1 .px { font-size: 27px; }
+  .controls { grid-template-columns: minmax(0, 1fr); }
+  .desk { height: 280px; }
+  .hint { display: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <div class="intro">
+      <p class="eyebrow">Critter · Sprig &amp; friends · motion library</p>
+      <h1><span class="px" id="skinTitle">Sprig</span> 动作库</h1>
+      <p class="lede">Critter 的四个可选形象：小芽、团子、啾啾、刺球。它们共用同一套动作——静息、工作、提问、完成、出错、各种交互，以及展开与合并；每格 60 毫秒、整像素跳动、不做补间，身体会压扁、拉长。各自不同的是长相，和头顶那样会表达情绪的东西。</p>
+      <div class="skinpick" id="skinPick" role="group" aria-label="选择形象"></div>
+      <p class="lede" id="skinBlurb"></p>
+      <div class="legend">
+        <span><b class="src sig">招牌</b>围绕头顶（叶子、耳朵、呆毛、刺）、开花、压扁拉长设计的动作</span>
+        <span><b class="src common">通用</b>桌宠常见的动作，按 Sprig 的手感重新画</span>
+      </div>
+    </div>
+    <figure class="hero" style="margin:0">
+      <canvas id="heroCanvas" role="img" aria-label="Sprig 依次演示各个状态，点击切到下一个"></canvas>
+      <figcaption class="hero-cap" id="heroCap"></figcaption>
+    </figure>
+  </header>
+
+  <section aria-labelledby="try">
+    <div class="sec-head">
+      <p class="eyebrow">Live desk</p>
+      <h2 id="try">试一试</h2>
+      <p>这是 4 个会话展开后的样子，和 App 里的排布、气泡、标签一致。指针靠近，它们会看向你；悬停，头顶会竖一下；在身上左右来回蹭，会冒爱心；按住拖动，会被拎起来蹬腿；点一下，会被压扁再弹起来，然后跳回会话。</p>
+    </div>
+    <div class="desk" id="desk">
+      <div class="win"><i style="top:42px"></i><i style="top:58px;right:45%"></i><i style="top:74px;right:38%"></i><i style="top:98px;right:52%"></i><i style="top:114px;right:41%"></i></div>
+      <canvas id="deskCanvas"></canvas>
+      <div class="overlay" id="overlay"></div>
+      <p class="hint">提示：用下方面板切换每个会话的状态，或者加一个会话，满 5 个时会自动合并成一堆。</p>
+      <div class="toast" id="toast" hidden></div>
+    </div>
+    <div class="controls">
+      <div class="panel" id="sessPanel"><h3>每个会话的状态</h3></div>
+      <div class="panel">
+        <h3>整组</h3>
+        <div class="gbtns">
+          <button class="btn" id="bToggle" type="button">合并成一堆</button>
+          <button class="btn" id="bJoin" type="button">新会话加入</button>
+          <button class="btn" id="bLeave" type="button">结束最后一个会话</button>
+          <button class="btn" id="bSleep" type="button">快进 2 分钟（空闲的会睡着）</button>
+          <button class="btn" id="bShow" type="button">隐藏再显示（/pet）</button>
+          <label><span>尺寸</span>
+            <select id="selSize"><option value="3">1×（App 默认）</option><option value="4" selected>1.33×</option><option value="5">1.67×</option></select>
+          </label>
+          <label><input type="checkbox" id="chkReduce"> 减少动态效果</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <p class="skinnote" id="skinNote" hidden></p>
+  <div id="catalog" style="display:flex;flex-direction:column;gap:44px"></div>
+
+  <section aria-labelledby="poseh">
+    <div class="sec-head">
+      <p class="eyebrow">Pose sheet</p>
+      <h2 id="poseh">姿势表</h2>
+      <p>上面每个动作都由这些姿势拼成。身体是 14×9 的圆豆子，另有压扁（16×8）和拉长（12×10）两种身形；2×2 的眼睛带一点高光，1 格的小短手，3 格宽的脚，头顶的芽有正常、竖起、蔫下、摊平、侧转、合拢、开花几种样子。灰线是地面，低于地面的部分不画。</p>
+      <div class="swatches" id="swatches"></div>
+    </div>
+    <div class="poses" id="poses"></div>
+  </section>
+
+  <section aria-labelledby="noteh">
+    <div class="sec-head">
+      <p class="eyebrow">Notes</p>
+      <h2 id="noteh">依据与落地</h2>
+    </div>
+    <div class="notes">
+      <div class="note">
+        <h3>形象设定</h3>
+        <ul>
+          <li><b>一家四口：</b>小芽（豆芽）、团子（猫）、啾啾（小鸡）、刺球（刺猬）。都是圆滚滚的身体、同一张脸的位置、同样的小短手和脚，所以动作编排只写一份。</li>
+          <li><b>头顶是第二张脸：</b>叶子、耳朵、呆毛、刺各自表达同一组情绪：竖起来 = 有事找你，趴下去 = 出错，收起来 = 睡着，抖一抖或转起来 = 在想，做完了长出花或苹果。</li>
+          <li><b>轮廓各不相同：</b>豆子、猫耳、呆毛、锯齿刺团，缩到菜单栏那么小也认得出来。</li>
+          <li><b>颜色：</b>身体淡紫、蓝灰、鹅黄、棕配奶油；状态色（橙 ?、绿 ✓、红 !）仍只给头顶标记用。</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>设计原则</h3>
+        <ul>
+          <li><b>弹性手感：</b>起跳前压扁、腾空时拉长、落地再压扁。身体有正常、压扁、拉长三种身形，所以蹲下是真的压扁，而不是把脚埋进地里。</li>
+          <li><b>引擎的节奏不变：</b>60 ms 一格、整像素位移、没有补间；钻进地里、从地里冒出来仍然靠“低于地面的部分不画”。</li>
+          <li><b>注意力分级：</b>空闲和工作要安静，空闲 4–10 秒才做一个小动作，2 分钟后睡着；需要你的状态（提问、出错、完成）一进入就有一下明显的“事件”动画。</li>
+          <li><b>全部原创：</b>每个像素、颜色和动作序列都是为 Sprig 重新画的；“工作中”的指示符也换成了自己的小太阳。</li>
+          <li><b>减少动态效果：</b>每个状态只停在一个代表姿势（做完了停在开花），不放粒子，展开合并直接到位。</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>怎么落到 App 里</h3>
+        <ul>
+          <li><b>每个形象一份清单：</b>这页的数据块就是 <code>Skins/sprig</code>、<code>mochi</code>、<code>peep</code>、<code>bristle</code> 四份 <code>manifest.json</code>（schema 2），由 <code>scripts/dev/make-skins-from-preview.js</code> 从本页生成；换形象不用改引擎。</li>
+          <li><b>在设置里挑：</b>App 的设置窗口列出所有形象，默认仍是 Clawd；选中后立即换上，菜单栏图标也跟着换。</li>
+          <li><b>引擎只多认一个可选字段：</b>每个状态可以带自己的一组目光姿势 <code>gaze</code>。“做完了”用它让花在目光跟随时也一直开着；没写的状态沿用 <code>interactions</code> 里的那组。</li>
+          <li><b>指示符：</b>太阳是 5 帧、放在 7 行高的框里垂直居中（<code>box: 7</code>），按 2 秒余弦来回。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TICK = 60;
+const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ======================= skin data: SKIN BEGIN ======================= */
+// Sprig and friends: four skins that share one set of poses, clips and states and differ in their
+// bodies, the thing on top of their heads, their colours and what they shed. Each entry of SKINS is
+// exactly what goes into Skins/<name>/manifest.json (schema 2); scripts/dev/make-skins-from-preview.js
+// evaluates this block and writes them.
+const SKINS = (() => {
+  const mirror = (p) => ({ at: [18 - p.at[0] - p.rows[0].length, p.at[1]], rows: p.rows.map((r) => [...r].reverse().join('')) });
+  const shift = (p, dx, dy) => ({ at: [p.at[0] + dx, p.at[1] + dy], rows: p.rows.slice() });
+  // overlay parts into one (later ones on top)
+  const merge = (...ps) => {
+    const px = new Map();
+    for (const p of ps) p.rows.forEach((r, y) => [...r].forEach((c, x) => { if (c !== '.') px.set(`${p.at[0] + x},${p.at[1] + y}`, c); }));
+    const keys = [...px.keys()].map((k) => k.split(',').map(Number));
+    const x0 = Math.min(...keys.map((k) => k[0])), x1 = Math.max(...keys.map((k) => k[0]));
+    const y0 = Math.min(...keys.map((k) => k[1])), y1 = Math.max(...keys.map((k) => k[1]));
+    const rows = [];
+    for (let y = y0; y <= y1; y++) { let s = ''; for (let x = x0; x <= x1; x++) s += px.get(`${x},${y}`) || '.'; rows.push(s); }
+    return { at: [x0, y0], rows };
+  };
+  const both = (left) => merge(left, mirror(left));
+  // derived bodies, keeping the outline, the highlight and the face: squashed = the fifth row
+  // dropped and the fourth and fourth-from-last columns doubled, one row lower; stretched = the
+  // fourth row doubled and those two columns dropped, one row higher
+  const squashOf = (p) => {
+    const w = p.rows[0].length;
+    return { at: [p.at[0] - 1, p.at[1] + 1], rows: p.rows.filter((r, i) => i !== 4).map((r) => r.slice(0, 4) + r.slice(3, w - 3) + r.slice(w - 4)) };
+  };
+  const tallOf = (p) => {
+    const w = p.rows[0].length;
+    return { at: [p.at[0] + 1, p.at[1] - 1], rows: [...p.rows.slice(0, 4), p.rows[3], ...p.rows.slice(4)].map((r) => r.slice(0, 3) + r.slice(4, w - 4) + r.slice(w - 3)) };
+  };
+
+  // ---------- what all four share: face, hands, feet, props ----------
+  const SHARED = {
+    eyes_open: { at: [5, 4], rows: ['wo....wo', 'oo....oo'] },
+    eyes_l: { at: [4, 4], rows: ['wo....wo', 'oo....oo'] },
+    eyes_r: { at: [6, 4], rows: ['wo....wo', 'oo....oo'] },
+    eyes_up: { at: [5, 3], rows: ['wo....wo', 'oo....oo'] },
+    eyes_down: { at: [5, 5], rows: ['wo....wo', 'oo....oo'] },
+    eyes_ul: { at: [4, 3], rows: ['wo....wo', 'oo....oo'] },
+    eyes_ur: { at: [6, 3], rows: ['wo....wo', 'oo....oo'] },
+    eyes_half: { at: [5, 5], rows: ['oo....oo'] },
+    eyes_shut: { at: [4, 5], rows: ['ooo....ooo'] },
+    eyes_happy: { at: [4, 4], rows: ['.oo....oo.', 'o..o..o..o'] },
+    eyes_squint: { at: [5, 3], rows: ['o......o', '.o....o.', 'o......o'] },
+    eyes_wide: { at: [5, 3], rows: ['wo....wo', 'oo....oo', 'oo....oo'] },
+    eyes_wink: { at: [5, 4], rows: ['wo....oo.', 'oo...o..o'] },
+    eyes_dizzy: { at: [4, 3], rows: ['o.o....o.o', '.o......o.', 'o.o....o.o'] },
+    eye_l_only: { at: [5, 4], rows: ['wo', 'oo'] },
+    eye_r_only: { at: [11, 4], rows: ['wo', 'oo'] },
+
+    blush: { at: [4, 6], rows: ['pp......pp'] },
+    mouth_o: { at: [8, 6], rows: ['mm', 'mm'] },
+    mouth_dot: { at: [8, 6], rows: ['mm'] },
+    mouth_smile: { at: [8, 6], rows: ['mm'] },
+    mouth_open: { at: [8, 6], rows: ['mm', 'pp'] },
+    mouth_frown: { at: [7, 6], rows: ['.mm.', 'm..m'] },
+
+    feet: { at: [4, 9], rows: ['bbb....bbb'] },
+    feet_a: { at: [4, 9], rows: ['.......bbb'] },
+    feet_b: { at: [4, 9], rows: ['bbb.......'] },
+    feet_tuck: { at: [5, 9], rows: ['bb....bb'] },
+    feet_wide: { at: [3, 9], rows: ['bbb......bbb'] },
+    feet_dangle_a: { at: [4, 9], rows: ['bb......bb', 'bb........'] },
+    feet_dangle_b: { at: [4, 9], rows: ['bb......bb', '........bb'] },
+
+    // a laptop seen from behind its lid (a leaf on the lid), and a magnifying glass
+    laptop: { at: [3, 7], rows: ['.llllllllll.', '.ssssGGssss.', 'dddddddddddd'] },
+    laptop_half: { at: [3, 8], rows: ['.llllllllll.', 'dddddddddddd'] },
+    laptop_closed: { at: [3, 9], rows: ['dddddddddddd'] },
+    lens_r: { at: [9, 2], rows: ['.rrrr..', 'reeeer.', 'reower.', 'reooer.', 'reeeer.', '.rrrrr.', '.....rr'] },
+  };
+  SHARED.lens_l = mirror(SHARED.lens_r);
+  const arms = {
+    arm: { at: [1, 5], rows: ['B', 'B'] },
+    arm_up: { at: [0, 3], rows: ['B.', '.B'] },
+    arm_hi: { at: [0, 0], rows: ['B.', '.B', '.B'] },
+    arm_out: { at: [0, 4], rows: ['BB'] },
+    arm_droop: { at: [1, 6], rows: ['B.', '.B'] },
+    arm_key: { at: [1, 7], rows: ['BB'] },
+    arm_keyup: { at: [1, 6], rows: ['BB'] },
+    arm_sq: { at: [0, 5], rows: ['B', 'B'] },
+    arm_tall: { at: [2, 4], rows: ['B', 'B'] },
+    arm_tallhi: { at: [1, 0], rows: ['B.', 'B.', '.B'] },
+    arm_pump: { at: [0, 4], rows: ['B.', '.B'] },
+    arm_back: { at: [1, 6], rows: ['B', 'B'] },
+  };
+  for (const [name, part] of Object.entries(arms)) {
+    SHARED[name.replace('arm', 'arm_l')] = part;
+    SHARED[name.replace('arm', 'arm_r')] = mirror(part);
+  }
+
+  // a pose lists every part it draws, bottom first: body, feet, arms, face, then the top
+  const P = (body, eyes, arms, feet, top, ...extra) => [body, feet, ...arms, eyes, ...extra, top];
+  const REST = ['arm_l', 'arm_r'], UP = ['arm_l_up', 'arm_r_up'], SQ = ['arm_l_sq', 'arm_r_sq'], TALLHI = ['arm_l_tallhi', 'arm_r_tallhi'];
+  const POSES = {
+    base: P('body', 'eyes_open', REST, 'feet', 'top'),
+    half: P('body', 'eyes_half', REST, 'feet', 'top'),
+    shut: P('body', 'eyes_shut', REST, 'feet', 'top'),
+    look_l: P('body', 'eyes_l', REST, 'feet', 'top'),
+    look_r: P('body', 'eyes_r', REST, 'feet', 'top'),
+    look_up: P('body', 'eyes_up', REST, 'feet', 'top'),
+    look_down: P('body', 'eyes_down', REST, 'feet', 'top'),
+    sway_l: P('body', 'eyes_open', REST, 'feet', 'top_sway_l'),
+    sway_r: P('body', 'eyes_open', REST, 'feet', 'top_sway_r'),
+    breathe: P('body_squash', 'eyes_open', SQ, 'feet_wide', 'top_low'),
+    wink: P('body', 'eyes_wink', REST, 'feet', 'top_sway_r', 'blush'),
+    happy: P('body', 'eyes_happy', REST, 'feet', 'top', 'blush', 'mouth_smile'),
+    happy_l: P('body', 'eyes_happy', REST, 'feet', 'top_sway_l', 'blush', 'mouth_smile'),
+    happy_r: P('body', 'eyes_happy', REST, 'feet', 'top_sway_r', 'blush', 'mouth_smile'),
+    sun: P('body', 'eyes_happy', REST, 'feet', 'top_up', 'blush'),
+    walk_b: P('body', 'eyes_open', REST, 'feet_b', 'top_sway_r'),
+    walk_l_a: P('body', 'eyes_l', REST, 'feet_a', 'top_sway_r'),
+    walk_l_b: P('body', 'eyes_l', REST, 'feet_b', 'top_sway_r'),
+    walk_r_a: P('body', 'eyes_r', REST, 'feet_a', 'top_sway_l'),
+    walk_r_b: P('body', 'eyes_r', REST, 'feet_b', 'top_sway_l'),
+    attn: P('body', 'eyes_open', REST, 'feet', 'top_up'),
+    attn_shut: P('body', 'eyes_shut', REST, 'feet', 'top_up'),
+    attn_tap: P('body', 'eyes_open', REST, 'feet_b', 'top_up'),
+    perk: P('body', 'eyes_open', UP, 'feet', 'top_up'),
+    air: P('body', 'eyes_open', UP, 'feet_tuck', 'top_up'),
+    squash: P('body_squash', 'eyes_open', SQ, 'feet_wide', 'top_flat_low'),
+    squash_happy: P('body_squash', 'eyes_happy', SQ, 'feet_wide', 'top_bloom_low', 'blush'),
+    squeeze: P('body_squash', 'eyes_squint', SQ, 'feet_wide', 'top_flat_low'),
+    spring: P('body_tall', 'eyes_open', TALLHI, 'feet_tuck', 'top_up_tall'),
+    cheer: P('body_tall', 'eyes_happy', TALLHI, 'feet_tuck', 'top_bloom_tall', 'blush', 'mouth_open'),
+    urgent: P('body_tall', 'eyes_wide', TALLHI, 'feet_tuck', 'top_up_tall', 'mouth_o'),
+    yawn: P('body_tall', 'eyes_shut', TALLHI, 'feet', 'top_up_tall', 'mouth_o'),
+    sneeze_in: P('body_tall', 'eyes_shut', ['arm_l_tall', 'arm_r_tall'], 'feet', 'top_up_tall', 'mouth_o'),
+    sneeze: P('body_squash', 'eyes_shut', SQ, 'feet_wide', 'top_flat_low', 'mouth_dot'),
+    surprised: P('body', 'eyes_wide', UP, 'feet', 'top_up', 'mouth_o'),
+    raise: P('body', 'eyes_open', ['arm_l', 'arm_r_hi'], 'feet', 'top_up'),
+    raise_mid: P('body', 'eyes_open', ['arm_l', 'arm_r_out'], 'feet', 'top_up'),
+    wave_hi: P('body', 'eyes_happy', ['arm_l', 'arm_r_hi'], 'feet', 'top_sway_r', 'mouth_smile'),
+    wave_mid: P('body', 'eyes_happy', ['arm_l', 'arm_r_out'], 'feet', 'top_sway_l', 'mouth_smile'),
+    held_a: P('body', 'eyes_squint', ['arm_l_hi', 'arm_r_up'], 'feet_dangle_a', 'top_sway_l'),
+    held_b: P('body', 'eyes_squint', ['arm_l_up', 'arm_r_hi'], 'feet_dangle_b', 'top_sway_r'),
+    lap_closed: P('body', 'eyes_down', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop_closed'),
+    lap_half: P('body', 'eyes_down', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop_half'),
+    lap_look: P('body', 'eyes_open', ['arm_l_key', 'arm_r_key'], 'feet', 'top', 'laptop'),
+    lap_a: P('body', 'eyes_down', ['arm_l_key', 'arm_r_keyup'], 'feet', 'top_sway_l', 'laptop'),
+    lap_b: P('body', 'eyes_down', ['arm_l_keyup', 'arm_r_key'], 'feet', 'top_sway_r', 'laptop'),
+    lap_enter_up: P('body', 'eyes_down', ['arm_l_key', 'arm_r_hi'], 'feet', 'top_up', 'laptop'),
+    lap_happy: P('body', 'eyes_happy', ['arm_l_key', 'arm_r_key'], 'feet', 'top_up', 'laptop'),
+    think: P('body', 'eyes_ur', REST, 'feet', 'top'),
+    think_edge: P('body', 'eyes_ur', REST, 'feet', 'top_edge'),
+    think_l: P('body', 'eyes_ul', REST, 'feet', 'top'),
+    read_r: P('body', 'eye_l_only', ['arm_l', 'arm_r_droop'], 'feet', 'top', 'lens_r'),
+    read_l: P('body', 'eye_r_only', ['arm_l_droop', 'arm_r'], 'feet', 'top', 'lens_l'),
+    jog_a: P('body', 'eyes_r', ['arm_l_pump', 'arm_r_back'], 'feet_a', 'top_sway_l'),
+    jog_b: P('body', 'eyes_r', ['arm_l_back', 'arm_r_pump'], 'feet_b', 'top_sway_r'),
+    juggle_a: P('body', 'eyes_up', ['arm_l_hi', 'arm_r_up'], 'feet', 'top_sway_l'),
+    juggle_b: P('body', 'eyes_up', ['arm_l_up', 'arm_r_hi'], 'feet', 'top_sway_r'),
+    oops: P('body', 'eyes_dizzy', UP, 'feet', 'top_up', 'mouth_frown'),
+    slump: P('body', 'eyes_down', ['arm_l_droop', 'arm_r_droop'], 'feet', 'top_droop', 'mouth_frown'),
+    slump_shut: P('body', 'eyes_shut', ['arm_l_droop', 'arm_r_droop'], 'feet', 'top_droop', 'mouth_frown'),
+    doze: P('body', 'eyes_half', REST, 'feet', 'top_droop'),
+    sleep: P('body', 'eyes_shut', ['arm_l_droop', 'arm_r_droop'], 'feet', 'top_bud'),
+    sleep_b: P('body_squash', 'eyes_shut', SQ, 'feet_wide', 'top_bud_low'),
+    bloom: P('body', 'eyes_happy', REST, 'feet', 'top_bloom', 'blush', 'mouth_smile'),
+    bloom_open: P('body', 'eyes_open', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_shut: P('body', 'eyes_shut', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_wink: P('body', 'eyes_wink', REST, 'feet', 'top_bloom_r', 'blush'),
+    bloom_l: P('body', 'eyes_l', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_r: P('body', 'eyes_r', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_up: P('body', 'eyes_up', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_down: P('body', 'eyes_down', REST, 'feet', 'top_bloom', 'blush'),
+    bloom_sl: P('body', 'eyes_open', REST, 'feet', 'top_bloom_l', 'blush'),
+    bloom_sr: P('body', 'eyes_open', REST, 'feet', 'top_bloom_r', 'blush'),
+  };
+
+  const GLYPHS = {
+    dot: ['#'],
+    tilde: ['##.', '.##'],
+    spark: ['.#.', '###', '.#.'],
+    z: ['##.', '.#.', '.##'],
+    Z: ['####', '..#.', '.#..', '####'],
+    heart: ['#.#', '###', '.#.'],
+    bang: ['##', '##', '##', '..', '##'],
+    q: ['###.', '...#', '.##.', '.#..', '....', '.#..'],
+    check: ['....#', '...##', '#.##.', '###..', '.#...'],
+    drop: ['.#.', '###', '###', '.#.'],
+    seed: ['##', '##'],
+    lt: ['.#', '#.', '.#'],
+    gt: ['#.', '.#', '#.'],
+    sl: ['..#', '.#.', '#..'],
+    // the working sun: a dot swells into a disc, then its rays come out
+    sun0: ['#'],
+    sun1: ['.#.', '###', '.#.'],
+    sun2: ['###', '###', '###'],
+    sun3: ['...#...', '.......', '..###..', '#.###.#', '..###..', '.......', '...#...'],
+    sun4: ['#..#..#', '.......', '..###..', '#.###.#', '..###..', '.......', '#..#..#'],
+  };
+
+  // keys: [pose, ticks, dx, dy, effect]; dy > 0 is up, dy < 0 sinks into the ground (cropped)
+  const CLIPS = {
+    // idle
+    idle: [['base', 40], ['breathe', 7], ['base', 34], ['sway_l', 3], ['base', 2], ['sway_r', 3], ['base', 2]],
+    blink: [['shut', 2]],
+    double_blink: [['shut', 2], ['base', 3], ['shut', 2]],
+    look: [['look_l', 6], ['base', 2], ['look_r', 6], ['base', 1], ['shut', 1]],
+    wink: [['wink', 6], ['base', 1]],
+    tap: [['walk_b', 2], ['base', 2], ['walk_b', 2], ['base', 2], ['walk_b', 1], ['base', 1], ['walk_b', 1], ['base', 3], ['shut', 1]],
+    sneeze: [['shut', 2], ['sneeze_in', 3], ['sneeze_in', 4, 0, 1], ['sneeze', 2, 0, 0, 'puff'], ['sneeze', 2], ['breathe', 2], ['base', 2], ['shut', 1]],
+    stroll: [['walk_l_a', 2, -1, 1], ['walk_l_b', 2, -2, 0], ['walk_l_a', 2, -3, 1], ['walk_l_b', 2, -4, 0], ['look_l', 5, -4, 0], ['base', 2, -4, 0],
+      ['walk_r_a', 2, -3, 1], ['walk_r_b', 2, -2, 0], ['walk_r_a', 2, -1, 1], ['walk_r_b', 2], ['walk_r_a', 2, 1, 1], ['walk_r_b', 2, 2, 0],
+      ['look_r', 5, 2, 0], ['base', 2, 2, 0], ['walk_l_a', 2, 1, 1], ['walk_l_b', 2], ['shut', 1]],
+    yawn: [['shut', 3], ['yawn', 14], ['shut', 3], ['breathe', 3], ['base', 2], ['shut', 1]],
+    boing: [['squash', 2, 0, 0, 'dust_small'], ['spring', 1, 0, 1], ['air', 1, 0, 3], ['air', 2, 0, 5], ['air', 1, 0, 4], ['air', 1, 0, 2],
+      ['squash', 2, 0, 0, 'dust_small'], ['spring', 1], ['base', 2], ['shut', 1]],
+    rustle: [['attn', 3], ['sway_l', 2, 0, 0, 'dew'], ['sway_r', 2], ['sway_l', 2], ['sway_r', 2], ['attn', 3], ['base', 2], ['shut', 1]],
+    sunbathe: [['look_up', 5], ['sun', 28, 0, 0, 'glint'], ['sun', 14, 0, 0, 'glint'], ['look_up', 3], ['base', 2], ['shut', 1]],
+    doze: [['half', 10], ['base', 4], ['half', 12], ['base', 2], ['doze', 12], ['sleep', 4]],
+    sleep: [['sleep', 26, 0, 0, 'zzz'], ['sleep_b', 26]],
+    wake: [['squash', 1], ['surprised', 2, 0, 2, 'bang_grey'], ['surprised', 3], ['look_l', 3], ['look_r', 3], ['sway_l', 2], ['sway_r', 2], ['base', 1], ['shut', 1]],
+    // working
+    work_enter: [['squash', 2, 0, 0, 'dust_small'], ['spring', 2, 0, 1], ['perk', 2], ['base', 1]],
+    lap_open: [['squash', 1, 0, 0, 'dust_small'], ['lap_closed', 3], ['lap_half', 2], ['lap_look', 3], ['lap_a', 2]],
+    laptop: [['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2, 0, 0, 'code'], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2],
+      ['lap_look', 8], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2, 0, 0, 'code'], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2],
+      ['lap_enter_up', 3], ['lap_a', 1, 0, 0, 'code'], ['lap_happy', 5], ['lap_b', 2], ['lap_a', 2]],
+    lap_close: [['lap_look', 1], ['lap_half', 2], ['lap_closed', 2], ['squash', 1, 0, 0, 'dust_small'], ['base', 1]],
+    think: [['think', 10], ['think_edge', 3], ['think', 3], ['think_edge', 2], ['think', 2, 0, 1], ['think_edge', 2, 0, 1], ['think', 2, 0, 1], ['think_edge', 2, 0, 1],
+      ['think', 4], ['think_l', 10], ['think', 8]],
+    read: [['read_r', 8], ['read_r', 3, 1, 0], ['read_r', 3, 2, 0], ['read_r', 6, 2, 0], ['read_r', 3, 1, 0], ['look_down', 3],
+      ['read_l', 8], ['read_l', 3, -1, 0], ['read_l', 3, -2, 0], ['read_l', 6, -2, 0], ['read_l', 3, -1, 0], ['look_down', 3]],
+    bash: [['jog_a', 2, 0, 1], ['jog_b', 2], ['jog_a', 2, 0, 1], ['jog_b', 2, 0, 0, 'kick'], ['jog_a', 2, 0, 1], ['jog_b', 2], ['jog_a', 2, 0, 1], ['jog_b', 2, 0, 0, 'kick'],
+      ['jog_a', 2, 0, 1], ['jog_b', 2], ['jog_a', 2, 0, 1, 'sweat'], ['jog_b', 2, 0, 0, 'kick'], ['jog_a', 2, 0, 1], ['jog_b', 2], ['jog_a', 2, 0, 1], ['jog_b', 2, 0, 0, 'kick']],
+    juggle: [['juggle_a', 3], ['juggle_b', 3]],
+    // asking
+    alert: [['surprised', 2], ['squash', 1, 0, 0, 'dust_small'], ['urgent', 1, 0, 2], ['urgent', 2, 0, 4], ['urgent', 1, 0, 3], ['air', 1, 0, 1], ['squash', 2, 0, 0, 'dust'], ['raise', 2]],
+    ask: [['raise', 5], ['raise_mid', 3], ['raise', 5], ['raise_mid', 3], ['raise', 5], ['attn', 16], ['attn_shut', 1], ['attn', 10]],
+    impatient: [['attn_tap', 2], ['attn', 2], ['attn_tap', 2], ['attn', 2], ['attn_tap', 1], ['attn', 1], ['attn_tap', 1], ['attn', 1], ['attn_tap', 1], ['attn', 1],
+      ['raise', 3], ['raise_mid', 2], ['raise', 3], ['raise_mid', 2], ['squash', 1, 0, 0, 'dust'], ['urgent', 2, 0, 3], ['urgent', 1, 0, 1], ['attn', 6]],
+    // done: the sprout flowers
+    celebrate: [['squash', 2, 0, 0, 'dust'], ['cheer', 1, 0, 2], ['cheer', 2, 0, 5, 'petals'], ['cheer', 1, 0, 4], ['cheer', 1, 0, 2], ['squash_happy', 2, 0, 0, 'dust_small'],
+      ['cheer', 1, 0, 2], ['cheer', 2, 0, 3], ['cheer', 1, 0, 2], ['squash_happy', 2], ['bloom', 10]],
+    content: [['bloom', 30], ['bloom_open', 24], ['bloom_shut', 1], ['bloom_open', 18], ['bloom_sl', 4], ['bloom_open', 2], ['bloom_sr', 4], ['bloom_open', 10], ['bloom', 12]],
+    bloom_wink: [['bloom_wink', 6], ['bloom_open', 1]],
+    bloom_look: [['bloom_l', 6], ['bloom_open', 2], ['bloom_r', 6], ['bloom_shut', 1]],
+    bloom_sway: [['bloom_sl', 4], ['bloom_sr', 4], ['bloom_sl', 4], ['bloom_open', 2]],
+    seen: [['bloom_open', 3], ['happy', 3], ['base', 2]],
+    // error: the leaves wilt
+    oops: [['oops', 1, 1, 0, 'bang_err'], ['oops', 1, -1, 0], ['oops', 1, 1, 0], ['oops', 1, -1, 0], ['oops', 1, 1, 0], ['oops', 1, -1, 0], ['oops', 3],
+      ['slump', 4, 0, 0, 'sweat'], ['slump', 2, 0, -1, 'shed_fall']],
+    slump: [['slump', 36, 0, -1], ['slump_shut', 2, 0, -1], ['slump', 28, 0, -1], ['slump_shut', 4, 0, -1, 'sigh'], ['slump', 12, 0, -1]],
+    // interaction
+    notice: [['attn', 2, 0, 1], ['base', 1]],
+    pet: [['happy_l', 3, 0, 0, 'heart'], ['happy_r', 3]],
+    pet_end: [['happy', 8], ['shut', 1]],
+    press: [['squeeze', 1, 0, 0, 'dust'], ['squeeze', 200]],
+    boop_end: [['spring', 1, 0, 1], ['air', 1, 0, 2], ['squash', 1, 0, 0, 'dust_small'], ['look_l', 4], ['base', 1], ['shut', 1]],
+    held: [['held_a', 2], ['held_b', 2]],
+    drop: [['air', 1, 0, 2], ['squash', 2, 0, 0, 'dust'], ['spring', 1], ['look_l', 2], ['look_r', 2], ['base', 1], ['shut', 1]],
+    // flock: sprouting up through the ground and burrowing back down
+    emerge: [['base', 4, 0, -10, 'dirt'], ['sway_l', 3, 0, -10], ['sway_r', 3, 0, -10], ['base', 2, 0, -8], ['look_l', 4, 0, -5], ['look_r', 4, 0, -5], ['base', 2, 0, -5],
+      ['spring', 1, 0, -2, 'dirt'], ['air', 1, 0, 2], ['air', 2, 0, 3], ['air', 1, 0, 2], ['squash', 2, 0, 0, 'dust_small'], ['base', 1], ['shut', 1], ['base', 2]],
+    goodbye: [['wave_hi', 3], ['wave_mid', 2], ['wave_hi', 3], ['wave_mid', 2], ['wave_hi', 3], ['base', 2], ['squash', 1, 0, 0, 'dirt'], ['look_l', 3, 0, -5], ['look_r', 3, 0, -5],
+      ['base', 2, 0, -8], ['sway_l', 2, 0, -10], ['sway_r', 2, 0, -10], ['base', 2, 0, -12, 'dirt_poof']],
+    pop_up: [['base', 3, 0, -12], ['base', 2, 0, -10, 'dirt'], ['base', 1, 0, -6], ['spring', 1, 0, -2], ['air', 1, 0, 2, 'dirt'], ['air', 2, 0, 4], ['air', 1, 0, 3], ['air', 1, 0, 1],
+      ['squash', 2, 0, 0, 'dust_small'], ['base', 1], ['shut', 1]],
+    burrow: [['squash', 1, 0, 0, 'dust_small'], ['look_l', 2, 0, -4, 'dirt'], ['base', 2, 0, -8], ['sway_r', 2, 0, -10], ['base', 2, 0, -12, 'dirt_poof']],
+  };
+
+  const DUST = '#B4BAC4', GREY = '#A3A9B4', DIRT = ['#8A6A4F', '#A98462', '#6E533D'];
+  // particle effects; `art` brings the skin colours and the little thing it sheds
+  const effectsFor = (art) => ({
+    dust: { particles: [{ glyph: 'dot', color: DUST, x: 1, y: 9, vx: -12, vy: -3, life: 4 }, { glyph: 'dot', color: DUST, x: 16, y: 9, vx: 12, vy: -3, life: 4 }] },
+    dust_small: { particles: [{ glyph: 'dot', color: DUST, x: 2, y: 9, vx: -8, vy: -2, life: 3 }, { glyph: 'dot', color: DUST, x: 15, y: 9, vx: 8, vy: -2, life: 3 }] },
+    kick: { particles: [{ glyph: 'dot', color: DUST, x: 3, y: 9, vx: -10, vy: -4, life: 4 }] },
+    puff: { particles: [{ glyph: 'tilde', color: DUST, x: 16, y: 4, vx: 10, vy: -3, life: 6 }] },
+    sigh: { particles: [{ glyph: 'tilde', color: GREY, x: 15, y: 5, vx: 5, vy: -2, life: 9 }] },
+    dew: { particles: [{ count: 3, glyph: 'dot', color: '#9FD8F5', x: [5, 12], y: -2, vx: [-14, 14], vy: [-12, -6], ay: 70, life: [6, 9] }] },
+    glint: { particles: [{ glyph: 'spark', color: '#FFE9A8', x: 1, y: -6, life: 8, shrinkTo: 'dot' }] },
+    petals: { particles: [
+      { count: 14, glyph: 'dot', colors: art.confetti, x: [4, 13], y: -2, vx: [-18, 18], vy: [-34, -16], ay: 80, life: [13, 19] },
+      { count: 2, glyph: art.treat.glyph, color: art.treat.color, x: [5, 12], y: -2, vx: [-10, 10], vy: [-26, -18], ay: 60, sway: 1, life: [16, 20] }] },
+    zzz: { cycle: [[{ glyph: 'z', color: GREY, x: 14, y: -3, vx: 3, vy: -5, sway: 1, life: 30 }], [{ glyph: 'Z', color: GREY, x: 14, y: -3, vx: 3, vy: -5, sway: 1, life: 30 }]] },
+    heart: { particles: [{ glyph: 'heart', color: '#FF7096', x: [3, 13], y: -3, vx: [-2, 2], vy: -11, life: 10 }] },
+    code: { cycle: [
+      [{ glyph: 'sl', color: '#DDE1E7', x: 1, y: 2, vx: -4, vy: -7, life: 9 }],
+      [{ glyph: 'gt', color: '#DDE1E7', x: 15, y: 2, vx: 4, vy: -7, life: 9 }],
+      [{ glyph: 'lt', color: '#DDE1E7', x: 15, y: 2, vx: 4, vy: -7, life: 9 }]] },
+    bang_err: { particles: [{ glyph: 'bang', color: '#FF3B30', x: 16, y: -7, pop: true, life: 10 }] },
+    bang_grey: { particles: [{ glyph: 'bang', color: '#E5E7EB', x: 16, y: -7, pop: true, life: 7 }] },
+    sweat: { particles: [{ glyph: 'drop', color: '#86C8FF', x: 15, y: -1, vx: 0, vy: 4, life: 14 }] },
+    shed_fall: { particles: [{ glyph: 'shed', color: art.shed, x: 11, y: -3, vx: 3, vy: 3, sway: 1, life: 24 }] },
+    dirt: { particles: [{ count: 4, glyph: 'dot', colors: DIRT, x: [5, 12], y: 9, vx: [-14, 14], vy: [-20, -10], ay: 70, life: [5, 8] }] },
+    dirt_poof: { particles: [
+      { count: 6, glyph: 'dot', colors: DIRT, x: [5, 12], y: 9, vx: [-16, 16], vy: [-24, -12], ay: 70, life: [6, 9] },
+      { glyph: 'shed', color: art.shed, x: 8, y: 7, vx: 2, vy: -6, sway: 1, life: 12 }] },
+    twinkle: { particles: [{ glyph: 'spark', color: '#E9EDF2', x: 14, y: -9, life: 6, shrinkTo: 'dot' }] },
+  });
+
+  const ACCESSORIES = {
+    sun: { frames: ['sun0', 'sun1', 'sun2', 'sun3', 'sun4'], color: '#F2B33D', periodMs: 2000, box: 7, reduced: 'sun3' },
+    q: { glyph: 'q', color: '#FF9F0A', bobEvery: 7 },
+    check: { glyph: 'check', color: '#34C759', twinkleEvery: 43, twinkle: 'twinkle' },
+    bang: { glyph: 'bang', color: '#FF3B30' },
+  };
+
+  const STATES = {
+    idle: { loop: 'idle', tint: 'dim', still: 'base',
+      fidget: { every: [60, 160], pick: [['blink', 6], ['double_blink', 2], ['look', 4], ['wink', 1], ['tap', 2], ['sneeze', 1], ['stroll', 2], ['yawn', 1], ['boing', 1], ['rustle', 2], ['sunbathe', 1]] },
+      sleep: { after: 2000, doze: 'doze', loop: 'sleep', wake: 'wake', still: 'sleep' } },
+    running: { enter: 'work_enter', accessory: 'sun', still: 'lap_a', defaultVariant: 'laptop',
+      variants: {
+        laptop: { loop: 'laptop', enter: 'lap_open', exit: 'lap_close' },
+        think: { loop: 'think' },
+        read: { loop: 'read' },
+        bash: { loop: 'bash' },
+        juggle: { loop: 'juggle', prop: 'juggle' },
+      } },
+    waiting: { enter: 'alert', loop: 'ask', accessory: 'q', still: 'raise',
+      badge: { glyph: 'bang', color: '#FF9F0A', x: 16, hopEvery: 20, impatientHopEvery: 8 },
+      impatient: { after: 500, loop: 'impatient' } },
+    done: { enter: 'celebrate', loop: 'content', accessory: 'check', still: 'bloom', seen: 'seen',
+      fidget: { every: [90, 220], pick: [['bloom_wink', 1], ['bloom_look', 1], ['bloom_sway', 1]] },
+      gaze: { left: 'bloom_l', right: 'bloom_r', up: 'bloom_up', down: 'bloom_down', center: 'bloom_open' } },
+    error: { enter: 'oops', loop: 'slump', tint: 'dim', accessory: 'bang', still: 'slump', stillDy: -1 },
+  };
+
+  const INTERACTIONS = {
+    notice: 'notice', pet: 'pet', petEnd: 'pet_end', press: 'press', boopEnd: 'boop_end',
+    held: 'held', heldStill: 'held_a', drop: 'drop', blink: 'blink',
+    join: 'emerge', leave: 'goodbye', appear: 'pop_up', vanish: 'burrow',
+    hop: 'air', land: 'base', blinkPose: 'shut', landDust: 'dust_small',
+    walkLeft: ['walk_l_a', 'walk_l_b'], walkRight: ['walk_r_a', 'walk_r_b'],
+    lookLeft: 'look_l', lookRight: 'look_r', lookUp: 'look_up', lookDown: 'look_down', lookCenter: 'base',
+  };
+
+  // the family of parts on top of the head, from the normal one and its variants
+  const topFamily = (t) => ({
+    top: t.top, top_low: shift(t.top, 0, 1), top_up: t.up, top_up_tall: shift(t.up, 0, -1), top_droop: t.droop,
+    top_flat_low: t.flat, top_sway_l: t.swayL, top_sway_r: t.swayR, top_edge: t.edge, top_bud: t.bud, top_bud_low: shift(t.bud, 0, 1),
+    top_bloom: merge(t.bloomBase || t.top, t.flower), top_bloom_l: t.bloomL || merge(t.swayL, shift(t.flower, -1, 0)), top_bloom_r: t.bloomR || merge(t.swayR, shift(t.flower, 1, 0)),
+    top_bloom_low: shift(merge(t.bloomBase || t.top, t.flower), 0, 1), top_bloom_tall: shift(merge(t.bloomBase || t.top, t.flower), 0, -1),
+  });
+
+  const make = (name, title, art) => ({
+    schema: 2, name, title, tickMs: 60, grid: [18, 10],
+    palette: art.palette,
+    parts: { ...art.bodies, ...topFamily(art.top), ...SHARED, ...(art.parts || {}) },
+    poses: POSES,
+    glyphs: { ...GLYPHS, shed: art.shedGlyph },
+    clips: CLIPS,
+    effects: effectsFor(art),
+    accessories: ACCESSORIES,
+    states: STATES,
+    interactions: INTERACTIONS,
+    props: { juggle: { glyph: 'seed', colors: art.seeds } },
+  });
+
+  // ---------- Sprig: a lilac bean with a two-leaf sprout ----------
+  const sprig = {
+    palette: {
+      'B': '#B39DF3', 'b': '#9580DD', 'h': '#CDBDFA',
+      'G': '#6BCB5F', 'g': '#3F9442', 'f': '#FF8FB8', 'y': '#FFD24A',
+      'o': '#2A2140', 'w': '#FFFFFF', 'p': '#F7A1C0', 'm': '#5B3A8E',
+      'l': '#E4E7EB', 's': '#C9CED6', 'd': '#7D848E',
+      'r': '#C98F3E', 'e': '#CFEFFF',
+      },
+    bodies: {
+      body: { at: [2, 0], rows: [
+        '..BBBBBBBBBB..',
+        '.BhhBBBBBBBBB.',
+        'BhBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBB',
+        '.bBBBBBBBBBBb.',
+        '..bbbbbbbbbb..'] },
+      // squashed one row lower and two cells wider
+      body_squash: { at: [1, 1], rows: [
+        '...BBBBBBBBBB...',
+        '.BhhBBBBBBBBBBB.',
+        'BhBBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBBBB',
+        'BBBBBBBBBBBBBBBB',
+        '.bBBBBBBBBBBBBb.',
+        '..bbbbbbbbbbbb..'] },
+      // stretched one row taller and two cells narrower
+      body_tall: { at: [3, -1], rows: [
+        '..BBBBBBBB..',
+        '.BhhBBBBBBB.',
+        'BhBBBBBBBBBB',
+        'BBBBBBBBBBBB',
+        'BBBBBBBBBBBB',
+        'BBBBBBBBBBBB',
+        'BBBBBBBBBBBB',
+        'BBBBBBBBBBBB',
+        '.bBBBBBBBBb.',
+        '..bbbbbbbb..'] },
+  
+      // the sprout: two leaves on a short stem rooted in the top of the head (stem on columns 8-9)
+      top: { at: [5, -2], rows: ['GGG..GGG', '.GGggGG.'] },
+      top_low: { at: [5, -1], rows: ['GGG..GGG', '.GGggGG.'] },
+      top_up: { at: [6, -2], rows: ['GG..GG', '.GggG.'] },
+      top_up_tall: { at: [6, -3], rows: ['GG..GG', '.GggG.'] },
+      top_droop: { at: [6, -2], rows: ['..gg..', 'GGggGG', 'G....G'] },
+      top_flat_low: { at: [4, 0], rows: ['GGGGggGGGG'] },
+      top_sway_l: { at: [4, -2], rows: ['GGG..GGG.', '..GGggGG.'] },
+      top_sway_r: { at: [5, -2], rows: ['.GGG..GGG', '.GGggGG..'] },
+      top_edge: { at: [7, -2], rows: ['.GG.', '.gg.'] },
+      top_bud: { at: [7, -2], rows: ['.GG.', 'GggG'] },
+      top_bud_low: { at: [7, -1], rows: ['.GG.', 'GggG'] },
+      // in flower: a pink bloom opens between the leaves (kept below row -2, under the head marker)
+      top_bloom: { at: [4, -2], rows: ['GGG.ff.GGG', '..GfyyfG..'] },
+      top_bloom_l: { at: [3, -2], rows: ['GGG.ff.GGG.', '...GfyyfG..'] },
+      top_bloom_r: { at: [4, -2], rows: ['.GGG.ff.GGG', '..GfyyfG...'] },
+      top_bloom_low: { at: [4, -1], rows: ['GGG.ff.GGG', '..GfyyfG..'] },
+      top_bloom_tall: { at: [4, -3], rows: ['GGG.ff.GGG', '..GfyyfG..'] },
+  
+      // eyes: 2×2 with a white catchlight; they move one cell to look around
+    },
+  };
+  {
+    const b = sprig.bodies;
+    sprig.top = { top: b.top, up: b.top_up, droop: b.top_droop, flat: b.top_flat_low, swayL: b.top_sway_l, swayR: b.top_sway_r, edge: b.top_edge, bud: b.top_bud,
+      // in flower: a pink bloom opens between the leaves (kept below row -2, under the head marker)
+      bloomBase: { at: [4, -2], rows: ['GGG....GGG', '..G....G..'] }, flower: { at: [7, -2], rows: ['.ff.', 'fyyf'] },
+      bloomL: b.top_bloom_l, bloomR: b.top_bloom_r };
+    sprig.bodies = { body: b.body, body_squash: b.body_squash, body_tall: b.body_tall };
+  }
+  sprig.shedGlyph = ['.##', '##.'];
+  sprig.shed = '#6BCB5F';
+  sprig.treat = { glyph: 'shed', color: '#6BCB5F' };
+  sprig.confetti = ['#FF8FB8', '#FFD24A', '#6BCB5F', '#B39DF3', '#FFFFFF', '#FF8FB8'];
+  sprig.seeds = ['#6BCB5F', '#FF8FB8', '#FFD24A'];
+
+  // colours of the shared face, props and laptop, for the friends (Sprig spells its own out)
+  const COMMON = { o: '#2A2140', w: '#FFFFFF', p: '#F7A1C0', m: '#5B3A8E', l: '#E4E7EB', s: '#C9CED6', d: '#7D848E', r: '#C98F3E', e: '#CFEFFF' };
+
+  // ---------- Mochi: a round blue-grey cat with pink-lined ears and a pink nose ----------
+  const mochiBody = { at: [2, 0], rows: [
+    '.BBBBBBBBBBBB.',
+    'BhhBBBBBBBBBBB',
+    'BhBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBnnBBBBBB',
+    'BBBBBBBBBBBBBB',
+    '.bBBBBBBBBBBb.',
+    '..bbbbbbbbbb..'] };
+  const ear = { at: [3, -2], rows: ['B..', 'BgB'] };
+  const earsLeft = merge({ at: [2, -2], rows: ['B...', '.BgB'] }, { at: [12, -2], rows: ['.B.', 'BgB'] });
+  const mochi = {
+    palette: { ...COMMON, B: '#9FAAC4', b: '#7F8AA6', h: '#C3CBDC', n: '#F49AB0', m: '#3D3550', G: '#9FAAC4', g: '#F49AB0', f: '#FF8FB8', y: '#FFD24A' },
+    bodies: { body: mochiBody, body_squash: squashOf(mochiBody), body_tall: tallOf(mochiBody) },
+    top: { top: both(ear), up: both({ at: [3, -3], rows: ['B..', 'BB.', 'BgB'] }), droop: both({ at: [2, -1], rows: ['BBg'] }),
+      flat: both({ at: [2, 0], rows: ['BB'] }), swayL: earsLeft, swayR: mirror(earsLeft),
+      edge: merge({ at: [3, -1], rows: ['BgB'] }, mirror(ear)), bud: both({ at: [3, -1], rows: ['BB.'] }),
+      flower: { at: [7, -2], rows: ['.ff.', 'fyyf'] } },
+    shedGlyph: ['#.#', '.#.'], shed: '#9FAAC4', treat: { glyph: 'heart', color: '#FF7096' },
+    confetti: ['#FF8FB8', '#FFD24A', '#7FB7FF', '#9FAAC4', '#FFFFFF', '#FF8FB8'], seeds: ['#FF8FB8', '#7FB7FF', '#FFD24A'],
+  };
+
+  // ---------- Peep: a round yellow chick with a cream belly, an orange beak and a cowlick ----------
+  const peepBody = { at: [2, 0], rows: [
+    '..BBBBBBBBBB..',
+    '.BhhBBBBBBBBB.',
+    'BhBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBkkBBBBBB',
+    'BBBBBWWWWBBBBB',
+    '.bBBWWWWWWBBb.',
+    '..bbbbbbbbbb..'] };
+  const peep = {
+    palette: { ...COMMON, B: '#FFD45E', b: '#F0A93A', h: '#FFF1B8', k: '#FF8A3D', W: '#FFF4CF', m: '#7A3B2A', G: '#F2B33D', g: '#E0952A', f: '#FF8FB8', y: '#FFFFFF' },
+    bodies: { body: peepBody, body_squash: squashOf(peepBody), body_tall: tallOf(peepBody) },
+    top: { top: { at: [8, -2], rows: ['.GG', 'Gg.'] }, up: { at: [8, -3], rows: ['..G', '.G.', 'Gg.'] }, droop: { at: [6, -1], rows: ['GGg.'] },
+      flat: { at: [7, 0], rows: ['GggG'] }, swayL: { at: [7, -2], rows: ['GG.', '.Gg'] }, swayR: { at: [9, -2], rows: ['.GG', 'gG.'] },
+      edge: { at: [9, -2], rows: ['G', 'g'] }, bud: { at: [8, -1], rows: ['GG'] },
+      flower: { at: [6, -2], rows: ['.f.', 'fyf'] } },
+    // the beak does the talking: closed it is part of the body, open it shows the inside
+    parts: {
+      mouth_smile: { at: [8, 6], rows: ['.'] },
+      mouth_dot: { at: [8, 6], rows: ['.'] },
+      mouth_o: { at: [8, 5], rows: ['kk', 'mm', 'kk'] },
+      mouth_open: { at: [8, 5], rows: ['kk', 'pp', 'kk'] },
+      mouth_frown: { at: [8, 5], rows: ['kk', 'kk'] },
+    },
+    shedGlyph: ['..#', '.#.', '##.'], shed: '#FFD45E', treat: { glyph: 'shed', color: '#FFE08A' },
+    confetti: ['#FF8FB8', '#FFD24A', '#6BCB5F', '#FF8A3D', '#FFFFFF', '#7FB7FF'], seeds: ['#F2B33D', '#C98F3E', '#FFE08A'],
+  };
+
+  // ---------- Bristle: a hedgehog, a cream face under a brown ball of quills ----------
+  const bristleBody = { at: [1, 0], rows: [
+    '...SSTSSTSSTS...',
+    '..STSSTSSTSSTS..',
+    '.TSSTSSTSSTSSTS.',
+    'TSSTbBBBBBBbTSST',
+    '.SSBBBBBBBBBBSS.',
+    'TSSBBBBNNBBBBSST',
+    '.SSBBBBBBBBBBSS.',
+    '..TSBBBBBBBBST..',
+    '...SbbbbbbbbS...'] };
+  const quillsLeft = { at: [3, -2], rows: ['T.T.TT.T.T.', '.SSTSSSSTSS'] };
+  const bristle = {
+    palette: { ...COMMON, B: '#F4DFC2', b: '#D9B98F', h: '#B48A68', S: '#94704F', T: '#6E5039', N: '#3A2A22', G: '#94704F', g: '#6E5039', A: '#E5484D', L: '#6BCB5F' },
+    bodies: { body: bristleBody, body_squash: squashOf(bristleBody), body_tall: tallOf(bristleBody) },
+    top: { top: { at: [4, -2], rows: ['T.T.TT.T.T', 'SSTSSSSTSS'] }, up: { at: [4, -3], rows: ['T...TT...T', 'S.S.SS.S.S', 'SSTSSSSTSS'] },
+      droop: { at: [3, -1], rows: ['TSSSSSSSSSST'] }, flat: { at: [4, 0], rows: ['SSSSSSSSSS'] }, swayL: quillsLeft, swayR: mirror(quillsLeft),
+      edge: { at: [4, -2], rows: ['.T.T..T.T.', 'SSTSSSSTSS'] }, bud: { at: [5, -1], rows: ['SSSSSSSS'] },
+      // done: an apple stuck on the quills
+      bloomBase: { at: [4, -2], rows: ['T.T....T.T', 'SSTSSSSTSS'] }, flower: { at: [7, -2], rows: ['.AAL', 'AAAA'] } },
+    shedGlyph: ['#', '#'], shed: '#6E5039', treat: { glyph: 'seed', color: '#E5484D' },
+    confetti: ['#FF8FB8', '#FFD24A', '#6BCB5F', '#E5484D', '#FFFFFF', '#F2994A'], seeds: ['#E5484D', '#6BCB5F', '#F2994A'],
+  };
+
+  return { sprig: make('sprig', '小芽 Sprig', sprig), mochi: make('mochi', '团子 Mochi', mochi), peep: make('peep', '啾啾 Peep', peep), bristle: make('bristle', '刺球 Bristle', bristle) };
+})();
+/* ======================= SKIN END ======================= */
+
+// ---------- which of the four is shown (the page switches in place; #mochi etc. links to one) ----------
+const SKIN_INFO = {
+  sprig: { en: 'Sprig', zh: '小芽', blurb: '一颗淡紫色的圆豆子，头顶两片嫩叶。叶子竖起来 = 有事找你，蔫下去 = 出错，合拢 = 睡着，像螺旋桨一样转 = 在想，开花 = 做完了。出错时飘落一片小叶子。',
+    swatch: { B: '身体', b: '阴影', h: '高光', G: '叶子', g: '茎', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
+  mochi: { en: 'Mochi', zh: '团子', blurb: '一只蓝灰色的圆猫，粉色的耳朵里和鼻头。耳朵竖起来 = 有事找你，压成飞机耳 = 出错，收起来 = 睡着，一只耳朵抖一抖 = 在想，做完了头上别一朵小花。出错时掉一撮毛。',
+    swatch: { B: '身体', b: '阴影', h: '高光', g: '耳朵里', n: '鼻头', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
+  peep: { en: 'Peep', zh: '啾啾', blurb: '一只黄色的圆小鸡，奶油色的肚皮、橙色的喙、头顶一撮呆毛。喙会跟着表情张开；呆毛竖起来 = 有事找你，倒下 = 出错，转起来 = 在想，做完了呆毛旁边开一朵小花。出错时掉一根羽毛。',
+    swatch: { B: '身体', b: '阴影和脚', h: '高光', W: '肚皮', k: '喙', G: '呆毛', f: '花瓣', o: '眼睛', p: '腮红', m: '喙里' } },
+  bristle: { en: 'Bristle', zh: '刺球', blurb: '一只刺猬：棕色的刺团住奶油色的小脸和黑鼻头。刺竖起来 = 有事找你，趴下去 = 出错，缩成一团 = 睡着，刺尖抖一抖 = 在想，做完了刺上扎着一颗苹果。出错时掉一根刺。',
+    swatch: { S: '刺', T: '刺尖', B: '脸和手', b: '阴影和脚', N: '鼻头', A: '苹果', L: '苹果叶', o: '眼睛', p: '腮红', m: '嘴' } },
+};
+let SKIN = SKINS[location.hash.slice(1)] ? location.hash.slice(1) : 'sprig';
+let M = SKINS[SKIN];
+
+// pointer art for the demo cards only (not part of the skin)
+const PREVIEW_GLYPHS = {
+  ptr: ['k.........', 'kk........', 'kwk.......', 'kwwk......', 'kwwwk.....', 'kwwwwk....', 'kwwwwwk...', 'kwwwwwwk..', 'kwwwkkkkk.', 'kwwk......', 'kwk.......', 'kk........'],
+  grab: ['..kk.kk...', '.kwwkwwkk.', '.kwwkwwkwk', 'kkwwwwwwwk', 'kwwwwwwwwk', '.kwwwwwwk.', '..kwwwwwk.', '...kkkkk..'],
+};
+let I = M.interactions;
+// the engine parks a Critter under ground with this (not a skin clip)
+const HIDDEN = [[I.land, 999, 0, -12]];
+const VARIANTS = { laptop: '改代码（抱笔记本）', think: '思考', read: '读文件', bash: '跑命令', juggle: '派子任务' };
+const VARIANT_DETAIL = { laptop: '编辑 FlockView.swift', think: '思考中…', read: '读取 SessionMonitor.swift', bash: 'Bash: swift test', juggle: '子任务：调研 Sprig 动画' };
+
+/* ======================= pixels ======================= */
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const PAL = {}, DIM = {}, POSES = {};
+// rasterizes the current skin's colours and poses (again whenever another skin is picked)
+function buildPixels() {
+  for (const o of [PAL, DIM, POSES]) for (const k of Object.keys(o)) delete o[k];
+  for (const [ch, hex] of Object.entries(M.palette)) {
+    PAL[ch] = hex;
+    const [r, g, b] = hexRgb(hex).map((v) => Math.round(v * 0.5 + 127.5 * 0.5));
+    DIM[ch] = `rgba(${r},${g},${b},0.85)`;
+  }
+  for (const [name, refs] of Object.entries(M.poses)) {
+    const grid = new Map();
+    for (const pn of refs) {
+      const part = M.parts[pn];
+      part.rows.forEach((row, r) => [...row].forEach((ch, c) => {
+        if (ch !== '.') grid.set(`${part.at[0] + c},${part.at[1] + r}`, ch);
+      }));
+    }
+    POSES[name] = [...grid].map(([k, ch]) => { const [x, y] = k.split(',').map(Number); return [x, y, ch]; });
+  }
+}
+buildPixels();
+function useSkin(name) { SKIN = name; M = SKINS[name]; I = M.interactions; buildPixels(); }
+const glyphRows = (g) => M.glyphs[g] || PREVIEW_GLYPHS[g];
+const glyphSize = (g) => [glyphRows(g)[0].length, glyphRows(g).length];
+
+// ax = left edge of the 18-wide base box, ground = y of the ground line (CSS px)
+function drawPose(ctx, name, ax, ground, u, dx, dy, tint, alpha) {
+  const pix = POSES[name];
+  if (!pix) return;
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  const pal = tint === 'dim' ? DIM : PAL;
+  for (const [x, y, ch] of pix) {
+    const gy = y - dy;
+    if (gy >= 10) continue;
+    ctx.fillStyle = pal[ch];
+    ctx.fillRect(ax + (x + dx) * u, ground + (gy - 10) * u, u, u);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawGlyph(ctx, g, x, y, u, color, alpha) {
+  const rows = glyphRows(g);
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  rows.forEach((row, r) => [...row].forEach((ch, c) => {
+    if (ch === '.') return;
+    ctx.fillStyle = ch === 'k' ? '#111111' : ch === 'w' ? '#FFFFFF' : color;
+    ctx.fillRect(x + c * u, y + r * u, u, u);
+  }));
+  ctx.globalAlpha = 1;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+const irnd = (a, b) => Math.floor(rnd(a, b + 1));
+function pickWeighted(list) {
+  const total = list.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [n, w] of list) { r -= w; if (r <= 0) return n; }
+  return list[0][0];
+}
+
+/* ======================= effects ======================= */
+// skin effects read straight from the manifest: numbers or [min, max] ranges, `count` repeats,
+// `colors` take turns, `cycle` hands each Critter the next group on every trigger
+const span = (v) => (Array.isArray(v) ? rnd(v[0], v[1]) : v || 0);
+const ispan = (v) => (Array.isArray(v) ? irnd(v[0], v[1]) : v);
+function particlesOf(specs) {
+  const out = [];
+  for (const p of specs) {
+    for (let i = 0; i < (p.count || 1); i++) {
+      out.push({ g: p.glyph, c: p.color || p.colors[i % p.colors.length], x: span(p.x), y: span(p.y), vx: span(p.vx), vy: span(p.vy),
+        ay: p.ay || 0, life: ispan(p.life), sway: p.sway || 0, pop: !!p.pop, shrink: p.shrinkTo || null });
+    }
+  }
+  return out;
+}
+// hooks the app runs itself while orchestrating (not skin effects)
+const HOOKS = {
+  settle: (a) => { a.tint = 'dim'; a.alpha = a.settleAlpha || 0.75; a.z = a.settleZ == null ? 1 : a.settleZ; return []; },
+};
+function effectParticles(a, name) {
+  if (HOOKS[name]) return HOOKS[name](a);
+  const e = M.effects[name];
+  if (!e) return [];
+  if (e.particles) return particlesOf(e.particles);
+  a.cycleAt = a.cycleAt || {};
+  const i = a.cycleAt[name] || 0;
+  a.cycleAt[name] = (i + 1) % e.cycle.length;
+  return particlesOf(e.cycle[i]);
+}
+
+/* ======================= actor ======================= */
+class Actor {
+  constructor(opts = {}) {
+    this.ax = 0; this.ground = 0; this.u = 4;
+    this.state = 'idle'; this.variant = 'laptop'; this.tint = null; this.acc = null;
+    this.base = 'idle'; this.modeLoop = null; this.once = null; this.onceResolve = null;
+    this.cur = null; this.ki = 0; this.kt = 0; this.fx = []; this.clock = 0;
+    this.gaze = null; this.lift = 0; this.lag = 0; this.hidden = false; this.asleep = false;
+    this.brain = false; this.reduce = false; this.traveling = false; this.prop = null;
+    this.idleTicks = 0; this.waitTicks = 0; this.fidgetIn = 80; this.badgeAge = 99; this.badgeOn = true;
+    this.alpha = 1; this.z = 2; this.offX = 0; this.offY = 0; this.follow = false; this.followHold = false; this.followLook = null;
+    Object.assign(this, opts);
+    this._start(this.base);
+  }
+  clipKeys(c) { return typeof c === 'string' ? M.clips[c] : c; }
+  _start(c) { this.curName = typeof c === 'string' ? c : null; this.cur = this.clipKeys(c); this.ki = 0; this.kt = 0; this._enterKey(); }
+  _enterKey() { const k = this.cur && this.cur[this.ki]; if (k && k[4] && !this.reduce) this.emit(k[4]); }
+  setLoop(c) { this.base = c; if (!this.once && !this.modeLoop) this._start(c); }
+  setMode(c) { this.modeLoop = c; if (!this.once) this._start(c || this.base); }
+  play(c) {
+    return new Promise((res) => {
+      if (this.onceResolve) this.onceResolve(false);
+      this.once = c; this.onceResolve = res; this._start(c);
+    });
+  }
+  cancelOnce() { if (this.once) { const r = this.onceResolve; this.once = null; this.onceResolve = null; this._start(this.modeLoop || this.base); r && r(false); } }
+  emit(name) { for (const p of effectParticles(this, name)) this.fx.push(Object.assign({ age: 0 }, p)); }
+  step() {
+    this.clock++;
+    this.badgeAge++;
+    for (const p of this.fx) {
+      p.age++; const dt = TICK / 1000;
+      p.vy += p.ay * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    this.fx = this.fx.filter((p) => p.age < p.life);
+    const acc = this.acc && M.accessories[this.acc];
+    if (acc && acc.twinkleEvery && this.clock % acc.twinkleEvery === 0 && !this.reduce && !this.noAcc) this.emit(acc.twinkle);
+    if (!this.cur) return;
+    this.kt++;
+    const k = this.cur[this.ki];
+    if (this.kt >= k[1]) {
+      this.kt = 0; this.ki++;
+      if (this.ki >= this.cur.length) {
+        if (this.once) {
+          const r = this.onceResolve; this.once = null; this.onceResolve = null;
+          this._start(this.modeLoop || this.base);
+          r && r(true);
+          return;
+        }
+        this.ki = 0;
+      }
+      this._enterKey();
+    }
+  }
+  // the gaze pose for the current state: a state may bring its own set (done keeps its flower)
+  gazePose() {
+    const g = M.states[this.state].gaze;
+    const set = g || { left: I.lookLeft, right: I.lookRight, up: I.lookUp, down: I.lookDown, center: I.lookCenter };
+    return set[this.gaze];
+  }
+  frame() {
+    if (this.follow && !this.reduce) {
+      const u = this.u;
+      if (Math.abs(this.offY) >= u) return { pose: I.hop, dx: 0, dy: 0 };
+      if (Math.abs(this.offX) >= u) {
+        const cycle = this.offX < 0 ? I.walkRight : I.walkLeft, fast = Math.abs(this.offX) > 6 * u;
+        return { pose: cycle[Math.floor(this.clock / (fast ? 1 : 2)) % 2 ? 0 : 1], dx: 0, dy: 0 };
+      }
+      return { pose: this.followLook || I.lookCenter, dx: 0, dy: 0 };
+    }
+    if (this.reduce) {
+      const st = M.states[this.state];
+      const still = this.asleep ? st.sleep.still : st.still;
+      if (this.modeLoop === I.held) return { pose: I.heldStill, dx: 0, dy: 0 };
+      if (this.cur === HIDDEN) return { pose: I.land, dx: 0, dy: -12 };
+      return { pose: this.gaze && this.calm() ? this.gazePose() : still, dx: 0, dy: st.stillDy || 0 };
+    }
+    const k = this.cur ? this.cur[this.ki] : [I.lookCenter, 1];
+    let pose = k[0];
+    if (this.gaze && !this.once && !this.modeLoop && this.calm()) pose = this.gazePose();
+    return { pose, dx: k[2] || 0, dy: k[3] || 0 };
+  }
+  calm() { return (this.state === 'idle' && !this.asleep) || this.state === 'done'; }
+  draw(ctx) {
+    if (this.hidden) return;
+    const u = this.u, f = this.frame();
+    const qx = Math.round(this.offX / u) * u, qy = Math.round(this.offY / u) * u;
+    const gnd = this.ground + qy;
+    const ax = this.ax + qx + (f.dx + this.lag) * u, ground = gnd - this.lift * u;
+    const dy = f.dy;
+    // shadow while airborne
+    const air = dy + this.lift;
+    if (air > 0) {
+      const w = air <= 2 ? 10 : air <= 5 ? 6 : 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(ax + (9 - w / 2) * u, gnd, w * u, Math.max(2, Math.round(u / 2)));
+    }
+    drawPose(ctx, f.pose, ax, gnd, u, 0, dy + this.lift, this.tint, this.alpha);
+    const prop = this.prop && M.props[this.prop];
+    const vs = M.states.running.variants[this.variant];
+    if (prop && vs && this.curName === vs.loop && !this.reduce) {
+      const t = this.clock;
+      for (let i = 0; i < prop.colors.length; i++) {
+        const ph = ((t + i * 6) % 18) / 18;
+        const x = 3 + ph * 11, y = -2 - Math.round(Math.sin(ph * Math.PI) * 7);
+        drawGlyph(ctx, prop.glyph, ax + Math.round(x) * u, ground + (y - 10) * u, u, prop.colors[i]);
+      }
+    }
+    for (const p of this.fx) {
+      const sx = p.sway ? Math.round(Math.sin(p.age * 0.5) * p.sway) : 0;
+      const shrunk = p.shrink && p.age > p.life / 2;
+      const g = shrunk ? p.shrink : p.g;
+      const popY = p.pop ? (p.age < 2 ? -1 : 0) : 0;
+      const px = ax + Math.round(p.x + sx + (shrunk ? 1 : 0)) * u;
+      const py = ground + (Math.round(p.y + popY) + (shrunk ? 1 : 0) - 10) * u;
+      drawGlyph(ctx, g, px, py, u, p.c, p.age > p.life * 0.65 ? 0.5 : 1);
+    }
+    if (dy > -6 && dy < 7) this.drawAcc(ctx, ax - f.dx * u, ground);
+  }
+  drawAcc(ctx, ax, ground) {
+    if (!this.acc || this.noAcc || this.modeLoop === I.held || this.traveling || this.asleep) return;
+    const u = this.u, spec = M.accessories[this.acc];
+    let g, top, bob = 0;
+    if (spec.frames) {
+      if (this.reduce) g = spec.reduced || spec.frames[0];
+      else { const t = this.clock * TICK; g = spec.frames[Math.round(((1 - Math.cos((2 * Math.PI * t) / spec.periodMs)) / 2) * (spec.frames.length - 1))]; }
+      const h = glyphSize(g)[1], box = spec.box || h;
+      top = -2 - box + Math.floor((box - h) / 2);
+    } else {
+      g = spec.glyph; top = -2 - glyphSize(g)[1];
+      if (spec.bobEvery && !this.reduce && Math.floor(this.clock / spec.bobEvery) % 2) bob = -1;
+    }
+    drawGlyph(ctx, g, ax + Math.round(9 - glyphSize(g)[0] / 2) * u, ground + (top - 10 + bob) * u, u, spec.color, 1);
+    // waiting keeps its "!" up at the top right until someone answers, with a small hop now and then
+    const st = M.states[this.state], badge = st.badge;
+    if (badge && this.badgeOn) {
+      const period = st.impatient && this.base === st.impatient.loop ? badge.impatientHopEvery : badge.hopEvery;
+      const hop = this.reduce ? 0 : this.badgeAge < 2 || this.clock % period < 2 ? -1 : 0;
+      const bh = glyphSize(badge.glyph)[1];
+      drawGlyph(ctx, badge.glyph, ax + badge.x * u, ground + (-2 - bh - 10 + hop) * u, u, badge.color, 1);
+    }
+  }
+}
+
+/* ---------- state brain (shared by the desk and some cards) ---------- */
+const variantOf = (st, v) => st.variants && (st.variants[v] || st.variants[st.defaultVariant]);
+function enterState(a, s, opts = {}) {
+  const st = M.states[s];
+  const prevV = variantOf(M.states[a.state], a.variant);
+  const exit = a.state !== s && prevV ? prevV.exit : null;
+  a.state = s; a.asleep = false; a.idleTicks = 0; a.waitTicks = 0;
+  a.tint = st.tint || null; a.acc = st.accessory || null; a.prop = null;
+  const v = variantOf(st, a.variant);
+  if (v) a.prop = v.prop || null;
+  a.setLoop(v ? v.loop : st.loop);
+  a.fidgetIn = irnd(40, 90);
+  a.badgeOn = !!opts.quiet || a.reduce;
+  if (opts.quiet) return;
+  const enter = (v && v.enter) || st.enter;
+  // the waiting badge pops up the moment the entry starts
+  const begin = () => { if (st.badge) { a.badgeOn = true; a.badgeAge = 0; } if (enter) a.play(enter); else a.cancelOnce(); };
+  if (exit) a.play(exit).then((ok) => { if (ok && a.state === s) begin(); });
+  else begin();
+}
+function brainStep(a) {
+  if (!a.brain || a.modeLoop || a.traveling || a.follow) return;
+  const st = M.states[a.state];
+  if (st.sleep && !a.asleep) {
+    a.idleTicks++;
+    if (a.idleTicks >= st.sleep.after) { a.asleep = true; a.setLoop(st.sleep.loop); a.play(st.sleep.doze); return; }
+  }
+  if (st.impatient) {
+    a.waitTicks++;
+    if (a.waitTicks === st.impatient.after) a.setLoop(st.impatient.loop);
+  }
+  if (st.fidget && !a.once && !a.asleep) {
+    if (--a.fidgetIn <= 0) {
+      a.play(pickWeighted(st.fidget.pick));
+      a.fidgetIn = irnd(st.fidget.every[0], st.fidget.every[1]);
+    }
+  }
+}
+function wake(a) {
+  if (!a.asleep) return;
+  a.asleep = false; a.idleTicks = 0; a.setLoop(M.states.idle.loop); a.play(M.states.idle.sleep.wake);
+}
+
+/* ======================= canvas helpers ======================= */
+function fitCanvas(cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  return { ctx, w, h };
+}
+
+/* ======================= travel (expand / collapse / scoot) ======================= */
+// hop from (D, Dy) back to (0, endDy); endDy > 0 lands raised, i.e. on the back of the pile
+function travelKeys(D, Dy, delay, hopLen, endDy = 0) {
+  const keys = [];
+  if (delay > 0) keys.push([I.land, delay, D, Dy]);
+  const H = Math.max(1, Math.ceil(Math.abs(D) / hopLen));
+  const n = H * 4, arc = [2, 3, 2, 0], poses = [I.hop, I.hop, I.hop, I.land];
+  for (let i = 1; i <= n; i++) {
+    const p = i / n, j = (i - 1) % 4;
+    keys.push([poses[j], 1, Math.round(D * (1 - p)), Math.round(Dy * (1 - p) + endDy * p) + arc[j]]);
+  }
+  if (endDy > 0) keys.push([I.land, 1, 0, endDy - 1, I.landDust], [I.land, 1, 0, endDy, 'settle']);
+  else keys.push([I.land, 2, 0, -2, I.landDust], [I.land, 1], [I.blinkPose, 1]);
+  return keys;
+}
+async function travel(a, fromAx, toAx, fromDy, delay, hopLen = 14, endDy = 0) {
+  const D = Math.round((fromAx - toAx) / a.u);
+  a.ax = toAx;
+  if (a.reduce) { a.traveling = false; return true; }
+  a.traveling = true;
+  const ok = await a.play(travelKeys(D, fromDy || 0, delay, hopLen, endDy));
+  a.traveling = false;
+  return ok;
+}
+// a Critter sitting in the back of the pile: raised `slot` rows, dimmed, held still
+const pileHold = (slot) => [[I.land, 999, 0, slot]];
+function stateLoop(a) {
+  const st = M.states[a.state], v = variantOf(st, a.variant);
+  if (a.asleep) return st.sleep.loop;
+  if (v) return v.loop;
+  if (st.impatient && a.waitTicks >= st.impatient.after) return st.impatient.loop;
+  return st.loop;
+}
+async function switchVariant(a, to) {
+  const vs = M.states.running.variants, from = vs[a.variant];
+  if (a.variant === to) return;
+  if (from.exit) await a.play(from.exit);
+  a.variant = to; a.prop = vs[to].prop || null; a.setLoop(vs[to].loop);
+  if (vs[to].enter) a.play(vs[to].enter);
+}
+function restoreLook(a) { a.alpha = 1; a.z = 2; a.tint = M.states[a.state].tint || null; a.noAcc = false; a.setLoop(stateLoop(a)); }
+
+/* while the flock is dragged, everyone except the grabbed Critter stays put on screen and walks to catch up */
+function followShift(a, dx, dy) {
+  if (!a.follow || a.reduce) return;
+  const u = a.u;
+  a.offX = Math.max(-12 * u, Math.min(12 * u, a.offX - dx));
+  a.offY = Math.max(-8 * u, Math.min(8 * u, a.offY - dy));
+}
+function followStep(a) {
+  if (!a.follow) return;
+  const u = a.u;
+  if (a.reduce) { a.offX = 0; a.offY = 0; }
+  const sx = (Math.abs(a.offX) > 6 * u ? 2 : 1) * u;
+  a.offX = Math.abs(a.offX) <= sx ? 0 : a.offX - Math.sign(a.offX) * sx;
+  if (a.offY) {
+    a.offY = Math.abs(a.offY) <= u ? 0 : a.offY - Math.sign(a.offY) * u;
+    if (!a.offY && !a.reduce) a.emit(I.landDust);
+  }
+  if (!a.followHold && !a.offX && !a.offY) { a.follow = false; if (!a.reduce) a.play(I.blink); }
+}
+function startFollow(a, grabbed) {
+  a.cancelOnce(); a.gaze = null; a.follow = true; a.followHold = true;
+  a.followLook = grabbed.ax < a.ax ? I.lookLeft : I.lookRight;
+}
+
+/* ======================= card definitions ======================= */
+const wait = (card, n) => new Promise((res) => card.waiters.push({ at: card.clock + n, res }));
+function pathPointer(card, pts) {
+  // pts: [[x, y, ticks, down?]] — moves linearly between points
+  card.ptrPath = { pts, i: 0, t: 0 };
+}
+const solo = (card) => card.actors[0];
+const SRC_LABEL = { sig: '招牌', common: '通用' };
+
+const GROUPS = [
+  { key: 'idle', en: 'Idle', title: '静息', blurb: '会话开着但没在跑。底层是很慢的呼吸：身体隔几秒软软地压扁一下，叶子偶尔晃一晃；每 4 到 10 秒随机挑一个小动作。2 分钟没动静就打盹，叶子合拢成一个小芽睡着；指针一靠近就醒。空闲时整体调灰，把注意力让给需要你的会话。',
+    cards: [
+      { name: '待机呼吸', kind: '循环', trig: '空闲状态的底层循环', src: 'sig', clip: 'idle', desc: '站 2.4 秒，身体软软地压扁一格（矮一格、宽一圈，叶子跟着矮下来）再弹回来；过一会儿两片叶子左右晃一下。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; a.setLoop('idle'); } },
+      { name: '眨眼', kind: '随机', trig: '静息时随机出现', src: 'common', clip: 'blink', desc: '眼睛闭成一条线停 2 格，偶尔连眨两下。大部分动作也以一次眨眼收尾。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await wait(c, 22); await a.play('blink'); await wait(c, 14); await a.play('double_blink'); } } },
+      { name: '左右张望', kind: '随机', trig: '静息时随机出现', src: 'common', clip: 'look', desc: '先往左看、回正，再往右看，眨一下。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('look'); await wait(c, 18); } } },
+      { name: '点脚', kind: '随机', trig: '静息时随机出现', src: 'common', clip: 'tap', desc: '抬起一只脚连点 4 下，越点越快，叶子跟着晃。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('tap'); await wait(c, 16); } } },
+      { name: '打喷嚏', kind: '随机', trig: '静息时随机出现，很少', src: 'sig', clip: 'sneeze', desc: '闭眼深吸一口气，身体拉长、叶子竖起；然后“啊嚏”一下整个压扁，叶子被震得摊平，旁边喷出一团 ~。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('sneeze'); await wait(c, 20); } } },
+      { name: '蹦着散步', kind: '随机', trig: '静息时随机出现', src: 'sig', clip: 'stroll', desc: '小碎步往左挪 4 格，每两步蹦一下，叶子朝身后飘；回头看一眼，再蹦回来。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('stroll'); await wait(c, 14); } } },
+      { name: '打哈欠', kind: '随机', trig: '静息时随机出现', src: 'common', clip: 'yawn', desc: '闭眼张嘴，身体拉长、两手举过头顶停一会儿，然后一软压扁回来。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('yawn'); await wait(c, 18); } } },
+      { name: '原地弹一下', kind: '随机', trig: '静息时随机出现，很少', src: 'sig', clip: 'boing', desc: '压扁蓄力 → 拉长起跳 → 腾空 5 格 → 落地压扁扬尘 → 弹回来。这套“压扁、拉长”是 Sprig 的基本手感，跳跃、落地、被点都用它。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('boing'); await wait(c, 18); } } },
+      { name: '抖叶子', kind: '随机', trig: '静息时随机出现', src: 'sig', clip: 'rustle', desc: '两片叶子竖起来，左右甩两下，甩出几滴露水。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('rustle'); await wait(c, 16); } } },
+      { name: '晒太阳', kind: '随机', trig: '静息时随机出现，很少', src: 'sig', clip: 'sunbathe', desc: '抬头看天，眯起眼睛、脸红，叶子张开，左上角闪两下阳光。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('sunbathe'); await wait(c, 16); } } },
+      { name: '打盹 → 睡着', kind: '循环', trig: '空闲满 2 分钟', src: 'sig', clip: 'sleep', desc: '眼皮一点点耷拉，叶子跟着蔫下来，最后合拢成一个小芽。睡着后一呼一吸地压扁、复原，每次飘出一个 z。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { a.asleep = false; a.setLoop('idle'); await wait(c, 20); a.asleep = true; a.setLoop('sleep'); await a.play('doze'); await wait(c, 120); } } },
+      { name: '被吵醒', kind: '单次', trig: '睡着时指针靠近、或会话有新动静', src: 'common', clip: 'wake', desc: '一缩，眼睛瞪圆往上一弹，头顶闪一下灰色 !；左右看看，抖抖叶子。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { a.asleep = true; a.setLoop('sleep'); await wait(c, 45); a.asleep = false; a.setLoop('idle'); await a.play('wake'); await wait(c, 20); } } },
+    ] },
+  { key: 'running', en: 'Working', title: '工作', blurb: '头顶是一颗小太阳：2 秒一个来回，从一个点胀成圆盘、再放出光芒，在两端停得久一点——植物晒着太阳干活。主力动作是抱着笔记本敲代码；另外按当前工具细分四种，状态文件里记着当前工具，拿不到时就抱笔记本。离开“运行中”时先把笔记本合上，再做下一个状态的进场动作。',
+    cards: [
+      { name: '抱着笔记本敲代码', kind: '单次 + 循环', trig: '提交提示词；Edit / Write 工具；拿不到工具名时的默认', src: 'common', clip: 'laptop', desc: '开工时一压扁，掏出笔记本一格格翻开（盖子背面有片小叶子）。低头盯着屏幕，两手轮流敲，叶子随节奏左右晃；敲一阵抬头看看，然后右手高举、重重按下回车，开心地眯眼，旁边飘出 &lt; / &gt;。收工时合上笔记本。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { a.acc = null; a.tint = 'dim'; a.setLoop('idle'); await wait(c, 14); a.tint = null; a.acc = 'sun'; a.setLoop('laptop'); await a.play('lap_open'); await wait(c, 96); await a.play('lap_close'); } } },
+      { name: '思考', kind: '循环', trig: '还没调用工具（思考中…）', src: 'sig', clip: 'think', desc: '眼睛望向右上方，两片叶子像螺旋桨一样转起来：正面、侧面、正面……转快了还会把自己带离地面一格。再换个方向想一想。',
+        run: async (c) => { const a = solo(c); a.acc = 'sun'; a.setLoop('think'); } },
+      { name: '读文件', kind: '循环', trig: 'Read / Grep / Glob', src: 'sig', clip: 'read', desc: '举起放大镜凑到一只眼睛前，镜片里是一只放大的眼睛；一边看一边往旁边挪 2 格，再换手换眼看回来。',
+        run: async (c) => { const a = solo(c); a.acc = 'sun'; a.setLoop('read'); } },
+      { name: '跑命令', kind: '循环', trig: 'Bash', src: 'sig', clip: 'bash', desc: '“跑”命令就真的跑起来：原地小跑，两手前后摆、两脚交替，身体一颠一颠，脚后扬起小灰尘，跑久了冒一滴汗。',
+        run: async (c) => { const a = solo(c); a.acc = 'sun'; a.setLoop('bash'); } },
+      { name: '派子任务', kind: '循环', trig: 'Agent / Task', src: 'common', clip: 'juggle', desc: '仰头抛接三颗种子（绿、粉、黄），每颗代表一个分出去的子任务，叶子跟着左右晃。',
+        run: async (c) => { const a = solo(c); a.acc = 'sun'; a.prop = 'juggle'; a.variant = 'juggle'; a.setLoop('juggle'); } },
+    ] },
+  { key: 'waiting', en: 'Asking', title: '提问 / 申请权限', blurb: '最需要你的状态，所以动作最大。进入时叶子“噌”地竖起来，橙色的 ! 从此常驻右上角、隔一会儿蹦一下，直到你处理；同时举手挥动，头顶的 ? 一跳一跳。30 秒没人理就开始着急地点脚、蹦，! 也蹦得更勤。',
+    cards: [
+      { name: '有事找你', kind: '单次', trig: '进入“等你确认”', src: 'sig', clip: 'alert', desc: '先合上笔记本；然后眼睛瞪圆、张嘴，叶子竖起，一压扁弹起 4 格高，右上角蹦出橙色 !；落地扬尘后举起右手。这个 ! 一直留到你处理为止。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { enterState(a, 'running', { quiet: true }); await wait(c, 30); enterState(a, 'waiting'); await wait(c, 60); } } },
+      { name: '举手等你', kind: '循环', trig: '等待中', src: 'common', clip: 'ask', desc: '右手在头顶和肩膀之间挥 5 下，停下来竖着叶子看着你，再眨眼。头顶的 ? 每 0.4 秒跳一下，右上角的 ! 每 1.2 秒蹦一下。',
+        run: async (c) => { const a = solo(c); enterState(a, 'waiting', { quiet: true }); a.setLoop('ask'); } },
+      { name: '等急了', kind: '循环', trig: '等待超过 30 秒', src: 'common', clip: 'impatient', desc: '越点越快地点脚，挥手，然后整个拉长蹦一下。右上角的 ! 也蹦得更勤，每半秒一下。',
+        run: async (c) => { const a = solo(c); enterState(a, 'waiting', { quiet: true }); a.waitTicks = M.states.waiting.impatient.after; a.setLoop('impatient'); } },
+    ] },
+  { key: 'done', en: 'Done', title: '做完了', blurb: '进场是一次真正的庆祝：头顶的芽开出一朵小花，撒一把花瓣和叶子。之后它就顶着这朵花安静地开心着，✓ 旁边时不时闪一下 ✦；指针靠近时它看向你，花也一直开着。你点开会话看过之后，花收回芽里，回到静息。',
+    cards: [
+      { name: '开花啦', kind: '单次', trig: '进入“做完了”', src: 'sig', clip: 'celebrate', desc: '压扁蓄力、拉长跳起，跳到顶时芽里开出一朵粉色的花，撒出花瓣和两片叶子；落地再小跳一次，最后笑眯眯地顶着花。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { enterState(a, 'running', { quiet: true }); await wait(c, 30); enterState(a, 'done'); await wait(c, 56); } } },
+      { name: '顶着小花', kind: '循环', trig: '做完了，还没去看', src: 'sig', clip: 'content', desc: '开心眼加腮红停一会儿，恢复正常眼神，眨眼；小花左右摇一摇。随机小动作也都带着花：眨单眼、张望、摇花。',
+        run: async (c) => { const a = solo(c); enterState(a, 'done', { quiet: true }); } },
+      { name: '看过了', kind: '单次', trig: '点开做完了的会话', src: 'sig', clip: 'seen', desc: '小花收回芽里，开心地眯一下眼，回到静息。',
+        run: async (c) => { const a = solo(c); for (;;) { enterState(a, 'done', { quiet: true }); await wait(c, 30); enterState(a, 'idle', { quiet: true }); a.tint = null; await a.play('seen'); await wait(c, 24); } } },
+    ] },
+  { key: 'error', en: 'Error', title: '出错', blurb: '先慌张地抖几下，然后叶子蔫下来，整个调灰、垂着手往下沉，偶尔叹一口气。动作幅度比提问小，但颜色和那两片蔫叶子一眼能看出来出事了。',
+    cards: [
+      { name: '哎呀', kind: '单次', trig: '进入“出错”', src: 'sig', clip: 'oops', desc: '眼睛变成 × ×、叶子竖起、两手抬起，左右抖 6 格，红色 ! 蹦出来，冒一滴汗；然后叶子蔫了，一片小叶子飘落下来。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { enterState(a, 'running', { quiet: true }); await wait(c, 30); enterState(a, 'error'); await wait(c, 60); } } },
+      { name: '蔫了', kind: '循环', trig: '出错，还没去看', src: 'sig', clip: 'slump', desc: '低头皱眉、两手垂下，叶子耷拉在头顶，身体沉一格；偶尔闭眼叹一口气。',
+        run: async (c) => { const a = solo(c); enterState(a, 'error', { quiet: true }); } },
+    ] },
+  { key: 'touch', en: 'Interaction', title: '交互', blurb: '所有交互都会打断当前循环，结束后接回原来的状态。卡片里的白色箭头是模拟的鼠标指针。',
+    cards: [
+      { name: '目光跟随', kind: '交互', trig: '指针进入宠物附近约 170 pt', src: 'common', clip: null, gaze: true, sheet: '按指针方向换眼睛：左、右、上、下、正视', desc: '只在空闲和做完了的时候跟随，忙着的时候不分心。只有眼睛动，换方向那一刻才重画。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx - 95, gy - 30, 1], [cx - 95, gy - 30, 14], [cx - 20, gy - 110, 16], [cx + 15, gy - 118, 10], [cx + 95, gy - 40, 16], [cx + 95, gy - 40, 14], [cx + 20, gy + 18, 14], [cx, gy + 18, 10], [cx - 95, gy - 30, 18]]); await wait(c, 112); } } },
+      { name: '目光跟随（做完了）', kind: '交互', trig: '做完了，指针在附近', src: 'sig', clip: null, gaze: true, sheet: '“做完了”有自己的一组目光姿势', desc: '做完了的时候用带花的那组姿势跟随，花不会因为你看它而消失。这是清单里每个状态可选的 gaze 字段。',
+        run: async (c) => { const a = solo(c); enterState(a, 'done', { quiet: true }); const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx - 95, gy - 30, 1], [cx - 95, gy - 30, 14], [cx - 20, gy - 110, 16], [cx + 95, gy - 40, 16], [cx + 95, gy - 40, 14], [cx, gy + 18, 14], [cx - 95, gy - 30, 18]]); await wait(c, 94); } } },
+      { name: '注意到你', kind: '交互', trig: '指针悬停到身上', src: 'common', clip: 'notice', gaze: true, desc: '叶子竖一下、往上一顶，然后眼睛跟着指针。如果正在睡觉，就换成“被吵醒”。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx + 110, gy - 10, 1], [cx + 110, gy - 10, 6], [cx + 18, gy - 22, 10]]); await wait(c, 16); await a.play('notice'); await wait(c, 20); pathPointer(c, [[cx + 18, gy - 22, 1], [cx + 110, gy - 10, 10]]); await wait(c, 18); } } },
+      { name: '来回蹭', kind: '交互', trig: '指针在身上左右来回 3 次以上', src: 'common', clip: 'pet', desc: '像被摸头：眼睛笑弯、脸红，叶子左右摆，头顶冒出小爱心。停手 0.7 秒后结束。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground;
+          for (;;) { a.setMode(null); pathPointer(c, [[cx + 100, gy - 40, 1], [cx - 10, gy - 52, 10]]); await wait(c, 10);
+            const pts = [[cx - 10, gy - 52, 1]]; for (let i = 0; i < 8; i++) pts.push([i % 2 ? cx - 22 : cx + 22, gy - 52, 3]); pathPointer(c, pts); await wait(c, 4); a.setMode('pet'); await wait(c, 22);
+            a.setMode(null); await a.play('pet_end'); pathPointer(c, [[cx - 22, gy - 52, 1], [cx + 100, gy - 40, 10]]); await wait(c, 18); } } },
+      { name: '按下 · 点击', kind: '交互', trig: '按下鼠标；松开且没拖动', src: 'sig', clip: 'boop_end', sheet: 'press', desc: '按下时整个被压扁、眯眼 &gt; &lt;、扬尘；松开“啵”地弹起来一跳，看一眼，然后跳回会话窗口。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx + 100, gy - 20, 1], [cx + 8, gy - 26, 10]]); await wait(c, 12); c.ptrDown = true; a.setMode('press'); await wait(c, 8); c.ptrDown = false; a.setMode(null); await a.play('boop_end'); await wait(c, 8); pathPointer(c, [[cx + 8, gy - 26, 1], [cx + 100, gy - 20, 10]]); await wait(c, 18); } } },
+      { name: '拎起来', kind: '交互', trig: '按住其中一只拖动', src: 'common', clip: 'held', desc: '只有被你抓住的那只会这样：眯眼 &gt; &lt;，两脚垂下来乱蹬、两手轮流挥，叶子甩来甩去。身体比指针慢半拍，往拖动的反方向甩。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground, ax0 = a.ax;
+          for (;;) { a.lift = 0; a.ax = ax0; a.lag = 0; pathPointer(c, [[cx + 100, gy - 20, 1], [cx + 6, gy - 26, 10]]); await wait(c, 12); c.ptrDown = true; a.setMode('press'); await wait(c, 4);
+            a.setMode('held'); c.carry = { a, ox: ax0 - (cx + 6), oy: gy - (gy - 26), lift: 5 };
+            pathPointer(c, [[cx + 6, gy - 26, 1], [cx + 6, gy - 46, 5], [cx - 40, gy - 46, 9], [cx + 40, gy - 46, 14], [cx + 6, gy - 46, 9]]); await wait(c, 38);
+            c.carry = null; c.ptrDown = false; a.ax = ax0; a.lag = 0; a.lift = 0; a.setMode(null); await a.play('drop'); pathPointer(c, [[cx + 6, gy - 46, 1], [cx + 100, gy - 30, 10]]); await wait(c, 18); } } },
+      { name: '其余的跟着走', kind: '交互', trig: '拖动时，没被抓住的那几只', src: 'common', clip: null, sheet: '每格走 1 个像素，落后超过 6 个像素改成小跑，最多落后 12 个像素', desc: '它们不会悬空，也不会和指针完全同步：先留在原地，然后看着前进方向迈小碎步追上来，叶子往后飘；落后多了就小跑。往上拖时跳着跟上，往下拖时跳下来落地扬尘。追上后转头看着被拎着的那只，停手后眨眨眼。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const g = f.actors[1]; await wait(c, 2);
+          const gx = g.ax + 9 * f.u, gy = c.ground - 5 * f.u;
+          pathPointer(c, [[gx + 90, gy - 30, 1], [gx + 2, gy, 10]]); await wait(c, 12);
+          c.ptrDown = true; g.setMode('press'); await wait(c, 3);
+          g.setMode('held'); g.lift = 2; f.actors.forEach((a) => { if (a !== g) startFollow(a, g); });
+          c.flockDrag = { g, y0: gy };
+          pathPointer(c, [[gx + 2, gy, 1], [gx - 44, gy - 8, 12], [gx - 44, gy - 8, 12], [gx + 50, gy - 8, 18], [gx + 50, gy - 8, 16], [gx + 2, gy - 8, 12], [gx + 2, gy - 8, 4]]); await wait(c, 76);
+          c.flockDrag = null; c.ptrDown = false; g.lift = 0; g.lag = 0; g.setMode(null); g.play('drop'); f.actors.forEach((a) => { a.followHold = false; });
+          pathPointer(c, [[gx + 2, gy - 8, 1], [gx + 90, gy - 30, 10]]); await wait(c, 34); } } },
+      { name: '放下', kind: '交互', trig: '拖动后松开', src: 'sig', clip: 'drop', desc: '松手后先在空中停 1 格，落地压扁扬尘，再弹回原形，左右看看确认位置，眨眼，接回原来的状态。',
+        run: async (c) => { const a = solo(c); for (;;) { a.setMode('held'); a.lift = 5; await wait(c, 14); a.lift = 2; await wait(c, 1); a.lift = 0; a.setMode(null); await a.play('drop'); await wait(c, 16); } } },
+    ] },
+  { key: 'flock', en: 'Flock', title: '展开与合并', blurb: '会话多了合成一堆，点开再散成一排。每只 Sprig 都是一下一下蹦过去的，而不是平移滑过去；落地扬一点尘，气泡和标签等它落地后再出现。新会话像种子发芽一样从地里钻出来，结束的会话再钻回地里。',
+    cards: [
+      { name: '展开', kind: '单次', trig: '点那一堆、或会话数降到阈值以下', src: 'common', clip: null, sheet: '每只错开 2 格起跳，一跳 4 格、最多横移 14 个像素，落地扬尘', desc: '离那一堆最近的先跳，一只接一只蹦到自己的位置。',
+        flock: 3, run: async (c) => { for (;;) { c.flock.collapseNow(); await wait(c, 22); c.flock.expand(); await wait(c, 52); } } },
+      { name: '合并', kind: '单次', trig: '点“收起”、或会话数超过阈值', src: 'common', clip: null, sheet: '最近的先回；先到的坐到最后面，后到的坐在它前面，最急的那只站最前', desc: '大家一只只蹦回右端。每只一落地就直接坐进那一堆的背后、变暗垫高一格，不会先消失再出现；最急的那只站在最前面，计数小标签最后出现。',
+        flock: 3, run: async (c) => { for (;;) { c.flock.expandNow(); await wait(c, 24); c.flock.collapse(); await wait(c, 46); } } },
+      { name: '新会话加入', kind: '单次', trig: '发现一个新会话', src: 'sig', clip: 'emerge', desc: '先从地里钻出两片叶子，左右晃一晃；再冒出头顶、露出眼睛左右看看，然后带着泥土整个蹦出地面，落地眨眼。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const a = f.actors[2]; a.setLoop(HIDDEN); a.hidden = false; await wait(c, 16); a.setLoop('idle'); await a.play('emerge'); await wait(c, 40); } } },
+      { name: '会话结束', kind: '单次', trig: '会话关闭或被手动关掉', src: 'sig', clip: 'goodbye', desc: '笑着挥三下手，一压扁沉回地里，只露眼睛再看一眼；最后只剩两片叶子晃一晃，“噗”地带着泥土和一片叶子不见了。旁边的会补位。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const a = f.actors[2]; a.setLoop('idle'); await wait(c, 16); await a.play('goodbye'); a.setLoop(HIDDEN); await wait(c, 30); } } },
+      { name: '显示 / 隐藏', kind: '单次', trig: '/pet、菜单栏或快捷键', src: 'sig', clip: 'pop_up', desc: '显示时先冒出叶子，再从地里蹦出来落地；隐藏时一压扁钻回地里，扬起一点泥土。',
+        run: async (c) => { const a = solo(c); for (;;) { a.setLoop(HIDDEN); await wait(c, 10); a.setLoop('idle'); await a.play('pop_up'); await wait(c, 34); await a.play('burrow'); a.setLoop(HIDDEN); await wait(c, 6); } } },
+    ] },
+];
+
+/* ---------- mini flock used by the flock cards ---------- */
+class MiniFlock {
+  constructor(card, n) {
+    this.card = card; this.u = 3; this.n = n;
+    this.actors = Array.from({ length: n }, (_, i) => new Actor({ u: 3, base: 'idle' }));
+    const states = ['running', 'waiting', 'idle'];
+    this.actors.forEach((a, i) => { a.variant = 'laptop'; enterState(a, states[i % states.length], { quiet: true }); });
+    this.merged = false; this.shiftX = 0;
+  }
+  geom() {
+    const u = this.u, c = this.card, colW = 18 * u + 10;
+    const right = c.w / 2 + (this.n * colW) / 2 + this.shiftX;
+    return { u, colW, right };
+  }
+  backCount() { return Math.min(2, this.n - 1); }
+  slotAx(i) { const g = this.geom(); return Math.round(g.right - (this.n - 1 - i) * g.colW - g.colW / 2 - 9 * g.u); }
+  pileAx() { return this.slotAx(this.n - 1) - 4 * this.u; }
+  leadIndex() { return 1; }
+  layoutNow(merged) {
+    this.merged = merged;
+    this.shiftX = 0;
+    this.actors.forEach((a, i) => {
+      a.ground = this.card.ground; a.traveling = false; a.cancelOnce();
+      a.offX = 0; a.offY = 0; a.follow = false; a.followHold = false; a.lift = 0; a.lag = 0;
+      restoreLook(a);
+      if (merged) { a.ax = this.pileAx(); a.hidden = i !== this.leadIndex(); }
+      else { a.ax = this.slotAx(i); a.hidden = false; }
+      a.noAcc = merged;
+    });
+  }
+  collapseNow() { this.layoutNow(true); }
+  expandNow() { this.layoutNow(false); }
+  expand() {
+    const pile = this.pileAx(), L = this.leadIndex(); this.merged = false;
+    const order = this.actors.map((a, i) => i).sort((p, q) => Math.abs(this.slotAx(p) - pile) - Math.abs(this.slotAx(q) - pile));
+    let j = 0;
+    order.forEach((i, k) => {
+      const a = this.actors[i];
+      a.hidden = false; restoreLook(a);
+      const back = i === L ? 0 : Math.max(1, this.backCount() - j++);
+      travel(a, pile + back * 4 * this.u, this.slotAx(i), back, k * 2, 12);
+    });
+  }
+  collapse() {
+    const pile = this.pileAx(), u = this.u, L = this.leadIndex(), nb = this.backCount();
+    const order = this.actors.map((a, i) => i).sort((p, q) => Math.abs(this.slotAx(p) - pile) - Math.abs(this.slotAx(q) - pile));
+    let left = order.length, j = 0;
+    const seat = {};
+    const done = () => { if (--left === 0) { this.merged = true; this.actors.forEach((b, i) => { b.noAcc = true; if (i !== L) b.hidden = true; }); } };
+    this.actors.forEach((a) => { a.noAcc = true; });
+    order.forEach((i, k) => {
+      const a = this.actors[i];
+      if (i === L) { a.z = 3; travel(a, a.ax, pile, 0, k * 2, 12).then(done); return; }
+      // the first ones home take the far back of the pile, later ones sit in front of them
+      const slot = j < nb ? nb - j : 1; j++;
+      a.z = 2; a.settleAlpha = slot === 2 ? 0.55 : 0.75; a.settleZ = 2 - slot;
+      a.setLoop(pileHold(slot));
+      travel(a, a.ax, pile + slot * 4 * u, 0, k * 2, 12, slot).then(() => {
+        if (seat[slot] && seat[slot] !== a) seat[slot].hidden = true;
+        seat[slot] = a; done();
+      });
+    });
+  }
+  drawBacks(ctx) {
+    if (!this.merged) return;
+    const pile = this.pileAx(), u = this.u, g = this.card.ground;
+    for (let k = this.backCount(); k >= 1; k--) drawPose(ctx, (this.card.clock + k * 17) % 70 < 2 ? 'shut' : 'base', pile + k * 4 * u, g - k * u, u, 0, 0, 'dim', k === 2 ? 0.55 : 0.75);
+  }
+}
+
+/* ---------- build catalog cards ---------- */
+const cards = [];
+const catalog = document.getElementById('catalog');
+for (const grp of GROUPS) {
+  const sec = document.createElement('section');
+  sec.className = 'group';
+  sec.setAttribute('aria-labelledby', 'g-' + grp.key);
+  sec.innerHTML = `<div class="group-head"><h2 id="g-${grp.key}">${grp.title}</h2><span class="eyebrow">${grp.en}</span><p>${grp.blurb}</p></div><div class="grid"></div>`;
+  const grid = sec.querySelector('.grid');
+  for (const def of grp.cards) {
+    const el = document.createElement('article');
+    el.className = 'card';
+    const sheetKeys = def.clip ? M.clips[def.clip] : null;
+    const ticks = sheetKeys ? sheetKeys.reduce((s, k) => s + k[1], 0) : 0;
+    const strip = sheetKeys
+      ? `<div class="xs" aria-hidden="true">${sheetKeys.map((k) => `<i style="flex:${k[1]}" title="${k[0]} · ${k[1]} 格"></i>`).join('')}</div>
+         <div class="meta"><span>${sheetKeys.length} 个关键姿势 · ${ticks} 格 · ${(ticks * TICK / 1000).toFixed(2)} s</span><b class="src ${def.src}">${SRC_LABEL[def.src]}</b></div>`
+      : `<div class="meta"><span>${def.sheet}</span><b class="src ${def.src}">${SRC_LABEL[def.src]}</b></div>`;
+    el.innerHTML = `<canvas role="img" aria-label="${def.name}动画演示，点击重播"></canvas>
+      <div class="body"><h3>${def.name}<span class="kind">${def.kind}</span></h3><p class="trig">${def.trig}</p><p class="desc">${def.desc}</p><div class="foot">${strip}</div></div>`;
+    grid.appendChild(el);
+    const card = { def, el, cv: el.querySelector('canvas'), cells: el.querySelectorAll('.xs i'), clock: 0, waiters: [], actors: [], visible: false, started: false, ptr: null, ptrPath: null, ptrDown: false, carry: null, w: 0, h: 150, ground: 118, gen: 0 };
+    cards.push(card);
+    card.cv.addEventListener('click', () => restartCard(card));
+  }
+  catalog.appendChild(sec);
+}
+
+function setupCard(card) {
+  const { w } = fitCanvas(card.cv);
+  card.w = w; card.h = 150; card.ground = 118;
+  card.waiters = []; card.clock = 0; card.ptr = null; card.ptrPath = null; card.ptrDown = false; card.carry = null; card.flockDrag = null;
+  card.gen++;
+  if (card.def.flock) {
+    card.flock = new MiniFlock(card, card.def.flock);
+    card.actors = card.flock.actors;
+    card.flock.expandNow();
+  } else {
+    const u = 5;
+    const a = new Actor({ u, base: 'idle', reduce: REDUCED });
+    a.ax = Math.round(w / 2 - 9 * u); a.ground = card.ground;
+    card.actors = [a];
+    card.flock = null;
+  }
+  card.actors.forEach((a) => { a.reduce = REDUCED; });
+  card.hl = card.def.flock ? card.actors[card.actors.length - 1] : card.actors[0];
+  card.def.run(card).catch(() => {});
+}
+function restartCard(card) {
+  // drop the old script by failing its pending waits, then start over
+  const old = card.waiters; card.waiters = [];
+  card.actors.forEach((a) => { a.onceResolve = null; a.once = null; });
+  old.forEach((w) => { w.res = null; });
+  setupCard(card);
+}
+
+/* pointer path stepping (cards) */
+function stepPointer(card) {
+  const pp = card.ptrPath;
+  if (!pp) return;
+  const { pts } = pp;
+  if (pp.i >= pts.length - 1) { card.ptr = { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1] }; return; }
+  const [x0, y0] = pts[pp.i], [x1, y1, t1] = pts[pp.i + 1];
+  pp.t++;
+  const p = Math.min(1, pp.t / t1);
+  const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+  card.ptr = { x: x0 + (x1 - x0) * ease, y: y0 + (y1 - y0) * ease };
+  if (p >= 1) { pp.i++; pp.t = 0; }
+}
+function gazeFor(a, px, py) {
+  const cx = a.ax + 9 * a.u, cy = a.ground - 7 * a.u;
+  const dx = px - cx, dy = py - cy;
+  if (Math.hypot(dx, dy) > 170) return null;
+  if (dy < -Math.max(28, Math.abs(dx) * 1.1)) return 'up';
+  if (dx < -6 * a.u) return 'left';
+  if (dx > 6 * a.u) return 'right';
+  return dy > 10 ? 'down' : 'center';
+}
+
+function stepCard(card) {
+  card.clock++;
+  const due = card.waiters.filter((w) => w.at <= card.clock);
+  card.waiters = card.waiters.filter((w) => w.at > card.clock);
+  due.forEach((w) => w.res && w.res());
+  stepPointer(card);
+  const prevPtr = card.prevPtr;
+  card.prevPtr = card.ptr ? { ...card.ptr } : null;
+  if (card.carry && card.ptr) {
+    const a = card.carry.a;
+    const vx = prevPtr ? card.ptr.x - prevPtr.x : 0;
+    a.ax = Math.round((card.ptr.x + card.carry.ox) / a.u) * a.u;
+    a.lag = Math.max(-3, Math.min(3, Math.round(-vx / 4)));
+    a.lift = Math.max(0, Math.round((card.ground - 26 - card.ptr.y) / a.u) + 1);
+  }
+  if (card.flockDrag && card.ptr) {
+    const f = card.flock, g = card.flockDrag.g, dx = prevPtr ? card.ptr.x - prevPtr.x : 0;
+    f.shiftX += dx;
+    f.actors.forEach((a, i) => { a.ax = f.slotAx(i); if (a !== g) followShift(a, dx, 0); });
+    g.lag = dx ? Math.max(-3, Math.min(3, Math.round(-dx / 3))) : g.lag - Math.sign(g.lag);
+    g.lift = Math.max(1, Math.min(6, Math.round((card.flockDrag.y0 - card.ptr.y) / g.u) + 2));
+  }
+  for (const a of card.actors) {
+    if (card.def.gaze) a.gaze = card.ptr ? gazeFor(a, card.ptr.x, card.ptr.y) : null;
+    followStep(a);
+    a.step();
+  }
+}
+function drawCard(card) {
+  const { ctx, w, h } = fitCanvas(card.cv);
+  ctx.clearRect(0, 0, w, h);
+  // ground line
+  ctx.fillStyle = '#3A404C';
+  for (let x = 8; x < w - 8; x += 6) ctx.fillRect(x, card.ground, 3, 1);
+  if (card.flock) card.flock.drawBacks(ctx);
+  [...card.actors].sort((p, q) => p.z - q.z).forEach((a) => a.draw(ctx));
+  if (card.ptr) drawGlyph(ctx, card.ptrDown ? 'grab' : 'ptr', Math.round(card.ptr.x), Math.round(card.ptr.y), 2, '#fff');
+  // exposure strip highlight
+  const a = card.hl;
+  if (card.cells.length && a) {
+    const want = card.def.clip;
+    const playing = a.curName === want ? a.ki : -1;
+    card.cells.forEach((c, i) => c.classList.toggle('on', i === playing));
+  }
+}
+
+/* visibility: only tick cards on screen */
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    const card = cards.find((c) => c.el === e.target);
+    if (!card) continue;
+    card.visible = e.isIntersecting;
+    if (card.visible && !card.started) { card.started = true; setupCard(card); drawCard(card); }
+  }
+}, { rootMargin: '120px' });
+cards.forEach((c) => io.observe(c.el));
+
+/* ======================= pose sheet ======================= */
+const poseHost = document.getElementById('poses');
+const poseCanvases = Object.keys(M.poses).map((name) => {
+  const box = document.createElement('div');
+  box.className = 'pose';
+  box.innerHTML = `<canvas></canvas><code>${name}</code>`;
+  poseHost.appendChild(box);
+  return { name, cv: box.querySelector('canvas') };
+});
+function drawPoseSheet() {
+  for (const { name, cv } of poseCanvases) {
+    const { ctx, w, h } = fitCanvas(cv);
+    ctx.clearRect(0, 0, w, h);
+    const u = 4, ground = 64, ax = Math.round(w / 2 - 9 * u);
+    ctx.fillStyle = '#3A404C';
+    for (let x = 4; x < w - 4; x += 5) ctx.fillRect(x, ground, 3, 1);
+    drawPose(ctx, name, ax, ground, u, 0, name.startsWith('held') ? 1 : 0, null, 1);
+  }
+}
+requestAnimationFrame(drawPoseSheet);
+
+function renderSwatches() {
+  document.getElementById('swatches').innerHTML = Object.entries(SKIN_INFO[SKIN].swatch)
+    .map(([ch, name]) => `<span><i style="background:${M.palette[ch]}"></i>${name} <code>${M.palette[ch]}</code></span>`).join('');
+}
+renderSwatches();
+
+/* ======================= desk stage ======================= */
+const desk = document.getElementById('desk');
+const deskCv = document.getElementById('deskCanvas');
+const overlay = document.getElementById('overlay');
+const toastEl = document.getElementById('toast');
+const STATE_LABEL = { idle: '空闲', running: '运行中', waiting: '等你确认', done: '做完了', error: '出错' };
+const STATE_STRIPE = { idle: '#8E8E93', running: '#8E8E93', waiting: '#FF9F0A', done: '#34C759', error: '#FF3B30' };
+const TAG_COLOR = { idle: '#48484A', running: '#636366', waiting: '#C77800', done: '#248A3D', error: '#D70015' };
+const CHIP_TEXT = { waiting: '?', error: '!', done: '✓', running: '☀', idle: 'z' };
+const PRIORITY = { waiting: 4, error: 3, done: 2, running: 1, idle: 0 };
+const POOL = [['blog', '终端'], ['infra', 'VS Code'], ['design-sys', 'Desktop'], ['docs', '终端'], ['mobile', 'VS Code']];
+
+const stage = {
+  u: 4, sessions: [], merged: false, userChoice: null, right: 0, bottom: 0, reduce: REDUCED,
+  colW: 132, gap: 10, tagH: 22, handleW: 44, threshold: 4,
+  pointer: null, press: null, drag: null, hoverId: null, rub: null, busy: 0,
+};
+document.getElementById('chkReduce').checked = REDUCED;
+
+function mkSession(id, name, src, state, variant) {
+  const a = new Actor({ u: stage.u, brain: true, reduce: stage.reduce });
+  a.variant = variant || 'laptop';
+  enterState(a, state, { quiet: true });
+  return { id, name, src, actor: a, dom: {} };
+}
+function detailOf(s) {
+  const a = s.actor;
+  if (a.state === 'running') return VARIANT_DETAIL[a.variant];
+  if (a.state === 'waiting') return '需要你确认：Bash(npm test)';
+  if (a.state === 'done') return '做完了：重构了 FlockLayout';
+  if (a.state === 'error') return '出错了：API 请求超时';
+  return null;
+}
+function lead() { return stage.sessions.reduce((b, s) => (!b || PRIORITY[s.actor.state] > PRIORITY[b.actor.state] ? s : b), null); }
+function expandedWidth(n) { return n * stage.colW + (n - 1) * stage.gap + stage.gap + stage.handleW; }
+function fits() { return expandedWidth(stage.sessions.length) <= desk.clientWidth - 24; }
+function autoMerged() { return stage.sessions.length > stage.threshold || !fits(); }
+function groundY() { return stage.bottom - stage.tagH - 6; }
+function slotCenter(i) {
+  const n = stage.sessions.length;
+  return stage.right - stage.handleW - stage.gap - (n - 1 - i) * (stage.colW + stage.gap) - stage.colW / 2;
+}
+function slotAx(i) { return Math.round(slotCenter(i) - 9 * stage.u); }
+function pileCenter() { return stage.right - stage.colW / 2; }
+function pileAx() { return Math.round(pileCenter() - 13 * stage.u); }
+
+function placeAll(snap) {
+  const g = groundY();
+  stage.sessions.forEach((s, i) => {
+    const a = s.actor; a.u = stage.u; a.ground = g; a.noAcc = stage.merged;
+    if (snap) {
+      if (stage.merged) { a.ax = pileAx(); a.hidden = s !== lead(); }
+      else { a.ax = slotAx(i); a.hidden = false; }
+    }
+  });
+  renderOverlay();
+}
+
+function applyOffsets() {
+  for (const s of stage.sessions) {
+    if (!s.dom) continue;
+    const a = s.actor, u = a.u;
+    const t = a.offX || a.offY ? `translate(${Math.round(a.offX / u) * u}px, ${Math.round(a.offY / u) * u}px)` : '';
+    for (const e of [s.dom.bubble, s.dom.tag]) if (e) e.style.transform = t;
+  }
+}
+function el(tag, cls, html) { const e = document.createElement(tag); e.className = cls; if (html != null) e.innerHTML = html; return e; }
+// overlay elements are kept and updated in place (keyed), so showing or hiding one never
+// re-creates the others: a tag that is created visible and then hidden would fade out, i.e. flash
+const overlayEls = new Map();
+function renderOverlay() {
+  for (const e of overlayEls.values()) e._used = false;
+  const u = stage.u, g = groundY(), bubbleBottom = g - 10 * u - 9 * u;
+  stage.sessions.forEach((s) => { s.dom = {}; });
+  const L0 = lead();
+  const put = (key, cls, html, hidden, onClick) => {
+    let e = overlayEls.get(key);
+    const fresh = !e;
+    if (fresh) {
+      e = el('div', cls);
+      e.addEventListener('click', () => e._onClick && e._onClick());
+      overlayEls.set(key, e);
+    }
+    if (e._html !== html) { e.innerHTML = html; e._html = html; }
+    e.classList.toggle('is-hidden', !!hidden);
+    if (fresh) overlay.appendChild(e);
+    e._onClick = onClick; e._used = true;
+    return e;
+  };
+  const addBubble = (s, cx) => {
+    const d = detailOf(s);
+    if (!d) return;
+    const b = put('bubble:' + s.id, 'bubble', `<small>${s.name} · ${STATE_LABEL[s.actor.state]}</small><span>${d}</span>`, s.actor.traveling || s.actor.hidden, () => jumpTo(s));
+    b.style.setProperty('--stripe', STATE_STRIPE[s.actor.state]);
+    b.style.left = Math.round(cx - stage.colW / 2) + 'px';
+    b.style.bottom = Math.round(desk.clientHeight - bubbleBottom) + 'px';
+    s.dom.bubble = b;
+  };
+  const addTag = (key, text, src, color, cx, onClick, hidden, s) => {
+    const t = put(key, 'tag', `${text}${src ? `<em>${src}</em>` : ''}`, hidden, onClick);
+    t.style.background = color;
+    t.style.left = Math.round(cx - t.offsetWidth / 2) + 'px';
+    t.style.top = Math.round(g + 4) + 'px';
+    if (s) s.dom.tag = t;
+  };
+  if (stage.merged && L0) {
+    const cx = pileCenter();
+    addBubble(L0, cx);
+    const counts = {};
+    stage.sessions.forEach((s) => { counts[s.actor.state] = (counts[s.actor.state] || 0) + 1; });
+    const html = Object.keys(PRIORITY).sort((p, q) => PRIORITY[q] - PRIORITY[p]).filter((st) => counts[st])
+      .map((st) => `<b style="background:${STATE_STRIPE[st]}">${CHIP_TEXT[st]} ${counts[st]}</b>`).join('');
+    const chips = put('chips', 'chips', html, stage.busy, () => doExpand());
+    chips.style.left = Math.round(cx - chips.offsetWidth / 2) + 'px';
+    chips.style.top = Math.round(g - 12 * u - 16) + 'px';
+    addTag('tag:merged', `${stage.sessions.length} 个会话 · 点击展开`, null, '#3A3A3C', cx, () => doExpand(), stage.busy);
+  } else if (!stage.merged) {
+    stage.sessions.forEach((s, i) => {
+      const cx = slotCenter(i);
+      addBubble(s, cx);
+      addTag('tag:' + s.id, s.name, s.src, TAG_COLOR[s.actor.state], cx, () => jumpTo(s), s.actor.traveling || s.actor.hidden, s);
+    });
+    if (stage.sessions.length) {
+      const h = put('handle', 'handle', '⇥ 收起', stage.busy, () => doCollapse());
+      h.style.left = Math.round(stage.right - stage.handleW) + 'px';
+      h.style.top = Math.round(g - 5 * u - 9) + 'px';
+    }
+  }
+  for (const [key, e] of overlayEls) if (!e._used) { e.remove(); overlayEls.delete(key); }
+  applyOffsets();
+}
+
+let toastTimer = 0;
+function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, 1600); }
+function jumpTo(s) {
+  toast(`跳回「${s.name}」所在的窗口（演示）`);
+  const a = s.actor;
+  if (a.state === 'done') { setTimeout(() => setState(s, 'idle', true), 900); }
+}
+
+async function doExpand() {
+  if (!stage.merged || stage.busy || !fits()) { if (!fits()) toast('屏幕放不下展开的一排，先保持合并'); return; }
+  stage.userChoice = 'expanded';
+  stage.merged = false; stage.busy++;
+  const pile = pileAx();
+  const L0 = lead();
+  const order = stage.sessions.map((s, i) => i).sort((p, q) => Math.abs(slotAx(p) - pile) - Math.abs(slotAx(q) - pile));
+  let j = 0;
+  const nb = Math.min(2, stage.sessions.length - 1);
+  const jobs = order.map((i, k) => {
+    const s = stage.sessions[i], a = s.actor;
+    a.hidden = false; a.ground = groundY(); restoreLook(a);
+    const back = s === L0 ? 0 : Math.max(1, nb - j++);
+    return travel(a, pile + back * 4 * stage.u, slotAx(i), back, k * 2).then(() => renderOverlay());
+  });
+  renderOverlay();
+  await Promise.all(jobs);
+  stage.busy--; renderOverlay(); syncButtons();
+}
+async function doCollapse(auto) {
+  if (stage.merged || stage.busy) return;
+  if (!auto) stage.userChoice = 'merged';
+  stage.busy++;
+  const pile = pileAx();
+  const L0 = lead();
+  const order = stage.sessions.map((s, i) => i).sort((p, q) => Math.abs(slotAx(p) - pile) - Math.abs(slotAx(q) - pile));
+  stage.sessions.forEach((s) => { s.actor.traveling = true; s.actor.noAcc = true; });
+  renderOverlay();
+  const u = stage.u, nb = Math.min(2, stage.sessions.length - 1), seat = {};
+  let j = 0;
+  const jobs = order.map((i, k) => {
+    const s = stage.sessions[i], a = s.actor;
+    if (s === L0) { a.z = 3; return travel(a, a.ax, pile, 0, k * 2); }
+    // the first ones home take the far back of the pile, later ones sit in front of them
+    const slot = j < nb ? nb - j : 1; j++;
+    a.z = 2; a.settleAlpha = slot === 2 ? 0.55 : 0.75; a.settleZ = 2 - slot;
+    a.setLoop(pileHold(slot));
+    return travel(a, a.ax, pile + slot * 4 * u, 0, k * 2, 14, slot).then(() => {
+      if (seat[slot] && seat[slot] !== a) seat[slot].hidden = true;
+      seat[slot] = a;
+    });
+  });
+  await Promise.all(jobs);
+  stage.merged = true; stage.busy--;
+  placeAll(true); syncButtons();
+}
+
+function setState(s, st, quiet) {
+  const a = s.actor;
+  enterState(a, st);
+  if (quiet && st === 'idle') a.play(M.states.done.seen);
+  renderOverlay(); buildPanel();
+}
+
+/* ---------- desk pointer interaction ---------- */
+function actorAt(x, y) {
+  if (stage.merged) {
+    const L0 = lead(); if (!L0) return null;
+    const ax = pileAx(), g = groundY(), u = stage.u;
+    if (x >= ax - u && x <= ax + 27 * u && y >= g - 13 * u && y <= g + 2) return L0;
+    return null;
+  }
+  for (const s of stage.sessions) {
+    const a = s.actor; if (a.hidden) continue;
+    const u = a.u;
+    if (x >= a.ax + u && x <= a.ax + 17 * u && y >= a.ground - 11 * u && y <= a.ground + 2) return s;
+  }
+  return null;
+}
+function localPt(e) { const r = desk.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+desk.addEventListener('pointermove', (e) => {
+  const p = localPt(e);
+  const prev = stage.pointer;
+  stage.pointer = p;
+  if (stage.press && !stage.drag) {
+    if (Math.hypot(p.x - stage.press.x, p.y - stage.press.y) >= 3) startDrag(p);
+  }
+  if (stage.drag) {
+    const d = stage.drag;
+    const minRight = (stage.merged ? stage.colW : expandedWidth(stage.sessions.length)) + 8;
+    const minBottom = stage.tagH + 6 + 19 * stage.u + 64;
+    const nr = Math.max(minRight, Math.min(desk.clientWidth - 8, d.right0 + (p.x - d.x)));
+    const nb = Math.max(minBottom, Math.min(desk.clientHeight - 6, d.bottom0 + (p.y - d.y)));
+    stage.lastDragMove = performance.now();
+    const vx = prev ? p.x - prev.x : 0;
+    const dR = nr - stage.right, dB = nb - stage.bottom;
+    stage.right = nr; stage.bottom = nb;
+    stage.sessions.forEach((s) => {
+      if (s === d.grabbed) s.actor.lag = Math.max(-3, Math.min(3, Math.round(-vx / 3)));
+      else followShift(s.actor, dR, dB);
+    });
+    placeAll(true);
+    return;
+  }
+  const hit = actorAt(p.x, p.y);
+  desk.style.cursor = hit ? 'pointer' : 'default';
+  if (hit && stage.hoverId !== hit.id) {
+    stage.hoverId = hit.id;
+    const a = hit.actor;
+    if (a.asleep) wake(a);
+    else if (!a.once && !a.modeLoop) a.play(I.notice);
+    stage.rub = { id: hit.id, lastX: p.x, dir: 0, flips: [] };
+  } else if (!hit && stage.hoverId) {
+    endPet(); stage.hoverId = null; stage.rub = null;
+  }
+  // rubbing back and forth over a Critter
+  if (hit && stage.rub && stage.rub.id === hit.id) {
+    const r = stage.rub, dx = p.x - r.lastX;
+    if (Math.abs(dx) >= 3) {
+      const d = Math.sign(dx);
+      if (r.dir && d !== r.dir) r.flips.push(performance.now());
+      r.dir = d; r.lastX = p.x;
+      r.flips = r.flips.filter((t) => performance.now() - t < 1000);
+      if (r.flips.length >= 3 && hit.actor.modeLoop !== I.pet) { hit.actor.setMode(I.pet); }
+      r.lastMove = performance.now();
+    }
+  }
+  // everyone nearby looks at the pointer
+  stage.sessions.forEach((s) => { s.actor.gaze = gazeFor(s.actor, p.x, p.y); });
+});
+function endPet() {
+  for (const s of stage.sessions) if (s.actor.modeLoop === I.pet) { s.actor.setMode(null); s.actor.play(I.petEnd); }
+}
+desk.addEventListener('pointerleave', () => {
+  stage.pointer = null; endPet(); stage.hoverId = null; stage.rub = null;
+  stage.sessions.forEach((s) => { s.actor.gaze = null; });
+});
+desk.addEventListener('pointerdown', (e) => {
+  if (e.target !== deskCv) return;
+  const p = localPt(e);
+  const hit = actorAt(p.x, p.y);
+  if (!hit || stage.busy) return;
+  desk.setPointerCapture(e.pointerId);
+  stage.press = { x: p.x, y: p.y, s: hit };
+  endPet();
+  hit.actor.cancelOnce();
+  hit.actor.setMode(I.press);
+});
+function startDrag(p) {
+  const pr = stage.press;
+  stage.drag = { x: pr.x, y: pr.y, right0: stage.right, bottom0: stage.bottom, grabbed: pr.s };
+  const g = pr.s.actor;
+  g.cancelOnce(); g.setMode(I.held); g.lift = 3; g.gaze = null;
+  stage.sessions.forEach((s) => { if (s !== pr.s && !s.actor.hidden) startFollow(s.actor, g); });
+  desk.style.cursor = 'grabbing';
+}
+desk.addEventListener('pointerup', (e) => {
+  const pr = stage.press;
+  stage.press = null;
+  if (stage.drag) {
+    const g = stage.drag.grabbed.actor;
+    stage.drag = null;
+    g.lag = 0; g.lift = 0; g.setMode(null); g.play(I.drop);
+    stage.sessions.forEach((s) => { s.actor.followHold = false; });
+    desk.style.cursor = 'default';
+    return;
+  }
+  if (!pr) return;
+  const a = pr.s.actor;
+  a.setMode(null);
+  a.play(I.boopEnd);
+  if (stage.merged) setTimeout(() => doExpand(), 200);
+  else setTimeout(() => jumpTo(pr.s), 250);
+});
+
+/* ---------- desk controls ---------- */
+const panel = document.getElementById('sessPanel');
+function buildPanel() {
+  panel.querySelectorAll('.srow').forEach((r) => r.remove());
+  stage.sessions.forEach((s) => {
+    const row = el('div', 'srow');
+    const states = ['idle', 'running', 'waiting', 'done', 'error'];
+    row.innerHTML = `<span class="nm">${s.name}</span><span class="seg" role="group" aria-label="${s.name} 的状态">${states.map((st) => `<button type="button" data-st="${st}" aria-pressed="${s.actor.state === st}">${STATE_LABEL[st].replace('运行中', '运行').replace('等你确认', '提问').replace('做完了', '完成')}</button>`).join('')}</span>` +
+      (s.actor.state === 'running' ? `<select aria-label="${s.name} 正在用的工具">${Object.entries(VARIANTS).map(([k, v]) => `<option value="${k}"${k === s.actor.variant ? ' selected' : ''}>${v}</option>`).join('')}</select>` : '');
+    row.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setState(s, b.dataset.st)));
+    const sel = row.querySelector('select');
+    if (sel) sel.addEventListener('change', async () => {
+      await switchVariant(s.actor, sel.value);
+      renderOverlay();
+    });
+    panel.appendChild(row);
+  });
+}
+function syncButtons() {
+  document.getElementById('bToggle').textContent = stage.merged ? '展开成一排' : '合并成一堆';
+  document.getElementById('bLeave').disabled = stage.sessions.length <= 1;
+}
+document.getElementById('bToggle').addEventListener('click', () => (stage.merged ? doExpand() : doCollapse()));
+document.getElementById('bJoin').addEventListener('click', async () => {
+  if (stage.busy) return;
+  const used = new Set(stage.sessions.map((s) => s.name));
+  const pick = POOL.find(([n]) => !used.has(n));
+  if (!pick) { toast('演示里最多 9 个会话'); return; }
+  const s = mkSession('s' + Date.now(), pick[0], pick[1], 'idle');
+  const wasMerged = stage.merged;
+  stage.sessions.push(s);
+  stage.userChoice = null;
+  const willMerge = autoMerged();
+  if (wasMerged) {
+    placeAll(true); buildPanel(); syncButtons();
+    if (!willMerge) doExpand();
+    return;
+  }
+  // existing Critters scoot left to make room, the newcomer peeks up from the ground
+  stage.busy++;
+  const g = groundY();
+  const jobs = stage.sessions.slice(0, -1).map((o, i) => { const from = o.actor.ax; return travel(o.actor, from, slotAx(i), 0, i, 16); });
+  s.actor.ax = slotAx(stage.sessions.length - 1); s.actor.ground = g; s.actor.u = stage.u;
+  s.actor.traveling = true;
+  renderOverlay(); buildPanel();
+  jobs.push(s.actor.play(I.join).then(() => { s.actor.traveling = false; renderOverlay(); }));
+  await Promise.all(jobs);
+  stage.busy--;
+  renderOverlay();
+  if (willMerge) doCollapse(true);
+  syncButtons();
+});
+document.getElementById('bLeave').addEventListener('click', async () => {
+  if (stage.busy || stage.sessions.length <= 1) return;
+  const s = stage.sessions[stage.sessions.length - 1];
+  stage.busy++;
+  if (!stage.merged) {
+    await s.actor.play(I.leave);
+    stage.sessions.pop();
+    stage.userChoice = null;
+    const jobs = stage.sessions.map((o, i) => travel(o.actor, o.actor.ax, slotAx(i), 0, i, 16));
+    renderOverlay(); buildPanel();
+    await Promise.all(jobs);
+    stage.busy--;
+  } else {
+    stage.sessions.pop();
+    stage.busy--;
+    stage.userChoice = null;
+    if (!autoMerged()) { stage.merged = true; placeAll(true); doExpand(); }
+    else placeAll(true);
+  }
+  buildPanel(); renderOverlay(); syncButtons();
+});
+document.getElementById('bSleep').addEventListener('click', () => {
+  let n = 0;
+  stage.sessions.forEach((s) => { const a = s.actor; if (a.state === 'idle' && !a.asleep) { a.idleTicks = M.states.idle.sleep.after - 1; n++; } });
+  toast(n ? `${n} 个空闲的会话要睡着了` : '现在没有空闲的会话');
+});
+document.getElementById('bShow').addEventListener('click', async () => {
+  if (stage.busy) return;
+  stage.busy++;
+  const vis = stage.sessions.filter((s) => !s.actor.hidden);
+  renderOverlay();
+  await Promise.all(vis.map((s, i) => new Promise((r) => setTimeout(r, i * 60)).then(() => s.actor.play(I.vanish))));
+  vis.forEach((s) => s.actor.setMode(HIDDEN));
+  overlay.style.opacity = '0';
+  await new Promise((r) => setTimeout(r, 700));
+  overlay.style.opacity = '';
+  await Promise.all(vis.map((s, i) => new Promise((r) => setTimeout(r, i * 90)).then(() => { s.actor.setMode(null); return s.actor.play(I.appear); })));
+  stage.busy--;
+  renderOverlay();
+});
+document.getElementById('selSize').addEventListener('change', (e) => { stage.u = +e.target.value; placeAll(true); });
+document.getElementById('chkReduce').addEventListener('change', (e) => {
+  stage.reduce = e.target.checked;
+  stage.sessions.forEach((s) => { s.actor.reduce = stage.reduce; s.actor.fx = []; });
+});
+
+function initStage() {
+  stage.right = desk.clientWidth - 16;
+  stage.bottom = desk.clientHeight - 10;
+  stage.sessions = [
+    mkSession('a', 'critter', '终端', 'running', 'laptop'),
+    mkSession('b', 'robocup', 'VS Code', 'waiting'),
+    mkSession('c', 'notes', 'Desktop', 'done'),
+    mkSession('d', 'api-gw', '终端', 'idle'),
+  ];
+  stage.merged = autoMerged();
+  placeAll(true); buildPanel(); syncButtons();
+}
+initStage();
+setTimeout(() => stage.sessions.forEach((s, i) => setTimeout(() => {
+  const st = M.states[s.actor.state], v = variantOf(st, s.actor.variant);
+  const enter = (v && v.enter) || st.enter;
+  if (enter && !s.actor.once && !stage.busy) s.actor.play(enter);
+}, i * 260)), 700);
+window.addEventListener('resize', () => {
+  cards.forEach((c) => { if (c.started) restartCard(c); });
+  stage.right = Math.min(stage.right, desk.clientWidth - 8);
+  if (!stage.merged && !fits()) { stage.merged = true; }
+  placeAll(true); syncButtons();
+});
+
+function drawDesk() {
+  const { ctx, w, h } = fitCanvas(deskCv);
+  ctx.clearRect(0, 0, w, h);
+  if (stage.merged || stage.busy) {
+    const L0 = lead();
+    if (stage.merged && L0 && !L0.actor.hidden) {
+      const ax = pileAx(), g = groundY(), u = stage.u;
+      for (let k = Math.min(2, stage.sessions.length - 1); k >= 1; k--) drawPose(ctx, (L0.actor.clock + k * 23) % 80 < 2 ? 'shut' : 'base', ax + k * 4 * u, g - k * u, u, 0, 0, 'dim', k === 2 ? 0.55 : 0.75);
+    }
+  }
+  const L1 = lead();
+  const order = [...stage.sessions].sort((p, q) => (p === L1 ? 9 : p.actor.z) - (q === L1 ? 9 : q.actor.z));
+  for (const s of order) s.actor.draw(ctx);
+}
+
+/* ======================= hero ======================= */
+// the header portrait walks through every state on its own, in full color
+const heroCv = document.getElementById('heroCanvas');
+const heroCap = document.getElementById('heroCap');
+const hero = new Actor({ u: 7, brain: true, reduce: REDUCED });
+const HERO_STEPS = [['idle', null, 160], ['running', 'laptop', 150], ['running', 'think', 90], ['running', 'read', 90], ['running', 'bash', 70], ['running', 'juggle', 70],
+  ['waiting', null, 120], ['done', null, 150], ['error', null, 110]];
+let heroAt = 0, heroLeft = 0;
+function heroNext() {
+  const [st, v, n] = HERO_STEPS[heroAt % HERO_STEPS.length]; heroAt++;
+  if (st === 'running' && hero.state === 'running') switchVariant(hero, v);
+  else { if (v) hero.variant = v; enterState(hero, st); }
+  hero.tint = null;
+  heroCap.textContent = STATE_LABEL[st] + (v ? ' · ' + VARIANTS[v] : '');
+  heroLeft = n;
+}
+heroCv.addEventListener('click', () => heroNext());
+function drawHero() {
+  const { ctx, w, h } = fitCanvas(heroCv);
+  ctx.clearRect(0, 0, w, h);
+  const u = hero.u;
+  hero.ground = h - 30; hero.ax = Math.round(w / 2 - 9 * u);
+  ctx.fillStyle = '#3A404C';
+  for (let x = 12; x < w - 12; x += 7) ctx.fillRect(x, hero.ground, 4, 1);
+  hero.draw(ctx);
+}
+heroNext();
+
+/* ======================= skin picker ======================= */
+const pickHost = document.getElementById('skinPick');
+// a skin's base pose drawn in its own colours (the page's pose cache only holds the current skin)
+function drawThumb(cv, skin) {
+  const { ctx, w, h } = fitCanvas(cv);
+  ctx.clearRect(0, 0, w, h);
+  const u = 2, ax = Math.round(w / 2 - 9 * u), ground = h - 2;
+  for (const pn of skin.poses.base) {
+    const part = skin.parts[pn];
+    part.rows.forEach((row, r) => [...row].forEach((ch, c) => {
+      if (ch === '.') return;
+      ctx.fillStyle = skin.palette[ch];
+      ctx.fillRect(ax + (part.at[0] + c) * u, ground + (part.at[1] + r - 10) * u, u, u);
+    }));
+  }
+}
+const pickButtons = Object.keys(SKINS).map((name) => {
+  const b = document.createElement('button');
+  b.type = 'button';
+  b.innerHTML = `<canvas aria-hidden="true"></canvas><span>${SKIN_INFO[name].zh} ${SKIN_INFO[name].en}</span>`;
+  b.addEventListener('click', () => { switchSkin(name); try { history.replaceState(null, '', '#' + name); } catch (e) { /* hash is a convenience */ } });
+  pickHost.appendChild(b);
+  return { name, b };
+});
+function renderSkinChrome() {
+  const info = SKIN_INFO[SKIN];
+  document.getElementById('skinTitle').textContent = info.en;
+  document.getElementById('skinBlurb').textContent = `${info.zh}：${info.blurb}`;
+  const note = document.getElementById('skinNote');
+  note.hidden = SKIN === 'sprig';
+  note.textContent = `下面卡片里的说明按小芽写。${info.zh}的动作完全相同，只是把叶子换成了它自己的${{ mochi: '耳朵', peep: '呆毛', bristle: '刺' }[SKIN] || '头顶'}，开花换成了${SKIN === 'bristle' ? '扎在刺上的苹果' : '一朵小花'}。`;
+  for (const { name, b } of pickButtons) b.setAttribute('aria-pressed', String(name === SKIN));
+}
+requestAnimationFrame(() => pickButtons.forEach(({ name, b }) => drawThumb(b.querySelector('canvas'), SKINS[name])));
+renderSkinChrome();
+function switchSkin(name) {
+  if (!SKINS[name] || name === SKIN) return;
+  useSkin(name);
+  renderSkinChrome();
+  renderSwatches();
+  drawPoseSheet();
+  cards.forEach((c) => { if (c.started) restartCard(c); });
+  initStage();
+  heroAt = 0; heroLeft = 0; heroNext();
+}
+window.addEventListener('hashchange', () => switchSkin(location.hash.slice(1)));
+
+/* ======================= main clock ======================= */
+let last = performance.now(), acc = 0;
+function frame(now) {
+  acc += Math.min(500, now - last); last = now;
+  let stepped = false;
+  while (acc >= TICK) {
+    acc -= TICK; stepped = true;
+    let moved = false;
+    for (const s of stage.sessions) { const a = s.actor; if (a.follow) { followStep(a); moved = true; } brainStep(a); a.step(); }
+    if (moved) applyOffsets();
+    if (stage.rub && stage.rub.lastMove && performance.now() - stage.rub.lastMove > 700) { endPet(); stage.rub.lastMove = 0; stage.rub.flips = []; }
+    if (stage.drag && performance.now() - (stage.lastDragMove || 0) > 120) stage.sessions.forEach((s) => { const a = s.actor; a.lag -= Math.sign(a.lag); });
+    for (const c of cards) if (c.visible && c.started) stepCard(c);
+    brainStep(hero); hero.step(); if (--heroLeft <= 0) heroNext();
+  }
+  if (stepped) {
+    drawDesk(); drawHero();
+    for (const c of cards) if (c.visible && c.started) drawCard(c);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// keep the desk responsive to the pointer between ticks
+desk.addEventListener('pointermove', () => drawDesk());
+})();
+</script>
