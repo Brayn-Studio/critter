@@ -10,12 +10,13 @@ private func rec(
     eventTime: Int64 = 0,
     createdAt: Int64 = 0,
     claudePid: Int32? = nil,
-    entrypoint: String? = nil
+    entrypoint: String? = nil,
+    activity: String? = nil
 ) -> SessionRecord {
     SessionRecord(
         schema: 1, sessionId: id, cwd: cwd, transcriptPath: nil, state: state, detail: detail,
         lastEvent: "Test", eventTime: eventTime, createdAt: createdAt, claudePid: claudePid, claudeStartTime: nil,
-        entrypoint: entrypoint
+        entrypoint: entrypoint, activity: activity
     )
 }
 
@@ -154,4 +155,11 @@ private func entry(
     #expect(result.count == 1)
     #expect(result[0].state == .done)
     #expect(result[0].detail == "newer")
+}
+
+@Test func catalogCarriesActivity() {
+    let tracked = SessionCatalog.build(records: [rec("a", activity: "bash")], registry: [], dismissed: [:])
+    #expect(tracked.first?.activity == "bash")
+    let untracked = SessionCatalog.build(records: [], registry: [entry("b")], dismissed: [:])
+    #expect(untracked.first?.activity == nil)
 }

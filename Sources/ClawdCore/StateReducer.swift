@@ -23,7 +23,7 @@ public enum StateReducer {
         pidStartTime: Int64?,
         entrypoint: String? = nil
     ) -> ReducerAction {
-        func write(state: PetState, detail: String?) -> ReducerAction {
+        func write(state: PetState, detail: String?, activity: WorkActivity? = nil) -> ReducerAction {
             .write(SessionRecord(
                 schema: 1,
                 sessionId: input.sessionId,
@@ -36,7 +36,8 @@ public enum StateReducer {
                 createdAt: previous?.createdAt ?? now,
                 claudePid: pid ?? previous?.claudePid,
                 claudeStartTime: pidStartTime ?? previous?.claudeStartTime,
-                entrypoint: entrypoint ?? previous?.entrypoint
+                entrypoint: entrypoint ?? previous?.entrypoint,
+                activity: activity?.rawValue
             ))
         }
 
@@ -52,7 +53,7 @@ public enum StateReducer {
             if isPetCommand(trimmed) {
                 return .ignore
             }
-            return write(state: .running, detail: BubbleText.thinking)
+            return write(state: .running, detail: BubbleText.thinking, activity: .think)
 
         case "PreToolUse":
             switch input.toolName {
@@ -62,11 +63,11 @@ public enum StateReducer {
                 return write(state: .waiting, detail: BubbleText.planApproval)
             default:
                 let summary = ToolSummary.activity(toolName: input.toolName ?? "", input: input.toolInput)
-                return write(state: .running, detail: summary)
+                return write(state: .running, detail: summary, activity: WorkActivity.forTool(input.toolName ?? ""))
             }
 
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
-            return write(state: .running, detail: BubbleText.thinking)
+            return write(state: .running, detail: BubbleText.thinking, activity: .think)
 
         case "PermissionRequest":
             let summary = ToolSummary.permission(toolName: input.toolName ?? "", input: input.toolInput)

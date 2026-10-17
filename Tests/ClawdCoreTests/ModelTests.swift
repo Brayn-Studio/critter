@@ -51,3 +51,14 @@ import Testing
     #expect(d.stateFile(sessionId: "../etc") == nil)
     #expect(d.stateFile(sessionId: "d3331ac5-4416")?.lastPathComponent == "d3331ac5-4416.json")
 }
+
+@Test func recordWithoutActivityDecodes() throws {
+    let old = #"{"schema":1,"sessionId":"a","cwd":"/x","state":"running","lastEvent":"PreToolUse","eventTime":5,"createdAt":5}"#
+    let r = try JSONDecoder().decode(SessionRecord.self, from: Data(old.utf8))
+    #expect(r.activity == nil)
+
+    var withActivity = r
+    withActivity.activity = "bash"
+    let again = try JSONDecoder().decode(SessionRecord.self, from: JSONEncoder().encode(withActivity))
+    #expect(again.activity == "bash")
+}

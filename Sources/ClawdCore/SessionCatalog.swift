@@ -14,6 +14,8 @@ public struct PetSession: Sendable, Equatable, Identifiable {
     public var tracked: Bool
     public var eventTime: Int64
     public var sortKey: Int64
+    /// The tracked record's `WorkActivity` raw value, if any.
+    public var activity: String?
 
     public init(
         id: String,
@@ -26,7 +28,8 @@ public struct PetSession: Sendable, Equatable, Identifiable {
         transcriptPath: String?,
         tracked: Bool,
         eventTime: Int64,
-        sortKey: Int64
+        sortKey: Int64,
+        activity: String? = nil
     ) {
         self.id = id
         self.name = name
@@ -39,6 +42,7 @@ public struct PetSession: Sendable, Equatable, Identifiable {
         self.tracked = tracked
         self.eventTime = eventTime
         self.sortKey = sortKey
+        self.activity = activity
     }
 }
 
@@ -74,6 +78,7 @@ public enum SessionCatalog {
             var tracked: Bool
             var eventTime: Int64
             var sortKey: Int64
+            var activity: String?
         }
 
         var drafts: [Draft] = []
@@ -119,7 +124,8 @@ public enum SessionCatalog {
                 transcriptPath: record?.transcriptPath,
                 tracked: tracked,
                 eventTime: eventTime,
-                sortKey: registryEntry?.startedAt ?? record?.createdAt ?? 0
+                sortKey: registryEntry?.startedAt ?? record?.createdAt ?? 0,
+                activity: record?.activity
             ))
         }
 
@@ -133,7 +139,7 @@ public enum SessionCatalog {
             return PetSession(
                 id: draft.id, name: name, source: draft.source, state: draft.state, detail: draft.detail,
                 cwd: draft.cwd, pid: draft.pid, transcriptPath: draft.transcriptPath, tracked: draft.tracked,
-                eventTime: draft.eventTime, sortKey: draft.sortKey
+                eventTime: draft.eventTime, sortKey: draft.sortKey, activity: draft.activity
             )
         }
 

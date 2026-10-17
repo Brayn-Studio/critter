@@ -137,3 +137,40 @@ private func input(_ json: String) -> HookInput {
     ) else { Issue.record(); return }
     #expect(next.entrypoint == "sdk-cli")
 }
+
+private func activity(_ json: String) -> String?? {
+    guard case .write(let r) = StateReducer.reduce(previous: nil, input: input(json), now: 10, pid: 1, pidStartTime: 1) else { return .none }
+    return .some(r.activity)
+}
+
+@Test func promptSubmitRecordsThink() {
+    #expect(activity(#"{"session_id":"s","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"hi"}"#) == .some("think"))
+}
+
+@Test func preToolUseRecordsToolActivity() {
+    for (tool, want) in [("Edit", "laptop"), ("Read", "read"), ("Bash", "bash"), ("Task", "juggle")] {
+        let json = #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"\#(tool)","tool_input":{}}"#
+        #expect(activity(json) == .some(want))
+    }
+}
+
+@Test func postToolUseBackToThink() {
+    for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied"] {
+        let json = #"{"session_id":"s","cwd":"/x","hook_event_name":"\#(event)","tool_name":"Edit"}"#
+        #expect(activity(json) == .some("think"))
+    }
+}
+
+@Test func stopClearsActivity() {
+    let prev = SessionRecord(schema: 1, sessionId: "s", cwd: "/x", transcriptPath: nil, state: .running, detail: nil,
+                             lastEvent: "PreToolUse", eventTime: 1, createdAt: 1, claudePid: nil, claudeStartTime: nil,
+                             activity: "bash")
+    guard case .write(let r) = StateReducer.reduce(previous: prev, input: input(#"{"session_id":"s","cwd":"/x","hook_event_name":"Stop"}"#), now: 10, pid: 1, pidStartTime: 1) else { Issue.record(); return }
+    #expect(r.activity == nil)
+}
+
+@Test func askUserQuestionHasNoActivity() {
+    guard case .write(let r) = StateReducer.reduce(previous: nil, input: input(#"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{}}"#), now: 10, pid: 1, pidStartTime: 1) else { Issue.record(); return }
+    #expect(r.state == .waiting)
+    #expect(r.activity == nil)
+}

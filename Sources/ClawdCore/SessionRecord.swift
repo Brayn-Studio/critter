@@ -21,6 +21,9 @@ public struct SessionRecord: Codable, Sendable, Equatable {
     /// registry entry, else `CLAUDE_CODE_ENTRYPOINT` in the hook's environment. Lets SDK /
     /// `claude -p` sessions be excluded even when the registry doesn't list them.
     public var entrypoint: String?
+    /// The `WorkActivity` raw value while the session is running a tool or thinking; nil
+    /// otherwise (and in files written before this field existed).
+    public var activity: String?
 
     public init(
         schema: Int,
@@ -34,7 +37,8 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         createdAt: Int64,
         claudePid: Int32?,
         claudeStartTime: Int64?,
-        entrypoint: String? = nil
+        entrypoint: String? = nil,
+        activity: String? = nil
     ) {
         self.schema = schema
         self.sessionId = sessionId
@@ -48,5 +52,6 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         self.claudePid = claudePid
         self.claudeStartTime = claudeStartTime
         self.entrypoint = entrypoint
+        self.activity = activity
     }
 }
