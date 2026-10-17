@@ -14,9 +14,10 @@ import QuartzCore
 ///
 /// Mouse: every click inside the view lands here (never on the labels), and what it hit is
 /// decided from the layout geometry. A press that moves less than 3 pt before release is a
-/// click; anything further drags the whole panel. Right-click opens a context menu.
+/// click; anything further drags the whole panel. Right-click opens a context menu. The
+/// pointer interactions (gaze, hover, rubbing, boop, lift-and-follow, drop) live in
+/// `FlockView+Interaction.swift`.
 final class FlockView: NSView {
-    private static let dragThreshold: CGFloat = 3
     /// The merged pile's back rows blink (`blinkPose`) for 2 of every 80 ticks, row k
     /// 23·k ticks out of phase.
     private static let pileBlinkPeriod = 80
@@ -41,9 +42,8 @@ final class FlockView: NSView {
     /// pile's "展开" is then disabled rather than silently doing nothing.
     var canExpand = true
 
-    private var pressLocation: NSPoint?
-    private var windowOriginAtPress: NSPoint?
-    private var isDragging = false
+    /// The pointer and the press/drag in progress (`FlockView+Interaction.swift`).
+    var pointer = FlockPointer()
 
     let skin: SkinManifest
     private let metrics: FlockLayout.Metrics
@@ -63,6 +63,8 @@ final class FlockView: NSView {
     private var drawnPile: [PileRow] = []
     private var bubbles: [String: BubbleView] = [:]
     private var tags: [String: TagView] = [:]
+    /// Bubbles and tags of Clawds walking after a dragged one move with their follow offset.
+    private var overlayShifts: [String: CGPoint] = [:]
     private let handleView = HandleView()
     private let chipsView = ChipsView()
 
@@ -137,7 +139,7 @@ final class FlockView: NSView {
         }
     }
 
-    private var isMerged: Bool {
+    var isMerged: Bool {
         if case .merged = presentation { return true }
         return false
     }
@@ -268,6 +270,8 @@ final class FlockView: NSView {
         sprites[id] = nil
         heldIds.remove(id)
         concealed.remove(id)
+        overlayShifts[id] = nil
+        pointer.forget(id)
     }
 
     /// The Clawd (with its bubble and tag) of `from` now stands for `to`.
@@ -281,6 +285,13 @@ final class FlockView: NSView {
         if let tag = tags.removeValue(forKey: from) { tags[to] = tag }
         if heldIds.remove(from) != nil { heldIds.insert(to) }
         if concealed.remove(from) != nil { concealed.insert(to) }
+        if let shift = overlayShifts.removeValue(forKey: from) { overlayShifts[to] = shift }
+        pointer.forget(from)
+    }
+
+    /// Whether a choreography has `id`'s Clawd in hand right now (see `FlockChoreographer.isBusy`).
+    func isChoreographed(_ id: String) -> Bool {
+        choreographer.isBusy(id)
     }
 
     func groundOrigin(_ id: String) -> CGPoint? {
@@ -459,6 +470,7 @@ final class FlockView: NSView {
             batch {
                 for actor in Array(actors.values) { actor.step() }
                 choreographer.didStep()
+                interactionDidStep()
             }
         }
         inTick = false
@@ -469,7 +481,7 @@ final class FlockView: NSView {
         for actor in actors.values where !actor.hidden || actor.isPlayingOnce {
             next = min(next, actor.ticksUntilChange())
         }
-        return min(next, pileTicksUntilChange(), choreographer.ticksUntilCue())
+        return min(next, pileTicksUntilChange(), choreographer.ticksUntilCue(), interactionTicksUntilCue())
     }
 
     /// Keeps the sprite layers in `zPosition` order (stable): Core Animation sorts siblings by
@@ -498,17 +510,20 @@ final class FlockView: NSView {
     /// Draws every changed sprite and the still pile in one actions-disabled transaction --
     /// none at all when nothing changed since the last draw.
     private func render() {
-        var changed: [(sprite: ClawdSpriteLayer, snapshot: ActorSnapshot)] = []
+        var changed: [(id: String, sprite: ClawdSpriteLayer, snapshot: ActorSnapshot)] = []
         for (id, actor) in actors {
             guard let sprite = sprites[id] else { continue }
             let snapshot = actor.snapshot()
-            if sprite.needsRender(snapshot) { changed.append((sprite, snapshot)) }
+            if sprite.needsRender(snapshot) { changed.append((id, sprite, snapshot)) }
         }
         let pile = pileRows()
         guard !changed.isEmpty || pile != drawnPile else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
-        for (sprite, snapshot) in changed { sprite.render(snapshot) }
+        for (id, sprite, snapshot) in changed {
+            sprite.render(snapshot)
+            shiftOverlays(id, by: CGPoint(x: CGFloat(snapshot.offsetX) * unit, y: CGFloat(snapshot.offsetY) * unit))
+        }
         if pile != drawnPile { drawPile(pile) }
         orderByDepth()
         CATransaction.commit()
@@ -572,53 +587,6 @@ final class FlockView: NSView {
         return bounds.contains(local) ? self : nil
     }
 
-    override func mouseDown(with event: NSEvent) {
-        pressLocation = NSEvent.mouseLocation
-        windowOriginAtPress = window?.frame.origin
-        isDragging = false
-    }
-
-    override func mouseDragged(with event: NSEvent) {
-        guard let start = pressLocation, let origin = windowOriginAtPress, let window else { return }
-        let now = NSEvent.mouseLocation
-        let dx = now.x - start.x
-        let dy = now.y - start.y
-        if !isDragging {
-            guard hypot(dx, dy) >= Self.dragThreshold else { return }
-            isDragging = true
-            onDragStateChange?(true)
-        }
-        window.setFrameOrigin(NSPoint(x: origin.x + dx, y: origin.y + dy))
-    }
-
-    override func mouseUp(with event: NSEvent) {
-        defer {
-            pressLocation = nil
-            windowOriginAtPress = nil
-        }
-        if isDragging {
-            isDragging = false
-            onDragStateChange?(false)
-            return
-        }
-        guard pressLocation != nil else { return }
-        let point = convert(event.locationInWindow, from: nil)
-        switch layoutResult.target(at: point) {
-        case .slot(let index):
-            if isMerged {
-                if canExpand { onExpand?() }
-            } else if let session = entries[index].session {
-                onClickSession?(session)
-            }
-        case .chips:
-            if canExpand { onExpand?() }
-        case .handle:
-            onCollapse?()
-        case nil:
-            break
-        }
-    }
-
     override func menu(for event: NSEvent) -> NSMenu? {
         let point = convert(event.locationInWindow, from: nil)
         let menu = NSMenu()
@@ -647,37 +615,6 @@ final class FlockView: NSView {
         return menu
     }
 
-    /// Debug-only: replays a left click on `target` (a slot's session id, `handle` or
-    /// `chips`) -- or, with `menuItem`, a right-click there and that menu choice -- through
-    /// the same handlers a real mouse uses. Returns false if there's no such target/item.
-    func simulateClick(target: String, menuItem: String?) -> Bool {
-        let rect: CGRect?
-        switch target {
-        case "handle": rect = layoutResult.handle
-        case "chips": rect = layoutResult.chips
-        default: rect = layoutResult.slots.first { $0.id == target }?.clawd
-        }
-        guard let rect, let window else { return false }
-        let location = convert(CGPoint(x: rect.midX, y: rect.midY), to: nil)
-        func event(_ type: NSEvent.EventType) -> NSEvent? {
-            NSEvent.mouseEvent(
-                with: type, location: location, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
-            )
-        }
-        if let menuItem {
-            guard let rightDown = event(.rightMouseDown), let menu = menu(for: rightDown) else { return false }
-            DiagnosticLog.shared.log("menu target=\(target) items=" + menu.items.map { $0.isSeparatorItem ? "-" : $0.title }.joined(separator: "|"))
-            guard let index = menu.items.firstIndex(where: { $0.title == menuItem }), menu.items[index].isEnabled else { return false }
-            menu.performActionForItem(at: index)
-            return true
-        }
-        guard let down = event(.leftMouseDown), let up = event(.leftMouseUp) else { return false }
-        mouseDown(with: down)
-        mouseUp(with: up)
-        return true
-    }
-
     // MARK: - Placement
 
     private func placeBubble(slot: FlockLayout.Slot, session: PetSession?) {
@@ -691,7 +628,7 @@ final class FlockView: NSView {
             return bubble
         }()
         bubble.configure(session: session)
-        bubble.frame = rect
+        bubble.frame = rect.offsetBy(dx: overlayShifts[slot.id]?.x ?? 0, dy: overlayShifts[slot.id]?.y ?? 0)
     }
 
     private func placeTag(slot: FlockLayout.Slot, session: PetSession?) {
@@ -710,7 +647,17 @@ final class FlockView: NSView {
         case .expanded:
             if let session { tag.configure(session: session) }
         }
-        tag.frame = slot.tag
+        tag.frame = slot.tag.offsetBy(dx: overlayShifts[slot.id]?.x ?? 0, dy: overlayShifts[slot.id]?.y ?? 0)
+    }
+
+    /// Moves `id`'s bubble and tag `shift` away from their place in the layout (a follower's
+    /// offset; zero puts them back).
+    private func shiftOverlays(_ id: String, by shift: CGPoint) {
+        guard (overlayShifts[id] ?? .zero) != shift else { return }
+        overlayShifts[id] = shift == .zero ? nil : shift
+        guard let slot = layoutResult.slots.first(where: { $0.id == id }) else { return }
+        if let rect = slot.bubble { bubbles[id]?.setFrameOrigin(CGPoint(x: rect.minX + shift.x, y: rect.minY + shift.y)) }
+        tags[id]?.setFrameOrigin(CGPoint(x: slot.tag.minX + shift.x, y: slot.tag.minY + shift.y))
     }
 }
 

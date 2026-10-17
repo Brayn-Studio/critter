@@ -354,6 +354,31 @@ private func rows(_ k: MotionClip) -> [[String]] {
     #expect(a.ticksUntilChange() == 1)         // ends (and blinks) on the next tick
 }
 
+@Test func travelEndsAFollowOnTheSpot() {
+    let a = makeActor()
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 5, dy: 2)
+    #expect(a.followOffset.x == -5 && a.followOffset.y == -2)
+    a.travel(fromDx: 20, fromDy: 0, delay: 0)
+    #expect(!a.following)
+    #expect(a.traveling)
+    #expect(a.followOffset.x == 0 && a.followOffset.y == 0)
+    #expect(a.snapshot().pose == "air")        // the hop shows, not a walk
+    a.releaseFollow()
+    stepUntilLoop(a)
+    #expect(!a.following)
+    #expect(a.currentClipName != "blink")      // no follow left to end with a blink
+}
+
+@Test func followOffsetMatchesTheSnapshot() {
+    let a = makeActor()
+    a.startFollow(lookLeft: false)
+    a.followShift(dx: 2.5, dy: -1.5)
+    let s = a.snapshot()
+    #expect(a.followOffset.x == s.offsetX && a.followOffset.y == s.offsetY)
+    #expect(s.offsetX == -2 && s.offsetY == 2)  // jsRound(-2.5) = -2, jsRound(1.5) = 2
+}
+
 // MARK: - Gaze
 
 @Test func gazeZones() {
@@ -430,6 +455,47 @@ private func rows(_ k: MotionClip) -> [[String]] {
     #expect(!r.shouldEnd(at: 5))
     let afterReset = r.move(x: 40, at: 5)
     #expect(!afterReset)
+}
+
+// MARK: - Hover and held swing
+
+@Test func hoverAreaCoversTheBodyColumnsAndAFewPointsBelowTheGround() {
+    let o = CGPoint(x: 100, y: 50)
+    func on(_ x: CGFloat, _ y: CGFloat, offset: (x: Int, y: Int) = (0, 0), pile: Bool = false) -> Bool {
+        MotionHover.contains(pointer: CGPoint(x: x, y: y), anchor: o, unit: 3, offset: offset, pile: pile)
+    }
+    #expect(on(103, 50))                       // column 1, on the ground
+    #expect(!on(102.9, 50))
+    #expect(on(151, 50))                       // column 17
+    #expect(!on(151.1, 50))
+    #expect(on(120, 48))                       // 2 pt below the ground
+    #expect(!on(120, 47.9))
+    #expect(on(120, 83))                       // 11 cells up
+    #expect(!on(120, 83.1))
+    // following 4 cells left and 2 down: the area goes along
+    #expect(on(145, 50))
+    #expect(!on(145, 50, offset: (-4, -2)))
+    #expect(on(91, 44, offset: (-4, -2)))
+    #expect(!on(91, 41.9, offset: (-4, -2)))
+    // the merged pile reaches 1 cell left, 27 right, 13 up
+    #expect(on(97, 50, pile: true))
+    #expect(!on(96.9, 50, pile: true))
+    #expect(on(181, 89, pile: true))
+    #expect(!on(181.1, 50, pile: true))
+    #expect(!on(120, 89.1, pile: true))
+}
+
+@Test func heldSwingTrailsThePointerAndSettles() {
+    #expect(MotionDrag.lag(pointerDx: 0) == 0)
+    #expect(MotionDrag.lag(pointerDx: 3) == -1)
+    #expect(MotionDrag.lag(pointerDx: 4.5) == -1)     // -1.5 rounds up to -1
+    #expect(MotionDrag.lag(pointerDx: -4.5) == 2)     // 1.5 rounds up to 2
+    #expect(MotionDrag.lag(pointerDx: 7.5) == -2)     // -2.5 → -2 (Math.round)
+    #expect(MotionDrag.lag(pointerDx: 40) == -3)
+    #expect(MotionDrag.lag(pointerDx: -40) == 3)
+    #expect(MotionDrag.settle(3) == 2)
+    #expect(MotionDrag.settle(-2) == -1)
+    #expect(MotionDrag.settle(0) == 0)
 }
 
 // MARK: - Pile seating

@@ -8,6 +8,8 @@ import AppKit
 /// A window that ignores mouse events never sees the pointer arrive, so the pointer is
 /// followed with a global monitor (events headed to other apps) plus a local one (events
 /// headed to this app). While a drag is in progress the panel keeps the mouse throughout.
+/// The same monitors report every pointer move (`onPointerMoved`), for the pet's gaze and
+/// hover reactions.
 @MainActor
 final class ClickThroughController {
     private weak var panel: NSPanel?
@@ -19,6 +21,10 @@ final class ClickThroughController {
         didSet { update() }
     }
 
+    /// Every pointer move, anywhere on screen (screen coordinates), after the click-through
+    /// state has been updated for it.
+    var onPointerMoved: ((NSPoint) -> Void)?
+
     init(panel: NSPanel) {
         self.panel = panel
         panel.acceptsMouseMovedEvents = true
@@ -26,17 +32,24 @@ final class ClickThroughController {
         let mask: NSEvent.EventTypeMask = [.mouseMoved, .leftMouseDragged]
         if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] _ in
             // Monitors are always called on the main thread.
-            MainActor.assumeIsolated { self?.update() }
+            MainActor.assumeIsolated { self?.pointerMoved(to: NSEvent.mouseLocation) }
         }) {
             monitors.append(global)
         }
         if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
-            MainActor.assumeIsolated { self?.update() }
+            MainActor.assumeIsolated { self?.pointerMoved(to: NSEvent.mouseLocation) }
             return event
         }) {
             monitors.append(local)
         }
         update()
+    }
+
+    /// A pointer move at `point` (screen coordinates). Also the entry for the debug-only
+    /// `clawd://debug-pointer`, which feeds made-up positions down the same path.
+    func pointerMoved(to point: NSPoint) {
+        update()
+        onPointerMoved?(point)
     }
 
     func stop() {

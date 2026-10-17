@@ -110,7 +110,12 @@ final class PetController {
         newPanel.contentView = view
         panel = newPanel
         flockView = view
-        clickThrough = ClickThroughController(panel: newPanel)
+        let clickThrough = ClickThroughController(panel: newPanel)
+        // Eyes, hover and rubbing follow the pointer (whichever flock view is current).
+        clickThrough.onPointerMoved = { [weak self] point in
+            self?.flockView?.pointerMoved(screenPoint: point)
+        }
+        self.clickThrough = clickThrough
 
         // "Reduce motion" (System Settings › Accessibility › Display) stops every animation.
         observers.append(NSWorkspace.shared.notificationCenter.addObserver(
@@ -248,6 +253,21 @@ final class PetController {
         DiagnosticLog.shared.log("debug-click target=\(target) item=\(menuItem ?? "-") handled=\(handled)")
     }
 
+    /// Debug-only (`clawd://debug-pointer`): a pointer move to `point` (screen coordinates),
+    /// down the same path as the mouse monitors'.
+    func debugPointer(_ point: NSPoint) {
+        clickThrough?.pointerMoved(to: point)
+        DiagnosticLog.shared.log("debug-pointer x=\(point.x) y=\(point.y) " + (flockView?.pointerDebugDescription() ?? "-"))
+    }
+
+    /// Debug-only (`clawd://debug-drag`): see `FlockView.simulateDrag`.
+    func debugDrag(target: String, dx: CGFloat, dy: CGFloat, steps: Int, intervalMs: Int, holdMs: Int) {
+        let handled = flockView?.simulateDrag(
+            target: target, dx: dx, dy: dy, steps: steps, intervalMs: intervalMs, holdMs: holdMs
+        ) ?? false
+        DiagnosticLog.shared.log("debug-drag target=\(target) dx=\(dx) dy=\(dy) steps=\(steps) handled=\(handled)")
+    }
+
     /// Debug-only (`clawd://debug-snapshot`): see `DebugSnapshot`.
     func debugSnapshot(path: String, count: Int, intervalMs: Int) {
         guard let panel else {
@@ -288,14 +308,23 @@ final class PetController {
     /// takes clicks, and logs the change.
     private func place(_ presentation: FlockPresentation, layout: FlockLayout.Result) {
         guard let panel else { return }
+        let previousLayout = currentLayout
         currentLayout = layout
         let visibleFrame = anchorVisibleFrame()
         // The flock (not the transparent margin) is what gets anchored and clamped on screen.
         let contentFrame = placementFrame(size: layout.content.size, visible: visibleFrame)
         var placement = (frame: layout.windowFrame(contentFrame: contentFrame), visible: visibleFrame)
         if isDragging {
-            // Mid-drag the window follows the mouse; only its size may change.
-            placement.frame = NSRect(origin: panel.frame.origin, size: layout.size)
+            // Mid-drag the window follows the mouse; a resized flock keeps its anchored side
+            // and bottom edge where they are (where a collapse seated the pile), and the drag
+            // carries on from there.
+            let old = previousLayout?.contentFrame(windowFrame: panel.frame) ?? layout.contentFrame(windowFrame: panel.frame)
+            let side = (anchor ?? PositionModel.defaultAnchor(visible: visibleFrame)).side
+            let x = side == .left ? old.minX : old.maxX - layout.content.width
+            placement.frame = layout.windowFrame(contentFrame: CGRect(origin: CGPoint(x: x, y: old.minY), size: layout.content.size))
+            flockView?.windowShiftedDuringDrag(by: CGVector(
+                dx: placement.frame.minX - panel.frame.minX, dy: placement.frame.minY - panel.frame.minY
+            ))
         }
         panel.setFrame(placement.frame, display: true)
         clickThrough?.setHitRects(layout.hitRects)

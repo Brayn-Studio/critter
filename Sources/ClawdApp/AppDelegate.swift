@@ -307,6 +307,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 count: value("count").flatMap(Int.init) ?? 1,
                 intervalMs: value("interval").flatMap(Int.init) ?? 150
             )
+        case "debug-pointer":
+            // `clawd://debug-pointer?x=<screen x>&y=<screen y>`: a pointer move there (screen
+            // coordinates, origin bottom-left), fed down the mouse monitors' path -- for
+            // checking gaze, hover and rubbing without a mouse.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in query.first { $0.name == name }?.value.flatMap(Double.init) }
+            if let x = value("x"), let y = value("y") {
+                petController.debugPointer(NSPoint(x: x, y: y))
+            }
+        case "debug-drag":
+            // `clawd://debug-drag?target=<session id|chips|handle>&dx=<pt>&dy=<pt>[&steps=N]
+            // [&interval=<ms>][&hold=<ms>]`: presses on the target, drags (dx, dy) in N steps,
+            // holds still, and lets go -- through the pet's real press/drag/release code.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            let value = { (name: String) in query.first { $0.name == name }?.value }
+            guard let target = value("target") else { break }
+            petController.debugDrag(
+                target: target,
+                dx: value("dx").flatMap(Double.init).map { CGFloat($0) } ?? 0,
+                dy: value("dy").flatMap(Double.init).map { CGFloat($0) } ?? 0,
+                steps: value("steps").flatMap(Int.init) ?? 10,
+                intervalMs: value("interval").flatMap(Int.init) ?? 30,
+                holdMs: value("hold").flatMap(Int.init) ?? 0
+            )
         case "debug-set":
             // `clawd://debug-set?<setting>=<value>[&…]`: changes settings through the same
             // store the settings window binds to (debug only; see `applyDebugValue`).

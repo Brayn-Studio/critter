@@ -55,3 +55,34 @@ public struct RubDetector: Sendable {
 
     public mutating func reset() { self = RubDetector() }
 }
+
+/// Where the pointer counts as being on a Clawd — design §4.11 (and the preview's `actorAt`).
+public enum MotionHover {
+    /// Whether `pointer` is over the Clawd whose base box meets the ground at `anchor` (column
+    /// 0; AppKit coordinates, y up), drawn `offset` cells away while following: columns 1…17
+    /// of the box, from 2 pt below the ground to 11 cells above it. With `pile`, the whole
+    /// merged pile instead: from 1 cell left of the front Clawd to 27 cells right, up to 13
+    /// cells above the ground.
+    public static func contains(pointer: CGPoint, anchor: CGPoint, unit u: CGFloat,
+                                offset: (x: Int, y: Int) = (0, 0), pile: Bool = false) -> Bool {
+        let x = anchor.x + CGFloat(offset.x) * u
+        let ground = anchor.y + CGFloat(offset.y) * u
+        let (left, right, top): (CGFloat, CGFloat, CGFloat) = pile ? (-1, 27, 13) : (1, 17, 11)
+        return pointer.x >= x + left * u && pointer.x <= x + right * u
+            && pointer.y >= ground - 2 && pointer.y <= ground + top * u
+    }
+}
+
+/// The held Clawd's sideways swing while dragged — design §4.10.
+public enum MotionDrag {
+    /// Lag in cells for a pointer that just moved `pointerDx` points sideways: it trails the
+    /// move, a cell per 3 pt, at most 3 cells either way.
+    public static func lag(pointerDx: CGFloat) -> Int {
+        Swift.min(Swift.max(jsRound(-Double(pointerDx) / 3), -3), 3)
+    }
+
+    /// One tick of settling with the pointer at rest: a cell back toward 0.
+    public static func settle(_ lag: Int) -> Int {
+        lag - lag.signum()
+    }
+}

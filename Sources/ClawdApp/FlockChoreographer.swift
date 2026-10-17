@@ -93,6 +93,14 @@ final class FlockChoreographer {
         leaving.contains(id)
     }
 
+    /// Whether a choreography has `id`'s Clawd in hand: peeking up, waving goodbye, sinking or
+    /// sunk, or seated in (hopping to, waiting in) the pile. A one-shot, a mode or a follow
+    /// started on it would cut that short or pull it out of place.
+    func isBusy(_ id: String) -> Bool {
+        leaving.contains(id) || joining.contains(id) || vanishing.contains(id) || sunk.contains(id)
+            || seatRows[id] != nil || arriving[id] != nil || departures.contains { $0.id == id }
+    }
+
     func submit(_ request: FlockRequest) {
         latest = request
         if let next = queue.submit(request) { run(next) }

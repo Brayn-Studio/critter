@@ -15,6 +15,14 @@ extension MotionActor {
     /// arrives at once and `completion(true)` runs before returning.
     public func travel(fromDx: Int, fromDy: Int, delay: Int, hopLength: Int = 14, seat: Seat? = nil,
                        completion: ((Bool) -> Void)? = nil) {
+        // Hopping somewhere else ends a follow on the spot: the offset was relative to a
+        // place this Clawd is leaving.
+        if following {
+            following = false
+            followHold = false
+            offX = 0
+            offY = 0
+        }
         if let seat { setLoop(clip: [ClipKey(pose: skin.interactions.land, ticks: 9999, dx: 0, dy: seat.row)], name: nil) }
         if reduceMotion {
             if let seat { applySeat(seat) }
@@ -105,6 +113,10 @@ extension MotionActor {
             if !reduceMotion { play(skin.interactions.blink) }
         }
     }
+
+    /// Where the body is drawn relative to its anchor while following, in whole cells (y up):
+    /// the snapshot's `offsetX`/`offsetY`, without building a snapshot.
+    public var followOffset: (x: Int, y: Int) { (jsRound(offX), jsRound(offY)) }
 
     /// Still catching up, or about to stop following.
     var followMoving: Bool { following && (offX != 0 || offY != 0 || !followHold) }
