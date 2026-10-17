@@ -626,3 +626,65 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     #expect(PileSeating.seat(row: 2) == Seat(row: 2, alpha: 0.55, z: 0))
     #expect(PileSeating.seat(row: 1) == Seat(row: 1, alpha: 0.75, z: 1))
 }
+
+// MARK: - Under ground
+
+@Test func heldUnderGroundNothingBringsItBackUp() {
+    let a = makeActor()
+    a.enterState(.done, quiet: true)
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 4, dy: 0)
+    a.lift = 3
+    a.fidgetIn = 10                            // a fidget is due
+    a.holdUnderground(depth: 12)
+    #expect(!a.following && a.followOffset.x == 0 && a.lift == 0)
+    a.play("vanish")                           // the sink itself plays over the hold
+    #expect(a.snapshot().bodyY == -2)
+    stepUntilLoop(a)
+    #expect(a.snapshot().bodyY == -12)
+    #expect(a.snapshot().pose == "base")
+    for _ in 0..<10 { a.step() }               // the poof fades
+    #expect(a.particles.isEmpty)
+    for _ in 0..<100 {                         // no fidget, and no twinkle sparkling in mid-air
+        a.step()
+        #expect(!a.isPlayingOnce)
+        #expect(a.particles.isEmpty)
+    }
+    a.enterState(.waiting)                     // taken quietly: no alert jumping up
+    #expect(!a.isPlayingOnce)
+    #expect(a.badgeVisible)                    // its "!" is up once it comes back
+    a.setMode("pet")
+    a.setGaze(.left)
+    a.startFollow(lookLeft: false)
+    #expect(!a.following)
+    #expect(a.snapshot().bodyY == -12)
+    #expect(a.snapshot().badge == nil && a.snapshot().accessory == nil)
+    #expect(a.ticksUntilChange() > 1000)       // and it wakes nobody
+    a.reduceMotion = true                      // the still pose would stand on the ground
+    #expect(a.snapshot().bodyY == -12)
+}
+
+@Test func releasedFromUnderGroundItsLoopResumes() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.holdUnderground(depth: 12)
+    a.enterState(.waiting)
+    a.play("appear")                           // dropping back in, over the hold
+    #expect(a.snapshot().bodyY == 16)
+    a.releaseUnderground()
+    #expect(a.underground == nil)
+    #expect(a.currentClipName == "appear")     // the drop-in carries on...
+    stepUntilLoop(a)
+    #expect(a.currentClipName == "ask")        // ...into the state's loop
+    #expect(a.snapshot().bodyY == 0)
+}
+
+@Test func underReducedMotionAHeldClawdIsGoneAtOnce() {
+    let a = makeActor(reduceMotion: true)
+    a.enterState(.error, quiet: true)
+    #expect(a.snapshot().bodyY == -1)          // error's still pose sinks a cell
+    a.holdUnderground(depth: 12)
+    #expect(a.snapshot().bodyY == -12)
+    a.releaseUnderground()
+    #expect(a.snapshot().bodyY == -1)
+}

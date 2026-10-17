@@ -4,7 +4,8 @@ import Foundation
 /// `ActorSnapshot`. Pure logic and not thread-safe: create and use it on one thread.
 ///
 /// Three playback layers, highest priority first: a one-shot clip (`play`), a mode loop
-/// (`setMode`, e.g. while held) and the base loop (`setLoop`, the state's loop).
+/// (`setMode`, e.g. while held) and the base loop (`setLoop`, the state's loop). While held
+/// under ground (`holdUnderground`), that hold replaces both loops.
 public final class MotionActor {
     public let skin: SkinManifest
     let rng: MotionRNG
@@ -80,6 +81,8 @@ public final class MotionActor {
     var offX: Double = 0
     var offY: Double = 0
     var gazePose: String?
+    /// Cells under ground it is held at (`holdUnderground`); nil while not held.
+    public internal(set) var underground: Int?
 
     public init(skin: SkinManifest, rng: MotionRNG, reduceMotion: Bool = false) {
         self.skin = skin
@@ -99,13 +102,13 @@ public final class MotionActor {
     public func setLoop(clip: MotionClip, name: String?) {
         baseClip = clip
         baseName = name
-        if !onceActive && modeClip == nil { start(clip, name: name) }
+        if !onceActive && modeClip == nil && underground == nil { start(clip, name: name) }
     }
 
     public func setMode(_ name: String?) {
         modeName = name
         modeClip = name.map { skin.clips[$0] ?? [] }
-        if !onceActive { resumeLoop() }
+        if !onceActive && underground == nil { resumeLoop() }
     }
 
     public func play(_ name: String, completion: ((Bool) -> Void)? = nil) {
@@ -145,7 +148,13 @@ public final class MotionActor {
     }
 
     func resumeLoop() {
-        if let modeClip { start(modeClip, name: modeName) } else { start(baseClip, name: baseName) }
+        if let underground {
+            start([ClipKey(pose: skin.interactions.land, ticks: 9999, dx: 0, dy: -underground)], name: nil)
+        } else if let modeClip {
+            start(modeClip, name: modeName)
+        } else {
+            start(baseClip, name: baseName)
+        }
     }
 
     private func start(_ clip: MotionClip, name: String?) {
@@ -186,7 +195,7 @@ public final class MotionActor {
         for i in particles.indices { particles[i].step(dt: dt) }
         particles.removeAll { !$0.isAlive }
         if let spec = accessorySpec, let every = spec.twinkleEvery, every > 0, let twinkle = spec.twinkle,
-           clock % every == 0, !noAccessory {
+           clock % every == 0, !noAccessory, underground == nil {
             emit(twinkle)
         }
         advanceKey()
@@ -235,6 +244,7 @@ public final class MotionActor {
     func frame() -> (pose: String, dx: Int, dy: Int) {
         if following && !reduceMotion { return (followPose(), 0, 0) }
         if reduceMotion {
+            if let underground { return (skin.interactions.land, 0, -underground) }
             if modeName == skin.interactions.held { return (skin.interactions.heldStill, 0, 0) }
             let st = skin.state(state)
             if asleep { return (st.sleep?.still ?? st.still, 0, 0) }

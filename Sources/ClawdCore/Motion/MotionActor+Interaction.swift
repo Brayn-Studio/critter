@@ -1,6 +1,6 @@
 import Foundation
 
-/// Travel and pile seats, drag-follow and gaze — design §4.8–4.11.
+/// Travel and pile seats, holding under ground, drag-follow and gaze — design §4.8–4.11.
 extension MotionActor {
     /// Follow offset limits, in cells.
     static let followMaxX: Double = 12
@@ -85,12 +85,39 @@ extension MotionActor {
         }
     }
 
+    // MARK: - Under ground
+
+    /// Sinks for good (a goodbye or a hide): from now on its loop is `depth` cells under
+    /// ground, above any mode or state loop, until `releaseUnderground()`. Only one-shots still
+    /// show over it (the sink itself, a drop-in); the brain rests, a state is taken quietly,
+    /// and a follow, a lift or a mode ends -- nothing brings it back up on its own.
+    public func holdUnderground(depth: Int) {
+        underground = depth
+        modeName = nil
+        modeClip = nil
+        following = false
+        followHold = false
+        offX = 0
+        offY = 0
+        lift = 0
+        lag = 0
+        if !onceActive { resumeLoop() }
+    }
+
+    /// Back up from under ground: the state's loop resumes (after any one-shot playing).
+    public func releaseUnderground() {
+        guard underground != nil else { return }
+        underground = nil
+        if !onceActive { resumeLoop() }
+    }
+
     // MARK: - Follow
 
     /// While another Clawd is dragged, this one stays put on screen and walks after the window,
-    /// looking toward the dragged one once caught up. Ignored while traveling or hidden.
+    /// looking toward the dragged one once caught up. Ignored while traveling, hidden or held
+    /// under ground.
     public func startFollow(lookLeft: Bool) {
-        guard !traveling, !hidden else { return }
+        guard !traveling, !hidden, underground == nil else { return }
         cancelOnce()
         gazePose = nil
         following = true
@@ -162,10 +189,10 @@ extension MotionActor {
     }
 
     /// The gaze pose, when it may replace the current one: idle and awake, or done; no
-    /// one-shot, no mode, not following.
+    /// one-shot, no mode, not following, not under ground.
     var activeGaze: String? {
         guard let gazePose, (state == .idle && !asleep) || state == .done,
-              !onceActive, modeName == nil, !following else { return nil }
+              !onceActive, modeName == nil, !following, underground == nil else { return nil }
         return gazePose
     }
 }

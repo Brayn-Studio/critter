@@ -20,6 +20,8 @@ extension MotionActor {
     }
 
     public func enterState(_ s: PetState, quiet: Bool = false) {
+        // Held under ground, it takes the state quietly: an entrance would bring it back up.
+        let quiet = quiet || underground != nil
         let previous = state
         let exit = previous == .running && s != .running ? variantSpec(variant)?.exit : nil
         let st = skin.state(s)
@@ -104,7 +106,7 @@ extension MotionActor {
 
     // MARK: - Brain
 
-    var brainActive: Bool { brainEnabled && modeName == nil && !traveling && !following }
+    var brainActive: Bool { brainEnabled && underground == nil && modeName == nil && !traveling && !following }
 
     func brainStep() {
         guard brainActive else { return }
@@ -242,7 +244,7 @@ extension MotionActor {
         var n = Self.never
         if !hidden, !propDraws(dx: 0).isEmpty { return 1 }
         if let spec = accessorySpec, let every = spec.twinkleEvery, every > 0, spec.twinkle != nil,
-           !reduceMotion, !noAccessory {
+           !reduceMotion, !noAccessory, underground == nil {
             n = Swift.min(n, every - clock % every)
         }
         guard !hidden, !reduceMotion, markersAllowed(dy: frame().dy) else { return n }

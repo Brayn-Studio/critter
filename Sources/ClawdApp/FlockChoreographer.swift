@@ -43,7 +43,7 @@ final class FlockChoreographer {
     private static let hopLength = 14
     /// Ticks between two Clawds setting off.
     private static let stagger = 2
-    /// How far below the ground a sunk Clawd waits: its whole body is clipped away.
+    /// How far below the ground a sinking or sunk Clawd is held: its whole body is clipped away.
     private static let underground = 12
     /// Showing: each Clawd drops in this long after the previous one. Hiding: each sinks
     /// this long after the previous one.
@@ -70,7 +70,9 @@ final class FlockChoreographer {
     private var pendingCollapseEnd: (() -> Void)?
     /// Clawds still in the pile during an expand, each waiting for its turn to hop out.
     private var departures: [Departure] = []
-    /// Clawds kept under ground after sinking (goodbye or hide) until shown again.
+    /// Clawds kept under ground after sinking (goodbye or hide) until shown again. Their
+    /// actors hold them there (`MotionActor.holdUnderground`) from the moment they start
+    /// sinking, so no state, fidget or mode brings them back up meanwhile.
     private var sunk: Set<String> = []
     /// Sunk Clawds whose job ends once their last particles (the poof) have faded.
     private var settlingDust: [(id: String, group: JobGroup)] = []
@@ -191,13 +193,15 @@ final class FlockChoreographer {
         if vanishGroup != nil {
             showHideGeneration += 1
             vanishGroup = nil
-            for id in vanishing { view.actors[id]?.cancelOnce() }
+            for id in vanishing {
+                view.actors[id]?.cancelOnce()
+                view.actors[id]?.releaseUnderground()
+            }
             vanishing.removeAll()
             settle()
         }
         for id in sunk where !leaving.contains(id) {
-            guard let actor = view.actors[id] else { continue }
-            actor.setLoop(actor.stateLoopName())
+            view.actors[id]?.releaseUnderground()
         }
         sunk = sunk.filter { leaving.contains($0) }
     }
@@ -316,10 +320,9 @@ final class FlockChoreographer {
         departures.removeAll()
     }
 
-    /// `id` has sunk into the ground (goodbye or hide): it stays there -- its loop would pop it
-    /// back up -- and `group`'s job ends once its poof has faded.
+    /// `id` has sunk into the ground (goodbye or hide), where its hold keeps it until shown
+    /// again; `group`'s job ends once its poof has faded.
     private func stayUnderground(_ id: String, _ actor: MotionActor, then group: JobGroup) {
-        actor.setLoop(clip: [ClipKey(pose: view.skin.interactions.land, ticks: 9999, dx: 0, dy: -Self.underground)], name: nil)
         sunk.insert(id)
         if actor.particles.isEmpty || actor.hidden {
             group.leave()
@@ -464,6 +467,7 @@ final class FlockChoreographer {
         for id in ids {
             guard let actor = view.actors[id] else { continue }
             actor.noAccessory = true
+            actor.holdUnderground(depth: Self.underground)
             group.enter()
             let gone: (Bool) -> Void = { [weak self, weak actor] _ in
                 guard let self, let actor else { return group.leave() }
@@ -653,6 +657,9 @@ final class FlockChoreographer {
         showHideGeneration += 1
         let generation = showHideGeneration
         vanishGroup = nil
+        // Called off mid-sink: back up (hidden until each drops in). The sunk ones come back
+        // up in `surface`.
+        for id in vanishing { view.actors[id]?.releaseUnderground() }
         vanishing.removeAll()
         settle()
         view.concealed = []
@@ -732,6 +739,7 @@ final class FlockChoreographer {
                 self.vanishing.remove(id)
                 self.stayUnderground(id, actor, then: group)
             }
+            actor.holdUnderground(depth: Self.underground)
             if view.reduceMotion {
                 gone(true)
             } else {
