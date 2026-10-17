@@ -379,6 +379,123 @@ private func rows(_ k: MotionClip) -> [[String]] {
     #expect(s.offsetX == -2 && s.offsetY == 2)  // jsRound(-2.5) = -2, jsRound(1.5) = 2
 }
 
+@Test func hopStartsWhereAFollowerIsDrawn() {
+    let a = makeActor()
+    a.startFollow(lookLeft: true)
+    a.followShift(dx: 5, dy: -2)               // drawn 5 cells left, 2 cells up
+    let drawn = a.snapshot()
+    #expect(drawn.offsetX == -5 && drawn.offsetY == 2)
+    a.travel(fromDx: 20, fromDy: 0, delay: 2)
+    let s = a.snapshot()
+    #expect(s.offsetX == 0 && s.offsetY == 0)
+    #expect(s.bodyX == 15 && s.bodyY == 2)     // the same spot, now as the hop's start
+}
+
+// MARK: - Entrances cut short by a hop
+
+private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
+    var n = 0
+    while a.traveling && n < limit { a.step(); n += 1 }
+}
+
+@Test func hopReplaysTheEntranceItCutShort() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.enterState(.done)
+    #expect(a.currentClipName == "celebrate")
+    a.step()
+    var landed: Bool?
+    a.travel(fromDx: 20, fromDy: 0, delay: 0) { landed = $0 }
+    stepWhileTraveling(a)
+    #expect(landed == true)
+    #expect(a.currentClipName == "celebrate")  // the whole entrance, after the hop
+    #expect(a.isPlayingOnce)
+    stepUntilLoop(a)
+    #expect(a.currentClipName == "content")
+
+    // running → done: the hop cuts the laptop's exit; the done entrance plays after it
+    let r = makeActor()
+    r.enterState(.running, quiet: true)
+    r.enterState(.done)
+    #expect(r.currentClipName == "lap_close")
+    r.travel(fromDx: -14, fromDy: 0, delay: 0)
+    stepWhileTraveling(r)
+    #expect(r.currentClipName == "celebrate")
+}
+
+@Test func hopReplaysTheWaitingAlertWithItsBadge() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.enterState(.waiting)
+    #expect(a.currentClipName == "alert")
+    a.travel(fromDx: 14, fromDy: 0, delay: 0)
+    #expect(a.snapshot().badge == nil)         // markers hide while hopping
+    stepWhileTraveling(a)
+    #expect(a.currentClipName == "alert")
+    #expect(a.badgeVisible)
+    #expect(a.badgeAge == 0)                   // the ! pops up again with the alert
+}
+
+@Test func hopLeavesOtherOneShotsAndSeatsAlone() {
+    // the entrance was already over: back to the loop
+    let done = makeActor()
+    done.enterState(.idle, quiet: true)
+    done.enterState(.done)
+    stepUntilLoop(done)
+    done.travel(fromDx: 14, fromDy: 0, delay: 0)
+    stepWhileTraveling(done)
+    #expect(!done.isPlayingOnce)
+
+    // a fidget is not an entrance
+    let idle = makeActor()
+    idle.enterState(.idle, quiet: true)
+    idle.play("wink")
+    idle.travel(fromDx: 14, fromDy: 0, delay: 0)
+    stepWhileTraveling(idle)
+    #expect(!idle.isPlayingOnce)
+
+    // a hop into a pile seat stays seated
+    let seated = makeActor()
+    seated.enterState(.idle, quiet: true)
+    seated.enterState(.done)
+    seated.travel(fromDx: 14, fromDy: 0, delay: 0, seat: PileSeating.seat(row: 1))
+    stepWhileTraveling(seated)
+    #expect(!seated.isPlayingOnce)
+    #expect(seated.snapshot().bodyY == 1)
+
+    // a new state during the hop plays its own entrance instead
+    let changed = makeActor()
+    changed.enterState(.idle, quiet: true)
+    changed.enterState(.done)
+    changed.travel(fromDx: 14, fromDy: 0, delay: 0)
+    changed.step()
+    changed.enterState(.error)
+    #expect(changed.currentClipName == "oops")
+    #expect(!changed.traveling)
+}
+
+@Test func reducedMotionDrawsNoSwing() {
+    let held = makeActor(reduceMotion: true)
+    held.setMode("held")
+    held.lift = 3
+    held.lag = -2
+    var s = held.snapshot()
+    #expect(s.pose == "held_a")
+    #expect(s.bodyX == 0 && s.bodyY == 3)      // lifted, but not swung
+    held.reduceMotion = false
+    #expect(held.snapshot().bodyX == -2)
+
+    let w = makeActor(reduceMotion: true)
+    w.enterState(.waiting, quiet: true)
+    let still = w.snapshot()
+    w.lag = 3
+    w.particles = [Particle(glyph: "dot", color: "#B4BAC4", x: 4, y: 0, life: 10)]
+    s = w.snapshot()
+    #expect(s.bodyX == still.bodyX)
+    #expect(s.badge?.x == still.badge?.x && s.accessory?.x == still.accessory?.x)
+    #expect(s.particles.first?.x == 4)
+}
+
 // MARK: - Gaze
 
 @Test func gazeZones() {

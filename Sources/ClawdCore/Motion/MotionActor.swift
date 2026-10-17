@@ -19,8 +19,10 @@ public final class MotionActor {
     public var noAccessory = false
     /// Height the actor is lifted off the ground, in cells (while held).
     public var lift = 0
-    /// Sideways swing while held, in cells.
+    /// Sideways swing while held, in cells. Not drawn under reduced motion (`drawnLag`).
     public var lag = 0
+    /// The swing as drawn: none under reduced motion, where a held Clawd keeps still.
+    public var drawnLag: Int { reduceMotion ? 0 : lag }
 
     public internal(set) var clock = 0
     public internal(set) var modeName: String?
@@ -36,6 +38,9 @@ public final class MotionActor {
     var modeClip: MotionClip?
     var onceActive = false
     var onceCompletion: ((Bool) -> Void)?
+    /// The state's entrance to replay if the one-shot playing now -- that entrance, or the
+    /// exit leading into it -- is cut short by a hop (see `travel`); nil for any other one-shot.
+    var onceEntrance: String?
     var current: MotionClip = []
     var keyTicks = 0
     /// Per effect name, how many times it fired (picks the next `cycle` group).
@@ -111,6 +116,7 @@ public final class MotionActor {
     /// the new one has started, so that callback may itself start another clip.
     public func play(clip: MotionClip, name: String?, completion: ((Bool) -> Void)? = nil) {
         let replaced = onceCompletion
+        onceEntrance = nil
         onceActive = true
         onceCompletion = completion
         start(clip, name: name)
@@ -122,6 +128,7 @@ public final class MotionActor {
         let done = onceCompletion
         onceActive = false
         onceCompletion = nil
+        onceEntrance = nil
         resumeLoop()
         done?(false)
     }
@@ -132,6 +139,7 @@ public final class MotionActor {
         let done = onceCompletion
         onceActive = false
         onceCompletion = nil
+        onceEntrance = nil
         resumeLoop()
         done?(true)
     }
@@ -208,6 +216,7 @@ public final class MotionActor {
     public func snapshot() -> ActorSnapshot {
         let f = frame()
         let markers = !hidden && markersAllowed(dy: f.dy)
+        let lag = drawnLag
         let particleDraws: [GlyphDraw] = hidden ? [] : particles.map { p in
             var d = p.draw()
             d.x += f.dx + lag

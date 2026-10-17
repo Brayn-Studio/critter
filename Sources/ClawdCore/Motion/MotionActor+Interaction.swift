@@ -13,16 +13,25 @@ extension MotionActor {
     /// Hops from (`fromDx`, `fromDy`) cells relative to the new anchor to it. With `seat`, it
     /// lands raised on the back of the pile and stays there dimmed. Under reduced motion it
     /// arrives at once and `completion(true)` runs before returning.
+    ///
+    /// A hop that cuts short the state's entrance (or the exit leading into it) plays that
+    /// entrance again once it lands, as long as the state is still the same: a state change
+    /// that also moves the Clawd's column must show both.
     public func travel(fromDx: Int, fromDy: Int, delay: Int, hopLength: Int = 14, seat: Seat? = nil,
                        completion: ((Bool) -> Void)? = nil) {
-        // Hopping somewhere else ends a follow on the spot: the offset was relative to a
-        // place this Clawd is leaving.
+        var fromDx = fromDx, fromDy = fromDy
+        // Hopping somewhere else ends a follow: the hop starts where the body is drawn (the
+        // follow offset folded into its start, y up like the keys), not at the anchor.
         if following {
+            fromDx += jsRound(offX)
+            fromDy += jsRound(offY)
             following = false
             followHold = false
             offX = 0
             offY = 0
         }
+        let resumeEntrance = onceActive ? onceEntrance : nil
+        let resumeState = state
         if let seat { setLoop(clip: [ClipKey(pose: skin.interactions.land, ticks: 9999, dx: 0, dy: seat.row)], name: nil) }
         if reduceMotion {
             if let seat { applySeat(seat) }
@@ -41,6 +50,9 @@ extension MotionActor {
             if let self, self.travelID == id {
                 self.traveling = false
                 self.travelSeat = nil
+                if ok, seat == nil, let resumeEntrance, self.state == resumeState, !self.reduceMotion {
+                    self.startEntrance(resumeEntrance)
+                }
             }
             completion?(ok)
         }

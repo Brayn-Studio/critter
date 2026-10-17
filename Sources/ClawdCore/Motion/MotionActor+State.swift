@@ -50,8 +50,10 @@ extension MotionActor {
                 // An interrupted exit skips the entrance, but the badge must still show.
                 if ok { self.startEntrance(enter) } else { self.revealBadge() }
             }
+            if currentClipName == exit { onceEntrance = enter }
         } else if enter == nil, previous == .done, s == .idle, let seen = skin.state(.done).seen {
             play(seen)
+            onceEntrance = seen
         } else {
             startEntrance(enter)
         }
@@ -59,9 +61,14 @@ extension MotionActor {
 
     /// Plays the entrance (or cancels the one-shot when there is none); the waiting badge
     /// appears the moment it starts.
-    private func startEntrance(_ enter: String?) {
+    func startEntrance(_ enter: String?) {
         revealBadge()
-        if let enter { play(enter) } else { cancelOnce() }
+        if let enter {
+            play(enter)
+            onceEntrance = enter
+        } else {
+            cancelOnce()
+        }
     }
 
     private func revealBadge() {
@@ -196,13 +203,13 @@ extension MotionActor {
         } else {
             return nil
         }
-        return GlyphDraw(glyph: glyph, color: spec.color, x: centeredX(glyph) + lag, y: top + bob - lift, alpha: 1)
+        return GlyphDraw(glyph: glyph, color: spec.color, x: centeredX(glyph) + drawnLag, y: top + bob - lift, alpha: 1)
     }
 
     func badgeDraw() -> GlyphDraw? {
         guard badgeVisible, let badge = skin.state(state).badge else { return nil }
         let hop = !reduceMotion && badgeHops(clock: clock, age: badgeAge) ? -1 : 0
-        return GlyphDraw(glyph: badge.glyph, color: badge.color, x: badge.x + lag,
+        return GlyphDraw(glyph: badge.glyph, color: badge.color, x: badge.x + drawnLag,
                          y: -2 - glyphSize(badge.glyph).h + hop - lift, alpha: 1)
     }
 
@@ -218,7 +225,7 @@ extension MotionActor {
               let loop = variantSpec(variant)?.loop, currentClipName == loop else { return [] }
         return prop.colors.indices.map { i in
             let ph = Double((clock + 6 * i) % 18) / 18
-            return GlyphDraw(glyph: prop.glyph, color: prop.colors[i], x: jsRound(3 + 11 * ph) + dx + lag,
+            return GlyphDraw(glyph: prop.glyph, color: prop.colors[i], x: jsRound(3 + 11 * ph) + dx + drawnLag,
                              y: -2 - jsRound(7 * sin(.pi * ph)) - lift, alpha: 1)
         }
     }
