@@ -1,0 +1,1607 @@
+<title>Clawd 动作库</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Silkscreen&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: an animator's light table: one live desk at the top, then sheets of looping cels, each with its exposure strip */
+:root {
+  --bg: #E9EDF1;
+  --surface: #FBFCFD;
+  --ink: #181B21;
+  --muted: #59626E;
+  --line: #D0D6DE;
+  --accent: #AE5233;
+  --cel: #1F232B;
+  --cel-line: #2D323C;
+  --cel-ground: #3A404C;
+  --chip-official: #DCE7F7;
+  --chip-official-ink: #1D4E89;
+  --chip-new: #F6E2D9;
+  --chip-new-ink: #8A3B1E;
+  --wait: #C77800;
+  --done: #248A3D;
+  --err: #D70015;
+  --font-pixel: "Silkscreen", ui-monospace, "SF Mono", Menlo, monospace;
+  --font-body: "IBM Plex Sans", "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #101216; --surface: #181B21; --ink: #E6E8EC; --muted: #98A0AC; --line: #2A2F38;
+    --accent: #E8916F; --cel: #1B1F26; --cel-line: #2C313B; --cel-ground: #3A404C;
+    --chip-official: #1C2D44; --chip-official-ink: #9CC3F5; --chip-new: #3A241B; --chip-new-ink: #F2B49A;
+    --wait: #FFB340; --done: #4CD964; --err: #FF6B60;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #101216; --surface: #181B21; --ink: #E6E8EC; --muted: #98A0AC; --line: #2A2F38;
+  --accent: #E8916F; --cel: #1B1F26; --cel-line: #2C313B; --cel-ground: #3A404C;
+  --chip-official: #1C2D44; --chip-official-ink: #9CC3F5; --chip-new: #3A241B; --chip-new-ink: #F2B49A;
+  --wait: #FFB340; --done: #4CD964; --err: #FF6B60;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 1180px; margin: 0 auto; display: flex; flex-direction: column; gap: 56px; }
+h1, h2, h3 { text-wrap: balance; margin: 0; }
+p { margin: 0; }
+.eyebrow { font-family: var(--font-pixel); font-size: 12px; letter-spacing: .08em; color: var(--accent); text-transform: uppercase; }
+header.top { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+header.top h1 { font-size: 40px; line-height: 1.15; font-weight: 600; letter-spacing: -.01em; }
+header.top h1 .px { font-family: var(--font-pixel); font-weight: 400; font-size: 36px; letter-spacing: 0; }
+.lede { color: var(--muted); font-size: 16px; max-width: 68ch; }
+.legend { display: flex; flex-wrap: wrap; gap: 8px 16px; font-size: 13px; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+
+.src { font-family: var(--font-mono); font-size: 11px; padding: 1px 7px; border-radius: 4px; white-space: nowrap; }
+.src.official { background: var(--chip-official); color: var(--chip-official-ink); }
+.src.new { background: var(--chip-new); color: var(--chip-new-ink); }
+
+section { display: flex; flex-direction: column; gap: 20px; }
+.sec-head { display: flex; flex-direction: column; gap: 6px; max-width: 760px; }
+.sec-head h2 { font-size: 24px; font-weight: 600; }
+.sec-head p { color: var(--muted); }
+
+/* ---------- desk stage ---------- */
+.desk {
+  position: relative; height: 340px; border-radius: 12px; overflow: hidden; touch-action: none;
+  background:
+    radial-gradient(120% 90% at 15% 10%, #3B4B6B 0%, transparent 60%),
+    radial-gradient(90% 80% at 90% 100%, #5A3B3A 0%, transparent 65%),
+    #26293A;
+  border: 1px solid var(--line);
+  user-select: none; -webkit-user-select: none;
+}
+.desk .win {
+  position: absolute; left: 4%; top: 7%; width: 54%; height: 62%;
+  border-radius: 10px; background: rgba(250, 250, 252, .08); border: 1px solid rgba(255, 255, 255, .12);
+}
+.desk .win::before {
+  content: ""; position: absolute; left: 12px; top: 11px; width: 42px; height: 10px;
+  background: radial-gradient(circle 5px at 5px 5px, #FF5F57 99%, transparent), radial-gradient(circle 5px at 21px 5px, #FEBC2E 99%, transparent), radial-gradient(circle 5px at 37px 5px, #28C840 99%, transparent);
+}
+.desk .win i { position: absolute; left: 16px; right: 30%; height: 7px; border-radius: 4px; background: rgba(255,255,255,.09); }
+.desk canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.overlay { position: absolute; inset: 0; pointer-events: none; }
+.bubble {
+  position: absolute; width: 132px; background: #FFFFFF; color: #1D1D1F; border-radius: 10px;
+  padding: 6px 9px 7px 12px; box-shadow: 0 4px 14px rgba(0, 0, 0, .35); pointer-events: auto; cursor: pointer;
+  transition: opacity .18s steps(3), transform .18s steps(3);
+}
+.bubble::before { content: ""; position: absolute; left: 0; top: 8px; bottom: 8px; width: 4px; border-radius: 0 3px 3px 0; background: var(--stripe, #8E8E93); }
+.bubble small { display: block; font-size: 9px; color: #6E6E73; line-height: 1.3; }
+.bubble span { display: block; font-size: 11px; line-height: 1.35; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.tag {
+  position: absolute; height: 22px; border-radius: 6px; color: #FFFFFF; padding: 0 7px; display: flex; align-items: center; gap: 5px;
+  font-size: 10px; font-weight: 500; white-space: nowrap; pointer-events: auto; cursor: pointer;
+  transition: opacity .18s steps(3);
+}
+.tag em { font-style: normal; font-size: 8px; opacity: .8; }
+.handle {
+  position: absolute; width: 44px; height: 18px; border-radius: 8px; background: rgba(38, 38, 40, .75); color: #FFFFFF;
+  font-size: 10px; display: flex; align-items: center; justify-content: center; pointer-events: auto; cursor: pointer;
+}
+.chips { position: absolute; display: flex; gap: 4px; pointer-events: auto; cursor: pointer; }
+.chips b { font-size: 9px; color: #FFFFFF; padding: 0 5px; height: 14px; line-height: 14px; border-radius: 7px; }
+.is-hidden { opacity: 0 !important; pointer-events: none !important; transform: translateY(4px); }
+.toast {
+  position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: rgba(20, 22, 28, .9); color: #F2F3F5;
+  font-size: 12px; padding: 6px 12px; border-radius: 8px; pointer-events: none; white-space: nowrap;
+}
+.hint { position: absolute; right: 16px; top: 14px; color: rgba(255,255,255,.6); font-size: 12px; pointer-events: none; max-width: 36%; line-height: 1.5; text-align: right; }
+
+.controls { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 300px); gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 14px 16px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.panel h3 { font-size: 13px; font-weight: 600; color: var(--muted); letter-spacing: .02em; }
+.srow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; padding: 6px 0; border-top: 1px solid var(--line); }
+.srow:first-of-type { border-top: 0; }
+.srow .nm { font-family: var(--font-mono); font-size: 13px; min-width: 96px; }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: 8px; overflow: hidden; }
+.seg button, .btn {
+  font: inherit; font-size: 13px; color: var(--ink); background: transparent; border: 0; padding: 4px 10px; cursor: pointer;
+}
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--bg); }
+.btn { border: 1px solid var(--line); border-radius: 8px; background: var(--surface); text-align: left; }
+.btn:disabled { opacity: .45; cursor: default; }
+.btn:hover:not(:disabled), .seg button:hover { background: color-mix(in srgb, var(--ink) 8%, transparent); }
+.seg button[aria-pressed="true"]:hover { background: var(--ink); }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+select { font: inherit; font-size: 13px; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 3px 6px; }
+.gbtns { display: flex; flex-direction: column; gap: 8px; }
+.gbtns label { display: flex; align-items: center; gap: 8px; font-size: 13px; }
+
+/* ---------- catalog ---------- */
+.group { display: flex; flex-direction: column; gap: 14px; }
+.group-head { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; column-gap: 12px; row-gap: 4px; border-bottom: 1px solid var(--line); padding-bottom: 10px; }
+.group-head h2 { font-size: 22px; font-weight: 600; }
+.group-head .eyebrow { font-size: 11px; }
+.group-head p { grid-column: 1 / -1; color: var(--muted); font-size: 14px; max-width: 72ch; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 14px; }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.card canvas { display: block; width: 100%; height: 150px; background: var(--cel); cursor: pointer; }
+.card .body { padding: 12px 14px 14px; display: flex; flex-direction: column; gap: 7px; flex: 1; }
+.card h3 { font-size: 16px; font-weight: 600; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.card .kind { font-family: var(--font-mono); font-size: 11px; font-weight: 400; color: var(--muted); border: 1px solid var(--line); border-radius: 4px; padding: 0 6px; }
+.card .trig { font-size: 13px; color: var(--accent); }
+.card .desc { font-size: 13.5px; color: var(--muted); line-height: 1.55; }
+.card .foot { margin-top: auto; display: flex; flex-direction: column; gap: 6px; padding-top: 4px; }
+.xs { display: flex; height: 18px; border-radius: 3px; overflow: hidden; background: var(--line); gap: 1px; }
+.xs i { display: block; background: color-mix(in srgb, var(--ink) 14%, var(--surface)); min-width: 2px; }
+.xs i.on { background: var(--accent); }
+.meta { display: flex; justify-content: space-between; gap: 8px; align-items: center; font-family: var(--font-mono); font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+
+/* ---------- pose sheet ---------- */
+.poses { display: grid; grid-template-columns: repeat(auto-fill, minmax(118px, 1fr)); gap: 10px; }
+.pose { background: var(--cel); border-radius: 8px; padding: 8px 6px 6px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+.pose canvas { width: 100px; height: 64px; display: block; }
+.pose code { font-family: var(--font-mono); font-size: 11px; color: #AEB5C0; }
+
+/* ---------- notes ---------- */
+.notes { display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 16px; }
+.note { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 18px 20px; display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.note h3 { font-size: 16px; font-weight: 600; }
+.note ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: 14px; color: var(--muted); }
+.note li b { color: var(--ink); font-weight: 600; }
+.note a { color: var(--accent); overflow-wrap: anywhere; }
+.note code { font-family: var(--font-mono); font-size: 12.5px; background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0 4px; border-radius: 4px; overflow-wrap: anywhere; }
+
+@media (max-width: 760px) {
+  header.top h1 { font-size: 30px; }
+  header.top h1 .px { font-size: 27px; }
+  .controls { grid-template-columns: minmax(0, 1fr); }
+  .desk { height: 280px; }
+  .hint { display: none; }
+}
+</style>
+
+<div class="wrap">
+  <header class="top">
+    <p class="eyebrow">Clawd · motion library · v2 draft</p>
+    <h1><span class="px">Clawd</span> 动作库</h1>
+    <p class="lede">桌面宠物 Clawd 的全套动画设计稿：静息、工作、提问、完成、出错、各种交互，以及展开与合并。节奏照搬 Claude Code 终端里的 Clawd：每格 60 毫秒，整像素跳动，不做补间；蹲下靠身体下沉、脚被地面挡住，而不是把身体压扁。</p>
+    <div class="legend">
+      <span><b class="src official">官方</b>来自 Claude Code CLI 或 @claudeai 官方视频</span>
+      <span><b class="src new">新设计</b>官方没有、为桌宠补的动作，沿用同一套手法</span>
+    </div>
+  </header>
+
+  <section aria-labelledby="try">
+    <div class="sec-head">
+      <p class="eyebrow">Live desk</p>
+      <h2 id="try">试一试</h2>
+      <p>这是 4 个会话展开后的样子，和 App 里的排布、气泡、标签一致。指针靠近，它们会看向你；悬停，会抬一下手；在身上左右来回蹭，会冒爱心；按住拖动，会被拎起来蹬腿；点一下，会先 boop 一下再跳回会话。</p>
+    </div>
+    <div class="desk" id="desk">
+      <div class="win"><i style="top:42px"></i><i style="top:58px;right:45%"></i><i style="top:74px;right:38%"></i><i style="top:98px;right:52%"></i><i style="top:114px;right:41%"></i></div>
+      <canvas id="deskCanvas"></canvas>
+      <div class="overlay" id="overlay"></div>
+      <p class="hint">提示：用下方面板切换每个会话的状态，或者加一个会话，满 5 个时会自动合并成一堆。</p>
+      <div class="toast" id="toast" hidden></div>
+    </div>
+    <div class="controls">
+      <div class="panel" id="sessPanel"><h3>每个会话的状态</h3></div>
+      <div class="panel">
+        <h3>整组</h3>
+        <div class="gbtns">
+          <button class="btn" id="bToggle" type="button">合并成一堆</button>
+          <button class="btn" id="bJoin" type="button">新会话加入</button>
+          <button class="btn" id="bLeave" type="button">结束最后一个会话</button>
+          <button class="btn" id="bSleep" type="button">快进 2 分钟（空闲的会睡着）</button>
+          <button class="btn" id="bShow" type="button">隐藏再显示（/pet）</button>
+          <label><span>尺寸</span>
+            <select id="selSize"><option value="3">1×（App 默认）</option><option value="4" selected>1.33×</option><option value="5">1.67×</option></select>
+          </label>
+          <label><input type="checkbox" id="chkReduce"> 减少动态效果</label>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="catalog" style="display:flex;flex-direction:column;gap:44px"></div>
+
+  <section aria-labelledby="poseh">
+    <div class="sec-head">
+      <p class="eyebrow">Pose sheet</p>
+      <h2 id="poseh">姿势表</h2>
+      <p>上面每个动作都由这些姿势拼成。身体是 12×8 的方块，另有两只 2×2 的手、四条 1×2 的腿、两只 1×2 的眼睛，每个像素是正方形（原来一个瘦高像素拆成上下两格），所以眼睛能闭成一条线，手可以只抬半格。灰线是地面，低于地面的部分不画。</p>
+    </div>
+    <div class="poses" id="poses"></div>
+  </section>
+
+  <section aria-labelledby="noteh">
+    <div class="sec-head">
+      <p class="eyebrow">Notes</p>
+      <h2 id="noteh">依据与落地</h2>
+    </div>
+    <div class="notes">
+      <div class="note">
+        <h3>参考了什么</h3>
+        <ul>
+          <li><b>Claude Code CLI 2.1.302 本体。</b>直接读了本机安装包里的动画数据：jump、look、tap、sneeze、waddle、boop、peekaboo、drop 等序列，每格 60 ms，眼睛会左右看、闭成 <code>▂</code> 线、眨单眼，手和脚一次挪一格，蹲下是下沉并裁掉脚，特效只有灰色 <code>·</code> <code>~</code> 和 <code>✦</code>。</li>
+          <li><b>思考指示符。</b><code>· ✢ ✳ ✶ ✻ ✽</code> 按 2 秒余弦来回，在两端停得久一点。“运行中”头顶的指示符照这个节奏画成像素版。</li>
+          <li><b>@claudeai 官方视频：</b><a href="https://x.com/claudeai/status/1993030562345537692" target="_blank" rel="noopener">桌面版发布（走、张望、跳）</a>、<a href="https://x.com/claudeai/status/2019833113418035237" target="_blank" rel="noopener">黑客松（挥旗）</a>、<a href="https://x.com/claudeai/status/2026418433911603668" target="_blank" rel="noopener">Remote Control（举哑铃）</a>、<a href="https://x.com/claudeai/status/2032911276226257206" target="_blank" rel="noopener">额度翻倍（跺脚撒彩纸）</a>。帧级细节取自 <a href="https://tympanus.net/codrops/2026/05/05/reverse-engineering-claude-ais-mascot-animations-with-svg-and-gsap/" target="_blank" rel="noopener">Codrops 的逐帧复刻</a>。</li>
+          <li><b>社区桌宠：</b><a href="https://github.com/rullerzhou-afk/clawd-on-desk" target="_blank" rel="noopener">clawd-on-desk</a> 的目光跟随、抛球表示子任务，这两个点子借鉴了它。</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>设计原则</h3>
+        <ul>
+          <li><b>守住官方手感。</b>60 ms 一格、整像素位移、没有补间、不压扁；表情全靠眼睛和手。</li>
+          <li><b>注意力分级。</b>空闲和工作要安静：空闲 4–10 秒才做一个小动作，2 分钟后睡着；需要你的状态（提问、出错、完成）动作最大，一进入就有一下明显的“事件”动画。</li>
+          <li><b>颜色只给状态用。</b>身体永远是 #D97757，特效是灰色，只有头顶的 <code>?</code> <code>✓</code> <code>!</code> 和彩纸带状态色。</li>
+          <li><b>进场有事件，循环要耐看。</b>每个状态 = 一段单次进场 + 一段可以看很久的循环 + 随机小动作。</li>
+          <li><b>减少动态效果：</b>每个状态只停在一个代表姿势，不放粒子，展开合并直接到位。</li>
+        </ul>
+      </div>
+      <div class="note">
+        <h3>怎么落到 App 里</h3>
+        <ul>
+          <li><b>皮肤清单升级到 schema 2：</b><code>parts</code> 部件、<code>poses</code> 姿势、<code>clips</code> 动作（每格：姿势、格数、dx、dy、特效）、<code>effects</code> 粒子、<code>states</code> 状态（进场、循环、随机小动作、睡着时间）。这页的动画就是由同一份数据驱动的，换皮肤不用改代码。</li>
+          <li><b>渲染走 Core Animation：</b>姿势预先画成小位图；一段动作编译成 <code>contents</code> 和 <code>position</code> 两条离散关键帧，交给渲染进程播放，主线程不逐帧刷新，守住空闲 CPU 接近 0。</li>
+          <li><b>交互复用现有的鼠标监听：</b>点击穿透本来就在跟踪指针，顺手算出目光方向和“来回蹭”，只在方向变化时更新一次。</li>
+          <li><b>拖动时窗口临时加宽：</b>没被抓住的会落后最多 12 个像素再追上来，拖动期间给窗口四周留出这段余量，松手后收回。</li>
+          <li><b>需要多记一个字段：</b>工作动画按工具区分（抱笔记本改代码、思考、读、跑命令、子任务），状态文件要多存当前工具名。</li>
+          <li><b>状态多一个“离场”动作：</b>离开运行中时先合上笔记本，再接下一个状态的进场，清单里写成 <code>exitBy</code>。</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+</div>
+
+<script>
+(() => {
+'use strict';
+const TICK = 60;
+const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+
+/* ======================= skin data (manifest v2 draft) ======================= */
+const L = (n) => '#'.repeat(n);
+const M = {
+  palette: { '#': '#D97757', 'o': '#1D1D1F', 'p': '#F2A68E', 'h': '#E4E7EB', 'g': '#C9CED6', 'd': '#7D848E' },
+  parts: {
+    body: { at: [3, 0], rows: Array(8).fill(L(12)) },
+    eyes_open: { at: [5, 2], rows: ['o......o', 'o......o'] },
+    eyes_l: { at: [4, 2], rows: ['o......o', 'o......o'] },
+    eyes_r: { at: [6, 2], rows: ['o......o', 'o......o'] },
+    eyes_up: { at: [5, 1], rows: ['o......o', 'o......o'] },
+    eyes_down: { at: [5, 3], rows: ['o......o', 'o......o'] },
+    eyes_dl: { at: [4, 3], rows: ['o......o', 'o......o'] },
+    eyes_dr: { at: [6, 3], rows: ['o......o', 'o......o'] },
+    eyes_half: { at: [5, 3], rows: ['o......o'] },
+    eyes_shut: { at: [4, 3], rows: ['oo......oo'] },
+    eyes_wink: { at: [4, 2], rows: ['........o.', 'oo......o.'] },
+    eyes_happy: { at: [4, 2], rows: ['.o......o.', 'o.o....o.o'] },
+    eyes_squint: { at: [4, 1], rows: ['o........o', '.o......o.', 'o........o'] },
+    eyes_wide: { at: [5, 1], rows: ['o......o', 'o......o', 'o......o'] },
+    blush: { at: [4, 4], rows: ['p........p'] },
+    arm_l: { at: [1, 4], rows: ['##', '##'] },
+    arm_r: { at: [15, 4], rows: ['##', '##'] },
+    arm_l_up: { at: [1, 2], rows: ['##', '##'] },
+    arm_r_up: { at: [15, 2], rows: ['##', '##'] },
+    arm_l_hi: { at: [1, -1], rows: ['##', '##'] },
+    arm_r_hi: { at: [15, -1], rows: ['##', '##'] },
+    arm_l_droop: { at: [1, 5], rows: ['##', '##'] },
+    arm_l_key: { at: [1, 6], rows: ['##', '##'] },
+    arm_r_key: { at: [15, 6], rows: ['##', '##'] },
+    arm_l_keyup: { at: [1, 5], rows: ['##', '##'] },
+    arm_r_keyup: { at: [15, 5], rows: ['##', '##'] },
+    laptop: { at: [3, 4], rows: ['.hhhhhhhhhh.', '.gggg##gggg.', '.gggg##gggg.', '.gggggggggg.', 'dddddddddddd'] },
+    laptop_half: { at: [3, 6], rows: ['.hhhhhhhhhh.', '.gggggggggg.', 'dddddddddddd'] },
+    laptop_closed: { at: [3, 7], rows: ['.hhhhhhhhhh.', 'dddddddddddd'] },
+    arm_r_droop: { at: [15, 5], rows: ['##', '##'] },
+    legs: { at: [4, 8], rows: ['#.#....#.#', '#.#....#.#'] },
+    legs_a: { at: [4, 8], rows: ['#.#....#.#', '.......#.#'] },
+    legs_b: { at: [4, 8], rows: ['#.#....#.#', '#.#.......'] },
+    legs_tuck: { at: [4, 8], rows: ['#.#....#.#'] },
+    legs_dangle_a: { at: [4, 8], rows: ['#.#....#.#', '#.#....#.#', '#.#.......'] },
+    legs_dangle_b: { at: [4, 8], rows: ['#.#....#.#', '#.#....#.#', '.......#.#'] },
+  },
+  // pose = body + these parts ([part, dx, dy] to nudge one)
+  poses: {
+    base: ['eyes_open', 'arm_l', 'arm_r', 'legs'],
+    half: ['eyes_half', 'arm_l', 'arm_r', 'legs'],
+    shut: ['eyes_shut', 'arm_l', 'arm_r', 'legs'],
+    look_l: ['eyes_l', 'arm_l', 'arm_r', 'legs'],
+    look_r: ['eyes_r', 'arm_l', 'arm_r', 'legs'],
+    look_up: ['eyes_up', 'arm_l', 'arm_r', 'legs'],
+    look_down: ['eyes_down', 'arm_l', 'arm_r', 'legs'],
+    read_l: ['eyes_dl', 'arm_l', 'arm_r', 'legs'],
+    read_r: ['eyes_dr', 'arm_l', 'arm_r', 'legs'],
+    wink: ['eyes_wink', 'arm_l', 'arm_r', 'legs'],
+    happy: ['eyes_happy', 'blush', 'arm_l', 'arm_r', 'legs'],
+    walk_a: ['eyes_open', 'arm_l', 'arm_r', 'legs_a'],
+    walk_l_a: ['eyes_l', 'arm_l', 'arm_r', 'legs_a'],
+    walk_l_b: ['eyes_l', 'arm_l', 'arm_r', 'legs_b'],
+    walk_r_a: ['eyes_r', 'arm_l', 'arm_r', 'legs_a'],
+    walk_r_b: ['eyes_r', 'arm_l', 'arm_r', 'legs_b'],
+    walk_b: ['eyes_open', 'arm_l', 'arm_r', 'legs_b'],
+    arms_up: ['eyes_open', 'arm_l_up', 'arm_r_up', 'legs'],
+    air: ['eyes_open', 'arm_l_up', 'arm_r_up', 'legs_tuck'],
+    cheer: ['eyes_happy', 'blush', 'arm_l_hi', 'arm_r_hi', 'legs_tuck'],
+    raise: ['eyes_open', 'arm_l', 'arm_r_hi', 'legs'],
+    raise_mid: ['eyes_open', 'arm_l', 'arm_r_up', 'legs'],
+    wave_hi: ['eyes_happy', 'arm_l', 'arm_r_hi', 'legs'],
+    wave_mid: ['eyes_happy', 'arm_l', 'arm_r_up', 'legs'],
+    surprised: ['eyes_wide', 'arm_l_up', 'arm_r_up', 'legs'],
+    urgent: ['eyes_wide', 'arm_l_hi', 'arm_r_hi', 'legs_tuck'],
+    sneeze: ['eyes_shut', 'arm_l_up', 'arm_r_up', 'legs'],
+    yawn: ['eyes_shut', 'arm_l_hi', 'arm_r_hi', 'legs'],
+    held_a: ['eyes_squint', 'arm_l_hi', 'arm_r_up', 'legs_dangle_a'],
+    held_b: ['eyes_squint', 'arm_l_up', 'arm_r_hi', 'legs_dangle_b'],
+    squeeze: ['eyes_squint', 'arm_l', 'arm_r', 'legs'],
+    lap_closed: ['eyes_down', 'arm_l_key', 'arm_r_key', 'legs', 'laptop_closed'],
+    lap_half: ['eyes_down', 'arm_l_key', 'arm_r_key', 'legs', 'laptop_half'],
+    lap_look: ['eyes_open', 'arm_l_key', 'arm_r_key', 'legs', 'laptop'],
+    lap_a: ['eyes_down', 'arm_l_key', 'arm_r_keyup', 'legs', 'laptop'],
+    lap_b: ['eyes_down', 'arm_l_keyup', 'arm_r_key', 'legs', 'laptop'],
+    lap_enter_up: ['eyes_down', 'arm_l_key', 'arm_r_hi', 'legs', 'laptop'],
+    lap_happy: ['eyes_happy', 'arm_l_key', 'arm_r_key', 'legs', 'laptop'],
+    bash_a: ['eyes_open', 'arm_l_up', 'arm_r', 'legs_a'],
+    bash_b: ['eyes_open', 'arm_l', 'arm_r_up', 'legs_b'],
+    think: ['eyes_up', 'arm_l', 'arm_r', 'legs'],
+    juggle_a: ['eyes_up', 'arm_l_hi', 'arm_r_up', 'legs'],
+    juggle_b: ['eyes_up', 'arm_l_up', 'arm_r_hi', 'legs'],
+    oops: ['eyes_squint', 'arm_l_up', 'arm_r_up', 'legs'],
+    slump: ['eyes_down', 'arm_l_droop', 'arm_r_droop', 'legs'],
+    slump_shut: ['eyes_shut', 'arm_l_droop', 'arm_r_droop', 'legs'],
+  },
+  glyphs: {
+    dot: ['#'],
+    puff: ['##'],
+    tilde: ['##.', '.##'],
+    spark: ['.#.', '###', '.#.'],
+    z: ['##.', '.#.', '.##'],
+    Z: ['####', '..#.', '.#..', '####'],
+    heart: ['#.#', '###', '.#.'],
+    bang: ['##', '##', '##', '..', '##'],
+    q: ['###.', '...#', '.##.', '.#..', '....', '.#..'],
+    check: ['....#', '...##', '#.##.', '###..', '.#...'],
+    drop: ['.#.', '###', '###', '.#.'],
+    ball: ['##', '##'],
+    lt: ['.#', '#.', '.#'],
+    gt: ['#.', '.#', '#.'],
+    sl: ['..#', '.#.', '#..'],
+    s0: ['#'],
+    s1: ['.#.', '###', '.#.'],
+    s2: ['..#..', '..#..', '#####', '..#..', '..#..'],
+    s3: ['#.#.#', '.###.', '#####', '.###.', '#.#.#'],
+    s4: ['#.#.#', '.###.', '##.##', '.###.', '#.#.#'],
+    s5: ['##.##', '#####', '.###.', '#####', '##.##'],
+    dotbig: ['.##.', '####', '####', '.##.'],
+    ptr: ['k.........', 'kk........', 'kwk.......', 'kwwk......', 'kwwwk.....', 'kwwwwk....', 'kwwwwwk...', 'kwwwwwwk..', 'kwwwkkkkk.', 'kwwk......', 'kwk.......', 'kk........'],
+    grab: ['..kk.kk...', '.kwwkwwkk.', '.kwwkwwkwk', 'kkwwwwwwwk', 'kwwwwwwwwk', '.kwwwwwwk.', '..kwwwwwk.', '...kkkkk..'],
+  },
+  // keys: [pose, ticks, dx, dy, effect]; dy > 0 is up, dy < 0 sinks into the ground (feet cropped)
+  clips: {
+    idle: [['base', 40], ['base', 10, 0, -1]],
+    blink: [['shut', 2]],
+    double_blink: [['shut', 2], ['base', 3], ['shut', 2]],
+    look: [['look_r', 5], ['look_l', 5], ['base', 1], ['shut', 1]],
+    wink: [['wink', 5], ['base', 1]],
+    tap: [['walk_b', 2], ['base', 2], ['walk_b', 2], ['base', 2], ['walk_b', 1], ['base', 1], ['walk_b', 1], ['base', 1], ['base', 2], ['shut', 1]],
+    sneeze: [['shut', 2], ['sneeze', 4, 0, 1], ['shut', 2, 0, -2, 'puff'], ['base', 2, 0, -1], ['base', 2], ['shut', 1]],
+    waddle: [['walk_a', 2, -1], ['walk_b', 2, -2], ['walk_a', 2, -3], ['walk_b', 2, -4], ['base', 3, -4], ['look_r', 4, -4], ['walk_a', 2, -3], ['walk_b', 2, -2], ['walk_a', 2, -1], ['walk_b', 2, 0], ['walk_a', 2, 1], ['walk_b', 2, 2], ['base', 3, 2], ['look_l', 4, 2], ['walk_a', 2, 1], ['walk_b', 2, 0], ['shut', 1]],
+    yawn: [['shut', 3], ['yawn', 14, 0, 1], ['shut', 2, 0, -2], ['base', 3], ['shut', 1]],
+    jump: [['base', 1, 0, -2, 'dust'], ['base', 1, 0, -2, 'tilde'], ['air', 1, 0, 2], ['air', 2, 0, 4], ['air', 1, 0, 2], ['base', 1],
+      ['base', 1, 0, -2, 'dust'], ['base', 1, 0, -2], ['air', 1, 0, 2], ['air', 2, 0, 4], ['air', 1, 0, 2], ['base', 1], ['shut', 1]],
+    doze: [['half', 8], ['base', 4], ['half', 10], ['base', 3], ['half', 12], ['shut', 4, 0, -1]],
+    sleep: [['shut', 25, 0, 0, 'zzz'], ['shut', 25, 0, -1]],
+    wake: [['surprised', 2, 0, 2, 'bang_grey'], ['surprised', 3], ['look_l', 3], ['look_r', 3], ['base', 1], ['shut', 1]],
+    work_enter: [['base', 1, 0, -2, 'dust'], ['arms_up', 1, 0, 2], ['arms_up', 1, 0, 1], ['base', 1]],
+    lap_open: [['base', 1, 0, -2, 'dust_small'], ['lap_closed', 3], ['lap_half', 2], ['lap_look', 3], ['lap_a', 2]],
+    laptop: [['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2, 0, 0, 'code'], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2],
+      ['lap_look', 7], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2], ['lap_b', 2], ['lap_a', 2, 0, 0, 'code'], ['lap_b', 2],
+      ['lap_enter_up', 3], ['lap_a', 1, 0, -1, 'code'], ['lap_happy', 4], ['lap_b', 2], ['lap_a', 2]],
+    lap_close: [['lap_look', 1], ['lap_half', 2], ['lap_closed', 2], ['base', 1, 0, -2, 'dust_small'], ['base', 1]],
+    think: [['think', 10], ['think', 10, 0, -1], ['think', 10], ['look_r', 4], ['look_l', 4], ['think', 6, 0, -1]],
+    read: [['read_l', 3], ['look_down', 3], ['read_r', 5], ['read_l', 1], ['look_down', 3], ['read_r', 5], ['shut', 1]],
+    bash: [['bash_a', 2, -1], ['bash_b', 2, 0], ['bash_a', 2, 1], ['bash_b', 2, 0]],
+    juggle: [['juggle_a', 3], ['juggle_b', 3]],
+    alert: [['surprised', 2, 0, 0, 'badge_pop'], ['surprised', 1, 0, 2], ['surprised', 2, 0, 3], ['surprised', 1, 0, 2], ['base', 1, 0, -2, 'dust'], ['raise', 2]],
+    ask: [['raise', 5], ['raise_mid', 3], ['raise', 5], ['raise_mid', 3], ['raise', 5], ['base', 16], ['shut', 1], ['base', 10]],
+    impatient: [['walk_b', 2], ['base', 2], ['walk_b', 2], ['base', 2], ['walk_b', 1], ['base', 1], ['walk_b', 1], ['base', 1], ['walk_b', 1], ['base', 1],
+      ['raise', 3], ['raise_mid', 2], ['raise', 3], ['raise_mid', 2], ['base', 1, 0, -2, 'dust'], ['urgent', 2, 0, 3], ['urgent', 1, 0, 1], ['base', 6]],
+    celebrate: [['base', 1, 0, -2, 'dust'], ['base', 1, 0, -2, 'tilde'], ['cheer', 1, 0, 2], ['cheer', 2, 0, 4, 'confetti'], ['cheer', 1, 0, 2], ['happy', 1],
+      ['happy', 1, 0, -2, 'dust'], ['cheer', 1, 0, 2], ['cheer', 2, 0, 4], ['cheer', 1, 0, 2], ['happy', 3, 0, -2], ['happy', 1, 0, -1], ['happy', 8]],
+    content: [['happy', 30], ['base', 25], ['shut', 1], ['base', 20], ['look_r', 5], ['look_l', 5], ['shut', 1], ['happy', 10, 0, -1]],
+    seen: [['happy', 3], ['base', 2]],
+    oops: [['oops', 1, 1, 0, 'bang_err'], ['oops', 1, -1], ['oops', 1, 1], ['oops', 1, -1], ['oops', 1, 1], ['oops', 1, -1], ['oops', 3], ['slump', 4, 0, -1, 'sweat']],
+    slump: [['slump', 40, 0, -1], ['slump_shut', 2, 0, -1], ['slump', 30, 0, -1], ['slump_shut', 3, 0, -2, 'sigh'], ['slump', 10, 0, -1]],
+    notice: [['arms_up', 1, 0, 1], ['base', 1]],
+    pet: [['happy', 3, 0, 0, 'heart'], ['happy', 3, 0, -1]],
+    pet_end: [['happy', 8], ['shut', 1]],
+    press: [['squeeze', 1, 0, -2, 'dust'], ['squeeze', 200, 0, -2]],
+    boop_end: [['look_l', 5], ['base', 1], ['shut', 1]],
+    held: [['held_a', 2], ['held_b', 2]],
+    drop: [['air', 1, 0, 2], ['base', 2, 0, -2, 'dust'], ['base', 1, 0, -1], ['look_l', 2], ['look_r', 2], ['base', 1], ['shut', 1]],
+    peekaboo: [['base', 3, 0, -10], ['look_l', 5, 0, -6], ['look_r', 5, 0, -6], ['look_l', 3, 0, -6], ['arms_up', 1, 0, -2], ['arms_up', 2, 0, 2, 'dust'], ['arms_up', 2, 0, 1], ['base', 1], ['shut', 1], ['base', 2]],
+    leave: [['wave_hi', 3], ['wave_mid', 2], ['wave_hi', 3], ['wave_mid', 2], ['wave_hi', 3], ['base', 2], ['base', 2, 0, -2, 'dust'], ['look_l', 3, 0, -6], ['look_r', 3, 0, -6], ['base', 2, 0, -8], ['base', 2, 0, -10, 'poof']],
+    appear: [['arms_up', 1, 0, 16], ['arms_up', 1, 0, 12], ['arms_up', 1, 0, 7], ['arms_up', 1, 0, 2], ['base', 2, 0, -2, 'dust'], ['base', 1, 0, -1], ['base', 2], ['shut', 1]],
+    vanish: [['base', 1, 0, -2, 'dust'], ['look_l', 2, 0, -6], ['base', 2, 0, -8], ['base', 2, 0, -10, 'poof']],
+    hidden: [['base', 999, 0, -12]],
+  },
+  states: {
+    idle: { enter: null, loop: 'idle', tint: 'dim', acc: null,
+      fidget: { every: [60, 160], pick: [['blink', 6], ['double_blink', 2], ['look', 4], ['wink', 1], ['tap', 2], ['sneeze', 1], ['waddle', 2], ['yawn', 1], ['jump', 1]] },
+      sleepAfter: 2000 },
+    running: { enter: 'work_enter', enterBy: { laptop: 'lap_open' }, exitBy: { laptop: 'lap_close' }, loop: 'laptop', acc: 'spinner', fidget: { every: [90, 220], pick: [['blink', 1]] } },
+    waiting: { enter: 'alert', loop: 'ask', acc: 'q', badge: { g: 'bang', c: '#FF9F0A' }, impatientAfter: 500 },
+    done: { enter: 'celebrate', loop: 'content', acc: 'check', fidget: { every: [90, 220], pick: [['wink', 1], ['look', 1]] } },
+    error: { enter: 'oops', loop: 'slump', tint: 'dim', acc: 'bang' },
+  },
+  // the single pose each state holds when "reduce motion" is on
+  still: { idle: 'base', sleep: 'shut', running: 'lap_a', waiting: 'raise', done: 'happy', error: 'slump' },
+};
+const VARIANTS = { laptop: '改代码（抱笔记本）', think: '思考', read: '读文件', bash: '跑命令', juggle: '派子任务' };
+const VARIANT_DETAIL = { laptop: '编辑 FlockView.swift', think: '思考中…', read: '读取 SessionMonitor.swift', bash: 'Bash: swift test', juggle: '子任务：调研 Clawd 动画' };
+
+/* ======================= pixels ======================= */
+const C = { dust: '#B4BAC4', grey: '#A3A9B4', sweat: '#86C8FF', heart: '#FF7096', wait: '#FF9F0A', done: '#34C759', err: '#FF3B30', clawd: '#D97757',
+  confetti: ['#D97757', '#34C759', '#FFD60A', '#64D2FF', '#FF7096', '#F2F2F7'] };
+const hexRgb = (h) => [1, 3, 5].map((i) => parseInt(h.slice(i, i + 2), 16));
+const PAL = {}, DIM = {};
+for (const [ch, hex] of Object.entries(M.palette)) {
+  PAL[ch] = hex;
+  const [r, g, b] = hexRgb(hex).map((v) => Math.round(v * 0.5 + 127.5 * 0.5));
+  DIM[ch] = `rgba(${r},${g},${b},0.85)`;
+}
+const POSES = {};
+for (const [name, refs] of Object.entries(M.poses)) {
+  const grid = new Map();
+  for (const ref of ['body', ...refs]) {
+    const [pn, ox = 0, oy = 0] = Array.isArray(ref) ? ref : [ref];
+    const part = M.parts[pn];
+    part.rows.forEach((row, r) => [...row].forEach((ch, c) => {
+      if (ch !== '.') grid.set(`${part.at[0] + c + ox},${part.at[1] + r + oy}`, ch);
+    }));
+  }
+  POSES[name] = [...grid].map(([k, ch]) => { const [x, y] = k.split(',').map(Number); return [x, y, ch]; });
+}
+const glyphSize = (g) => [M.glyphs[g][0].length, M.glyphs[g].length];
+
+// ax = left edge of the 18-wide base box, ground = y of the ground line (CSS px)
+function drawPose(ctx, name, ax, ground, u, dx, dy, tint, alpha) {
+  const pix = POSES[name];
+  if (!pix) return;
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  const pal = tint === 'dim' ? DIM : PAL;
+  for (const [x, y, ch] of pix) {
+    const gy = y - dy;
+    if (gy >= 10) continue;
+    ctx.fillStyle = pal[ch];
+    ctx.fillRect(ax + (x + dx) * u, ground + (gy - 10) * u, u, u);
+  }
+  ctx.globalAlpha = 1;
+}
+function drawGlyph(ctx, g, x, y, u, color, alpha) {
+  const rows = M.glyphs[g];
+  ctx.globalAlpha = alpha == null ? 1 : alpha;
+  rows.forEach((row, r) => [...row].forEach((ch, c) => {
+    if (ch === '.') return;
+    ctx.fillStyle = ch === 'k' ? '#111111' : ch === 'w' ? '#FFFFFF' : color;
+    ctx.fillRect(x + c * u, y + r * u, u, u);
+  }));
+  ctx.globalAlpha = 1;
+}
+const rnd = (a, b) => a + Math.random() * (b - a);
+const irnd = (a, b) => Math.floor(rnd(a, b + 1));
+function pickWeighted(list) {
+  const total = list.reduce((s, [, w]) => s + w, 0);
+  let r = Math.random() * total;
+  for (const [n, w] of list) { r -= w; if (r <= 0) return n; }
+  return list[0][0];
+}
+
+/* ======================= effects ======================= */
+// particle coords are in base-grid units relative to the actor (x: 0..17 across, y: 10 = ground)
+const EFFECTS = {
+  dust: () => [{ g: 'dot', c: C.dust, x: 2, y: 9, vx: -12, vy: -3, life: 4 }, { g: 'dot', c: C.dust, x: 15, y: 9, vx: 12, vy: -3, life: 4 }],
+  dust_small: () => [{ g: 'dot', c: C.dust, x: 3, y: 9, vx: -8, vy: -2, life: 3 }, { g: 'dot', c: C.dust, x: 14, y: 9, vx: 8, vy: -2, life: 3 }],
+  tilde: () => [{ g: 'tilde', c: C.dust, x: -1, y: 8, vx: -6, vy: -2, life: 5 }, { g: 'tilde', c: C.dust, x: 16, y: 8, vx: 6, vy: -2, life: 5 }],
+  puff: () => [{ g: 'tilde', c: C.dust, x: 16, y: 3, vx: 10, vy: -3, life: 6 }],
+  sigh: () => [{ g: 'tilde', c: C.grey, x: 15, y: 5, vx: 5, vy: -2, life: 9 }],
+  confetti: () => Array.from({ length: 16 }, (_, i) => ({ g: 'dot', c: C.confetti[i % C.confetti.length], x: rnd(5, 12), y: -1, vx: rnd(-18, 18), vy: rnd(-34, -16), ay: 80, life: irnd(13, 19) })),
+  zzz: (a) => { a.zFlip = !a.zFlip; return [{ g: a.zFlip ? 'z' : 'Z', c: C.grey, x: 15, y: -2, vx: 3, vy: -5, sway: 1, life: 30 }]; },
+  heart: () => [{ g: 'heart', c: C.heart, x: rnd(3, 13), y: -2, vx: rnd(-2, 2), vy: -11, life: 10 }],
+  settle: (a) => { a.tint = 'dim'; a.alpha = a.settleAlpha || 0.75; a.z = a.settleZ == null ? 1 : a.settleZ; return []; },
+  badge_pop: (a) => { a.badgeAge = 0; a.badgeOn = true; return []; },
+  code: (a) => { a.codeN = ((a.codeN || 0) + 1) % 3; const right = a.codeN !== 1; return [{ g: ['lt', 'sl', 'gt'][a.codeN], c: '#DDE1E7', x: right ? 15 : 1, y: 1, vx: right ? 4 : -4, vy: -7, life: 9 }]; },
+  bang_err: () => [{ g: 'bang', c: C.err, x: 16, y: -7, pop: true, life: 10 }],
+  bang_grey: () => [{ g: 'bang', c: '#E5E7EB', x: 16, y: -7, pop: true, life: 7 }],
+  sweat: () => [{ g: 'drop', c: C.sweat, x: 15, y: -2, vx: 0, vy: 4, life: 14 }],
+  poof: () => Array.from({ length: 8 }, (_, i) => { const t = (i / 8) * Math.PI * 2; return { g: i % 2 ? 'spark' : 'dot', c: C.dust, x: 8, y: 6, vx: Math.cos(t) * 16, vy: Math.sin(t) * 10 - 4, life: 6 }; }),
+  twinkle: () => [{ g: 'spark', c: '#E9EDF2', x: 14, y: -9, life: 6, shrink: true }],
+};
+
+/* ======================= actor ======================= */
+class Actor {
+  constructor(opts = {}) {
+    this.ax = 0; this.ground = 0; this.u = 4;
+    this.state = 'idle'; this.variant = 'laptop'; this.tint = null; this.acc = null;
+    this.base = 'idle'; this.modeLoop = null; this.once = null; this.onceResolve = null;
+    this.cur = null; this.ki = 0; this.kt = 0; this.fx = []; this.clock = 0;
+    this.gaze = null; this.lift = 0; this.lag = 0; this.hidden = false; this.asleep = false;
+    this.brain = false; this.reduce = false; this.traveling = false; this.prop = null;
+    this.idleTicks = 0; this.waitTicks = 0; this.fidgetIn = 80; this.accFlash = 0; this.badgeAge = 99; this.badgeOn = true;
+    this.alpha = 1; this.z = 2; this.offX = 0; this.offY = 0; this.follow = false; this.followHold = false; this.followLook = null;
+    Object.assign(this, opts);
+    this._start(this.base);
+  }
+  clipKeys(c) { return typeof c === 'string' ? M.clips[c] : c; }
+  _start(c) { this.curName = typeof c === 'string' ? c : null; this.cur = this.clipKeys(c); this.ki = 0; this.kt = 0; this._enterKey(); }
+  _enterKey() { const k = this.cur && this.cur[this.ki]; if (k && k[4] && !this.reduce) this.emit(k[4]); }
+  setLoop(c) { this.base = c; if (!this.once && !this.modeLoop) this._start(c); }
+  setMode(c) { this.modeLoop = c; if (!this.once) this._start(c || this.base); }
+  play(c) {
+    return new Promise((res) => {
+      if (this.onceResolve) this.onceResolve(false);
+      this.once = c; this.onceResolve = res; this._start(c);
+    });
+  }
+  cancelOnce() { if (this.once) { const r = this.onceResolve; this.once = null; this.onceResolve = null; this._start(this.modeLoop || this.base); r && r(false); } }
+  emit(name) { const make = EFFECTS[name]; if (make) for (const p of make(this)) this.fx.push(Object.assign({ vx: 0, vy: 0, ay: 0, age: 0, sway: 0 }, p)); }
+  step() {
+    this.clock++;
+    this.badgeAge++;
+    if (this.accFlash > 0) this.accFlash--;
+    for (const p of this.fx) {
+      p.age++; const dt = TICK / 1000;
+      p.vy += p.ay * dt; p.x += p.vx * dt; p.y += p.vy * dt;
+    }
+    this.fx = this.fx.filter((p) => p.age < p.life);
+    if (this.acc === 'check' && this.clock % 43 === 0 && !this.reduce && !this.noAcc) this.emit('twinkle');
+    if (!this.cur) return;
+    this.kt++;
+    const k = this.cur[this.ki];
+    if (this.kt >= k[1]) {
+      this.kt = 0; this.ki++;
+      if (this.ki >= this.cur.length) {
+        if (this.once) {
+          const r = this.onceResolve; this.once = null; this.onceResolve = null;
+          this._start(this.modeLoop || this.base);
+          r && r(true);
+          return;
+        }
+        this.ki = 0;
+      }
+      this._enterKey();
+    }
+  }
+  frame() {
+    if (this.follow && !this.reduce) {
+      const u = this.u;
+      if (Math.abs(this.offY) >= u) return { pose: 'air', dx: 0, dy: 0 };
+      if (Math.abs(this.offX) >= u) {
+        const d = this.offX < 0 ? 'r' : 'l', fast = Math.abs(this.offX) > 6 * u;
+        return { pose: `walk_${d}_${Math.floor(this.clock / (fast ? 1 : 2)) % 2 ? 'a' : 'b'}`, dx: 0, dy: 0 };
+      }
+      return { pose: this.followLook || 'base', dx: 0, dy: 0 };
+    }
+    if (this.reduce) {
+      const still = this.asleep ? M.still.sleep : (M.still[this.state] || 'base');
+      if (this.modeLoop === 'held') return { pose: 'held_a', dx: 0, dy: 0 };
+      if (this.cur && this.curName === 'hidden') return { pose: 'base', dx: 0, dy: -12 };
+      return { pose: this.gaze && this.calm() ? this.gaze : still, dx: 0, dy: this.state === 'error' ? -1 : 0 };
+    }
+    const k = this.cur ? this.cur[this.ki] : ['base', 1];
+    let pose = k[0];
+    if (this.gaze && !this.once && !this.modeLoop && this.calm()) pose = this.gaze;
+    return { pose, dx: k[2] || 0, dy: k[3] || 0 };
+  }
+  calm() { return (this.state === 'idle' && !this.asleep) || this.state === 'done'; }
+  draw(ctx) {
+    if (this.hidden) return;
+    const u = this.u, f = this.frame();
+    const qx = Math.round(this.offX / u) * u, qy = Math.round(this.offY / u) * u;
+    const gnd = this.ground + qy;
+    const ax = this.ax + qx + (f.dx + this.lag) * u, ground = gnd - this.lift * u;
+    const dy = f.dy;
+    // shadow while airborne, like the CLI's shrinking ▁ under a hop
+    const air = dy + this.lift;
+    if (air > 0) {
+      const w = air <= 2 ? 10 : air <= 5 ? 6 : 2;
+      ctx.fillStyle = 'rgba(0,0,0,0.28)';
+      ctx.fillRect(ax + (9 - w / 2) * u, gnd, w * u, Math.max(2, Math.round(u / 2)));
+    }
+    drawPose(ctx, f.pose, ax, gnd, u, 0, dy + this.lift, this.tint, this.alpha);
+    if (this.prop === 'juggle' && this.curName === 'juggle' && !this.reduce) {
+      const t = this.clock;
+      for (let i = 0; i < 3; i++) {
+        const ph = ((t + i * 6) % 18) / 18;
+        const x = 3 + ph * 11, y = -2 - Math.round(Math.sin(ph * Math.PI) * 7);
+        drawGlyph(ctx, 'ball', ax + Math.round(x) * u, ground + (y - 10) * u, u, i === 1 ? '#F0A487' : C.clawd);
+      }
+    }
+    for (const p of this.fx) {
+      const sx = p.sway ? Math.round(Math.sin(p.age * 0.5) * p.sway) : 0;
+      let g = p.g;
+      if (p.shrink && p.age > p.life / 2) g = 'dot';
+      const popY = p.pop ? (p.age < 2 ? -1 : 0) : 0;
+      const px = ax + Math.round(p.x + sx + (p.shrink && g === 'dot' ? 1 : 0)) * u;
+      const py = ground + (Math.round(p.y + popY) + (p.shrink && g === 'dot' ? 1 : 0) - 10) * u;
+      drawGlyph(ctx, g, px, py, u, p.c, p.age > p.life * 0.65 ? 0.5 : 1);
+    }
+    if (dy > -6 && dy < 7) this.drawAcc(ctx, ax - f.dx * u, ground);
+  }
+  drawAcc(ctx, ax, ground) {
+    if (!this.acc || this.noAcc || this.modeLoop === 'held' || this.traveling || this.asleep) return;
+    const u = this.u;
+    let g, color, bob = 0;
+    if (this.acc === 'spinner') {
+      if (this.reduce) { g = 'dotbig'; color = C.clawd; }
+      else { const t = this.clock * TICK; const i = Math.round(((1 - Math.cos((2 * Math.PI * t) / 2000)) / 2) * 5); g = 's' + i; color = C.clawd; }
+    } else if (this.acc === 'q') { g = 'q'; color = C.wait; bob = !this.reduce && Math.floor(this.clock / 7) % 2 ? -1 : 0; }
+    else if (this.acc === 'check') { g = 'check'; color = C.done; }
+    else if (this.acc === 'bang') { g = 'bang'; color = C.err; }
+    if (!g) return;
+    const [w, h] = glyphSize(g);
+    const x = ax + Math.round(9 - w / 2) * u;
+    const top = this.acc === 'spinner' ? -7 + Math.floor((5 - h) / 2) : -2 - h;
+    const y = ground + (top - 10 + bob) * u;
+    drawGlyph(ctx, g, x, y, u, color, 1);
+    // waiting keeps its "!" up at the top right until someone answers, with a small hop now and then
+    const badge = M.states[this.state] && M.states[this.state].badge;
+    if (badge && this.badgeOn) {
+      const period = this.base === 'impatient' ? 8 : 20;
+      const hop = this.reduce ? 0 : this.badgeAge < 2 || this.clock % period < 2 ? -1 : 0;
+      const bh = glyphSize(badge.g)[1];
+      drawGlyph(ctx, badge.g, ax + 16 * u, ground + (-2 - bh - 10 + hop) * u, u, badge.c, 1);
+    }
+  }
+}
+
+/* ---------- state brain (shared by the desk and some cards) ---------- */
+function enterState(a, s, opts = {}) {
+  const st = M.states[s];
+  const prev = M.states[a.state];
+  const exit = a.state !== s && prev.exitBy ? prev.exitBy[a.variant] : null;
+  a.state = s; a.asleep = false; a.idleTicks = 0; a.waitTicks = 0;
+  a.tint = st.tint || null; a.acc = st.acc; a.prop = null;
+  let loop = st.loop;
+  if (s === 'running') { loop = a.variant; a.prop = a.variant === 'juggle' ? 'juggle' : null; }
+  a.setLoop(loop);
+  a.fidgetIn = irnd(40, 90);
+  a.badgeOn = !!opts.quiet || a.reduce;
+  if (opts.quiet) return;
+  const enter = (st.enterBy && st.enterBy[a.variant]) || st.enter;
+  if (exit) a.play(exit).then((ok) => { if (ok && a.state === s && enter) a.play(enter); });
+  else if (enter) a.play(enter);
+  else a.cancelOnce();
+}
+function brainStep(a) {
+  if (!a.brain || a.modeLoop || a.traveling || a.follow) return;
+  const st = M.states[a.state];
+  if (a.state === 'idle' && !a.asleep) {
+    a.idleTicks++;
+    if (a.idleTicks >= st.sleepAfter) { a.asleep = true; a.setLoop('sleep'); a.play('doze'); return; }
+  }
+  if (a.state === 'waiting') {
+    a.waitTicks++;
+    if (a.waitTicks === st.impatientAfter) a.setLoop('impatient');
+  }
+  if (st.fidget && !a.once && !a.asleep) {
+    if (--a.fidgetIn <= 0) {
+      a.play(pickWeighted(st.fidget.pick));
+      a.fidgetIn = irnd(st.fidget.every[0], st.fidget.every[1]);
+    }
+  }
+}
+function wake(a) {
+  if (!a.asleep) return;
+  a.asleep = false; a.idleTicks = 0; a.setLoop('idle'); a.play('wake');
+}
+
+/* ======================= canvas helpers ======================= */
+function fitCanvas(cv) {
+  const dpr = Math.min(window.devicePixelRatio || 1, 3);
+  const w = cv.clientWidth, h = cv.clientHeight;
+  if (cv.width !== Math.round(w * dpr) || cv.height !== Math.round(h * dpr)) { cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr); }
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.imageSmoothingEnabled = false;
+  return { ctx, w, h };
+}
+
+/* ======================= travel (expand / collapse / scoot) ======================= */
+// hop from (D, Dy) back to (0, endDy); endDy > 0 lands raised, i.e. on the back of the pile
+function travelKeys(D, Dy, delay, hopLen, endDy = 0) {
+  const keys = [];
+  if (delay > 0) keys.push(['base', delay, D, Dy]);
+  const H = Math.max(1, Math.ceil(Math.abs(D) / hopLen));
+  const n = H * 4, arc = [2, 3, 2, 0], poses = ['air', 'air', 'air', 'base'];
+  for (let i = 1; i <= n; i++) {
+    const p = i / n, j = (i - 1) % 4;
+    keys.push([poses[j], 1, Math.round(D * (1 - p)), Math.round(Dy * (1 - p) + endDy * p) + arc[j]]);
+  }
+  if (endDy > 0) keys.push(['base', 1, 0, endDy - 1, 'dust_small'], ['base', 1, 0, endDy, 'settle']);
+  else keys.push(['base', 2, 0, -2, 'dust_small'], ['base', 1], ['shut', 1]);
+  return keys;
+}
+async function travel(a, fromAx, toAx, fromDy, delay, hopLen = 14, endDy = 0) {
+  const D = Math.round((fromAx - toAx) / a.u);
+  a.ax = toAx;
+  if (a.reduce) { a.traveling = false; return true; }
+  a.traveling = true;
+  const ok = await a.play(travelKeys(D, fromDy || 0, delay, hopLen, endDy));
+  a.traveling = false;
+  return ok;
+}
+// a Clawd sitting in the back of the pile: raised `slot` rows, dimmed, held still
+const pileHold = (slot) => [['base', 999, 0, slot]];
+function stateLoop(a) {
+  if (a.asleep) return 'sleep';
+  if (a.state === 'running') return a.variant;
+  if (a.state === 'waiting' && a.waitTicks >= M.states.waiting.impatientAfter) return 'impatient';
+  return M.states[a.state].loop;
+}
+function restoreLook(a) { a.alpha = 1; a.z = 2; a.tint = M.states[a.state].tint || null; a.noAcc = false; a.setLoop(stateLoop(a)); }
+
+/* while the flock is dragged, everyone except the grabbed Clawd stays put on screen and walks to catch up */
+function followShift(a, dx, dy) {
+  if (!a.follow || a.reduce) return;
+  const u = a.u;
+  a.offX = Math.max(-12 * u, Math.min(12 * u, a.offX - dx));
+  a.offY = Math.max(-8 * u, Math.min(8 * u, a.offY - dy));
+}
+function followStep(a) {
+  if (!a.follow) return;
+  const u = a.u;
+  if (a.reduce) { a.offX = 0; a.offY = 0; }
+  const sx = (Math.abs(a.offX) > 6 * u ? 2 : 1) * u;
+  a.offX = Math.abs(a.offX) <= sx ? 0 : a.offX - Math.sign(a.offX) * sx;
+  if (a.offY) {
+    a.offY = Math.abs(a.offY) <= u ? 0 : a.offY - Math.sign(a.offY) * u;
+    if (!a.offY && !a.reduce) a.emit('dust_small');
+  }
+  if (!a.followHold && !a.offX && !a.offY) { a.follow = false; if (!a.reduce) a.play('blink'); }
+}
+function startFollow(a, grabbed) {
+  a.cancelOnce(); a.gaze = null; a.follow = true; a.followHold = true;
+  a.followLook = grabbed.ax < a.ax ? 'look_l' : 'look_r';
+}
+
+/* ======================= card definitions ======================= */
+const wait = (card, n) => new Promise((res) => card.waiters.push({ at: card.clock + n, res }));
+function pathPointer(card, pts) {
+  // pts: [[x, y, ticks, down?]] — moves linearly between points
+  card.ptrPath = { pts, i: 0, t: 0 };
+}
+const solo = (card) => card.actors[0];
+
+const GROUPS = [
+  { key: 'idle', en: 'Idle', title: '静息', blurb: '会话开着但没在跑。底层是很慢的呼吸，每 4 到 10 秒随机挑一个小动作；2 分钟没动静就打瞌睡、睡着，指针一靠近就被吵醒。空闲时身体整体调灰，把注意力让给需要你的会话。',
+    cards: [
+      { name: '待机呼吸', kind: '循环', trig: '空闲状态的底层循环', src: 'new', clip: 'idle', desc: '站 2.4 秒，整个身体下沉 1 格（脚被地面挡住一格）再回来。官方没有呼吸，用的是它“下沉代替压扁”的手法。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; a.setLoop('idle'); } },
+      { name: '眨眼', kind: '随机', trig: '静息、工作、完成时随机出现', src: 'official', clip: 'blink', desc: '眼睛闭成一条线停 2 格。CLI 几乎每段动作都以一次眨眼收尾。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await wait(c, 22); await a.play('blink'); await wait(c, 14); await a.play('double_blink'); } } },
+      { name: '左右张望', kind: '随机', trig: '静息、完成时随机出现', src: 'official', clip: 'look', desc: '眼睛往右看 5 格、往左看 5 格，回正后眨一下。和 CLI 的 look 完全一致。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('look'); await wait(c, 18); } } },
+      { name: '点脚', kind: '随机', trig: '静息时随机出现', src: 'official', clip: 'tap', desc: '一侧的脚连点 4 下，节奏 2、2、2、2、1、1 格，越点越快。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('tap'); await wait(c, 16); } } },
+      { name: '打喷嚏', kind: '随机', trig: '静息时随机出现，很少', src: 'official', clip: 'sneeze', desc: '闭眼、两手抬起憋 4 格，然后猛地一蹲，旁边喷出一团 ~。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('sneeze'); await wait(c, 20); } } },
+      { name: '横着碎步', kind: '随机', trig: '静息时随机出现', src: 'official', clip: 'waddle', desc: '像螃蟹一样横着挪，每 2 格挪 1 个像素，两侧的脚轮流抬起；走到头回头看一眼再走回来。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('waddle'); await wait(c, 14); } } },
+      { name: '伸懒腰', kind: '随机', trig: '静息时随机出现', src: 'new', clip: 'yawn', desc: '闭眼把两只手举过头顶，停一会儿，然后一蹲放松。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('yawn'); await wait(c, 18); } } },
+      { name: '原地跳', kind: '随机', trig: '静息时随机出现，很少', src: 'official', clip: 'jump', desc: '蹲下带两点灰尘，再一蹲带 ~，手抬起跳 4 格高，连跳两次。脚下影子随高度变短。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { await a.play('jump'); await wait(c, 18); } } },
+      { name: '打瞌睡 → 睡着', kind: '循环', trig: '空闲满 2 分钟', src: 'new', clip: 'sleep', desc: '眼皮一点点耷拉下来，最后闭成一条线、往下沉一格。睡着后呼吸更慢，每次吸气飘出一个 z。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { a.asleep = false; a.setLoop('idle'); await wait(c, 20); a.asleep = true; a.setLoop('sleep'); await a.play('doze'); await wait(c, 120); } } },
+      { name: '被吵醒', kind: '单次', trig: '睡着时指针靠近、或会话有新动静', src: 'new', clip: 'wake', desc: '眼睛瞪圆、往上一弹，头顶闪一下灰色 !，左右看看，眨眼。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; for (;;) { a.asleep = true; a.setLoop('sleep'); await wait(c, 45); a.asleep = false; a.setLoop('idle'); await a.play('wake'); await wait(c, 20); } } },
+    ] },
+  { key: 'running', en: 'Working', title: '工作', blurb: '头顶是像素版的 Claude 思考指示符，按终端里的 2 秒余弦节奏在 · ✢ ✳ ✶ ✻ ✽ 之间来回。主力动作是抱着笔记本敲代码；另外按当前工具细分四种，需要状态文件多记一个工具名，拿不到时就抱笔记本。离开“运行中”时先把笔记本合上收好，再做下一个状态的进场动作。',
+    cards: [
+      { name: '抱着笔记本敲代码', kind: '单次 + 循环', trig: '提交提示词；Edit / Write 工具；拿不到工具名时的默认', src: 'new', clip: 'laptop', desc: '开工时掏出笔记本、一格格翻开屏幕。低头两手轮流敲，眼睛只从屏幕上沿露出一条；敲一阵抬眼看看屏幕，最后右手高高举起、重重按下回车，开心地眯一下眼，旁边飘出 &lt; / &gt;。收工时合上笔记本再收起来。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { a.acc = null; a.tint = 'dim'; a.setLoop('idle'); await wait(c, 14); a.tint = null; a.acc = 'spinner'; a.setLoop('laptop'); await a.play('lap_open'); await wait(c, 96); await a.play('lap_close'); } } },
+      { name: '思考', kind: '循环', trig: '还没调用工具（思考中…）', src: 'official', clip: 'think', desc: '眼睛往上看，身体慢慢沉浮，偶尔左右瞟。指示符的节奏照抄 CLI。',
+        run: async (c) => { const a = solo(c); a.acc = 'spinner'; a.setLoop('think'); } },
+      { name: '读文件', kind: '循环', trig: 'Read / Grep / Glob', src: 'new', clip: 'read', desc: '眼睛朝下从左扫到右，再一下跳回左边，像在一行行地读。',
+        run: async (c) => { const a = solo(c); a.acc = 'spinner'; a.setLoop('read'); } },
+      { name: '跑命令', kind: '循环', trig: 'Bash', src: 'new', clip: 'bash', desc: '看着前方，左右挪着小碎步、两手交替，像在旁边盯着命令跑完。',
+        run: async (c) => { const a = solo(c); a.acc = 'spinner'; a.setLoop('bash'); } },
+      { name: '派子任务', kind: '循环', trig: 'Agent / Task', src: 'new', clip: 'juggle', desc: '仰头抛接三颗小球，每颗代表一个分出去的子任务。点子来自社区桌宠 clawd-on-desk。',
+        run: async (c) => { const a = solo(c); a.acc = 'spinner'; a.prop = 'juggle'; a.setLoop('juggle'); } },
+    ] },
+  { key: 'waiting', en: 'Asking', title: '提问 / 申请权限', blurb: '最需要你的状态，所以动作最大。进入时有一下“有事！”，橙色的 ! 从此常驻右上角、隔一会儿蹦一下，直到你处理；同时举手挥动，头顶的 ? 一跳一跳。30 秒没人理就开始着急地点脚、蹦，! 也蹦得更勤。',
+    cards: [
+      { name: '有事找你', kind: '单次', trig: '进入“等你确认”', src: 'new', clip: 'alert', desc: '先合上笔记本，然后眼睛瞪圆、两手抬起，原地一弹，右上角蹦出橙色 !；落地扬尘后举起右手。这个 ! 不会消失，一直留到你处理为止。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { a.state = 'running'; a.acc = 'spinner'; a.setLoop('laptop'); await wait(c, 30); enterState(a, 'waiting'); await wait(c, 60); } } },
+      { name: '举手等你', kind: '循环', trig: '等待中', src: 'new', clip: 'ask', desc: '右手在头顶和肩膀之间挥 5 下，停下来看着你，再眨眼。头顶的 ? 每 0.4 秒跳一下，右上角常驻的 ! 每 1.2 秒蹦一下。',
+        run: async (c) => { const a = solo(c); a.state = 'waiting'; a.acc = 'q'; a.setLoop('ask'); } },
+      { name: '等急了', kind: '循环', trig: '等待超过 30 秒', src: 'official', clip: 'impatient', desc: '用 CLI 里越点越快的点脚开头，接着挥手，最后两手举高蹦一下。右上角的 ! 也蹦得更勤，每半秒一下。',
+        run: async (c) => { const a = solo(c); a.state = 'waiting'; a.acc = 'q'; a.setLoop('impatient'); } },
+    ] },
+  { key: 'done', en: 'Done', title: '做完了', blurb: '进入时是一次真正的庆祝：两连跳加彩纸；之后安静地开心着，眼睛弯成 ^ ^，脸上一点腮红，✓ 旁边时不时闪一下 ✦。你点开会话看过之后回到静息。',
+    cards: [
+      { name: '欢呼', kind: '单次', trig: '进入“做完了”', src: 'official', clip: 'celebrate', desc: 'CLI 的 jump 连跳两次加 3 格蹲着收尾，第一跳到顶时撒一把彩纸（来自官方视频里的跺脚撒彩纸）。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { a.state = 'running'; a.acc = 'spinner'; a.setLoop('laptop'); await wait(c, 30); enterState(a, 'done'); await wait(c, 56); } } },
+      { name: '满足', kind: '循环', trig: '做完了，还没去看', src: 'new', clip: 'content', desc: '开心眼加腮红停一会儿，恢复正常眼神，眨眼、张望，再沉一下。✓ 旁边每 2.6 秒闪一个 ✦。',
+        run: async (c) => { const a = solo(c); a.acc = 'check'; a.setLoop('content'); } },
+    ] },
+  { key: 'error', en: 'Error', title: '出错', blurb: '先慌张地抖几下，然后整个调灰、垂着手往下沉。偶尔叹一口气。动作幅度比提问小，但颜色和姿势一眼能看出来出事了。',
+    cards: [
+      { name: '哎呀', kind: '单次', trig: '进入“出错”', src: 'new', clip: 'oops', desc: '眯眼 > <、两手抬起，左右抖 6 格，红色 ! 蹦出来，额头冒一滴汗，然后沉下去。',
+        run: async (c) => { const a = solo(c); a.variant = 'laptop'; for (;;) { a.state = 'running'; a.tint = null; a.acc = 'spinner'; a.setLoop('laptop'); await wait(c, 30); enterState(a, 'error'); await wait(c, 60); } } },
+      { name: '沮丧', kind: '循环', trig: '出错，还没去看', src: 'new', clip: 'slump', desc: '低头、手垂到最低、身体沉一格，偶尔闭眼再沉一点，旁边飘出一口气。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; a.acc = 'bang'; a.setLoop('slump'); } },
+    ] },
+  { key: 'touch', en: 'Interaction', title: '交互', blurb: '所有交互都会打断当前循环，结束后接回原来的状态。卡片里的白色箭头是模拟的鼠标指针。',
+    cards: [
+      { name: '目光跟随', kind: '交互', trig: '指针进入宠物附近约 160 pt', src: 'new', clip: null, sheet: '按指针方向换眼睛：左、右、上、正视', desc: '只在空闲和做完了的时候跟随，忙着的时候不分心。只有眼睛动，换方向那一刻才重画。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx - 95, gy - 30, 1], [cx - 95, gy - 30, 14], [cx - 20, gy - 100, 16], [cx + 15, gy - 110, 10], [cx + 95, gy - 40, 16], [cx + 95, gy - 40, 14], [cx + 20, gy + 18, 14], [cx, gy + 18, 10], [cx - 95, gy - 30, 18]]); await wait(c, 112); } } },
+      { name: '注意到你', kind: '交互', trig: '指针悬停到身上', src: 'new', clip: 'notice', desc: '轻轻抬手往上一顶，然后眼睛跟着指针。如果正在睡觉，就换成“被吵醒”。',
+        run: async (c) => { const a = solo(c); a.tint = 'dim'; const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx + 110, gy - 10, 1], [cx + 110, gy - 10, 6], [cx + 18, gy - 22, 10]]); await wait(c, 16); await a.play('notice'); await wait(c, 20); pathPointer(c, [[cx + 18, gy - 22, 1], [cx + 110, gy - 10, 10]]); await wait(c, 18); } } },
+      { name: '来回蹭', kind: '交互', trig: '指针在身上左右来回 3 次以上', src: 'new', clip: 'pet', desc: '像被摸头：眼睛笑弯、脸红，一下下沉浮，头顶冒出小爱心。停手 0.7 秒后结束。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground;
+          for (;;) { a.setMode(null); pathPointer(c, [[cx + 100, gy - 40, 1], [cx - 10, gy - 52, 10]]); await wait(c, 10);
+            const pts = [[cx - 10, gy - 52, 1]]; for (let i = 0; i < 8; i++) pts.push([i % 2 ? cx - 22 : cx + 22, gy - 52, 3]); pathPointer(c, pts); await wait(c, 4); a.setMode('pet'); await wait(c, 22);
+            a.setMode(null); await a.play('pet_end'); pathPointer(c, [[cx - 22, gy - 52, 1], [cx + 100, gy - 40, 10]]); await wait(c, 18); } } },
+      { name: '按下 · 点击', kind: '交互', trig: '按下鼠标；松开且没拖动', src: 'official', clip: 'boop_end', sheet: 'press', desc: 'CLI 的 boop：按下时眯眼蹲下、扬尘；松开往左看一眼，然后跳回会话窗口。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground;
+          for (;;) { pathPointer(c, [[cx + 100, gy - 20, 1], [cx + 8, gy - 26, 10]]); await wait(c, 12); c.ptrDown = true; a.setMode('press'); await wait(c, 8); c.ptrDown = false; a.setMode(null); await a.play('boop_end'); await wait(c, 8); pathPointer(c, [[cx + 8, gy - 26, 1], [cx + 100, gy - 20, 10]]); await wait(c, 18); } } },
+      { name: '拎起来', kind: '交互', trig: '按住其中一只拖动', src: 'new', clip: 'held', desc: '只有被你抓住的那只会这样：眯眼 > <，两脚垂下来乱蹬、两手轮流挥。身体比指针慢半拍，往拖动的反方向甩。',
+        run: async (c) => { const a = solo(c); const cx = c.w / 2, gy = c.ground, ax0 = a.ax;
+          for (;;) { a.lift = 0; a.ax = ax0; a.lag = 0; pathPointer(c, [[cx + 100, gy - 20, 1], [cx + 6, gy - 26, 10]]); await wait(c, 12); c.ptrDown = true; a.setMode('press'); await wait(c, 4);
+            a.setMode('held'); c.carry = { a, ox: ax0 - (cx + 6), oy: gy - (gy - 26), lift: 5 };
+            pathPointer(c, [[cx + 6, gy - 26, 1], [cx + 6, gy - 46, 5], [cx - 40, gy - 46, 9], [cx + 40, gy - 46, 14], [cx + 6, gy - 46, 9]]); await wait(c, 38);
+            c.carry = null; c.ptrDown = false; a.ax = ax0; a.lag = 0; a.lift = 0; a.setMode(null); await a.play('drop'); pathPointer(c, [[cx + 6, gy - 46, 1], [cx + 100, gy - 30, 10]]); await wait(c, 18); } } },
+      { name: '其余的跟着走', kind: '交互', trig: '拖动时，没被抓住的那几只', src: 'new', clip: null, sheet: '每格走 1 个像素，落后超过 6 个像素改成小跑，最多落后 12 个像素', desc: '它们不会悬空，也不会和指针完全同步：先留在原地，然后看着前进方向迈小碎步追上来，落后多了就小跑。往上拖时跳着跟上，往下拖时跳下来落地扬尘。追上后转头看着被拎着的那只，停手后眨眨眼。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const g = f.actors[1]; await wait(c, 2);
+          const gx = g.ax + 9 * f.u, gy = c.ground - 5 * f.u;
+          pathPointer(c, [[gx + 90, gy - 30, 1], [gx + 2, gy, 10]]); await wait(c, 12);
+          c.ptrDown = true; g.setMode('press'); await wait(c, 3);
+          g.setMode('held'); g.lift = 2; f.actors.forEach((a) => { if (a !== g) startFollow(a, g); });
+          c.flockDrag = { g, y0: gy };
+          pathPointer(c, [[gx + 2, gy, 1], [gx - 44, gy - 8, 12], [gx - 44, gy - 8, 12], [gx + 50, gy - 8, 18], [gx + 50, gy - 8, 16], [gx + 2, gy - 8, 12], [gx + 2, gy - 8, 4]]); await wait(c, 76);
+          c.flockDrag = null; c.ptrDown = false; g.lift = 0; g.lag = 0; g.setMode(null); g.play('drop'); f.actors.forEach((a) => { a.followHold = false; });
+          pathPointer(c, [[gx + 2, gy - 8, 1], [gx + 90, gy - 30, 10]]); await wait(c, 34); } } },
+      { name: '放下', kind: '交互', trig: '拖动后松开', src: 'official', clip: 'drop', desc: '松手后先在空中停 1 格，落地蹲下扬尘（CLI 的 drop），然后左右看看确认位置，眨眼，接回原来的状态。',
+        run: async (c) => { const a = solo(c); for (;;) { a.setMode('held'); a.lift = 5; await wait(c, 14); a.lift = 2; await wait(c, 1); a.lift = 0; a.setMode(null); await a.play('drop'); await wait(c, 16); } } },
+    ] },
+  { key: 'flock', en: 'Flock', title: '展开与合并', blurb: '会话多了合成一堆，点开再散成一排。每只 Clawd 都是一下一下蹦过去的，而不是平移滑过去；落地扬一点尘，气泡和标签等它落地后再出现。',
+    cards: [
+      { name: '展开', kind: '单次', trig: '点那一堆、或会话数降到阈值以下', src: 'official', clip: null, sheet: '每只错开 2 格起跳，一跳 4 格、最多横移 14 个像素，落地扬尘', desc: '离那一堆最近的先跳，一只接一只蹦到自己的位置。蹦法用的是 CLI 的 skip。',
+        flock: 3, run: async (c) => { for (;;) { c.flock.collapseNow(); await wait(c, 22); c.flock.expand(); await wait(c, 52); } } },
+      { name: '合并', kind: '单次', trig: '点“收起”、或会话数超过阈值', src: 'new', clip: null, sheet: '最近的先回；先到的坐到最后面，后到的坐在它前面，最急的那只站最前', desc: '大家一只只蹦回右端。每只一落地就直接坐进那一堆的背后、变暗垫高一格，不会先消失再出现；最急的那只站在最前面，计数小标签最后出现。',
+        flock: 3, run: async (c) => { for (;;) { c.flock.expandNow(); await wait(c, 24); c.flock.collapse(); await wait(c, 46); } } },
+      { name: '新会话加入', kind: '单次', trig: '发现一个新会话', src: 'official', clip: 'peekaboo', desc: 'CLI 的 peekaboo：先从地面下只露出眼睛，左右看看，然后举着手蹦上来、眨眼。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const a = f.actors[2]; a.setLoop('hidden'); a.hidden = false; await wait(c, 16); a.setLoop('idle'); await a.play('peekaboo'); await wait(c, 40); } } },
+      { name: '会话结束', kind: '单次', trig: '会话关闭或被手动关掉', src: 'new', clip: 'leave', desc: '笑着挥三下手，蹲下、只露眼睛再看一眼，然后沉进地面，噗一下没了；旁边的会补位。',
+        flock: 3, run: async (c) => { const f = c.flock; for (;;) { f.expandNow(); const a = f.actors[2]; a.setLoop('idle'); await wait(c, 16); await a.play('leave'); a.setLoop('hidden'); await wait(c, 30); } } },
+      { name: '显示 / 隐藏', kind: '单次', trig: '/pet、菜单栏或快捷键', src: 'official', clip: 'appear', desc: '显示时从天上掉下来，举着手落地扬尘（CLI 的 drop）；隐藏时蹲下、沉进地面消失。',
+        run: async (c) => { const a = solo(c); for (;;) { a.setLoop('hidden'); await wait(c, 10); a.setLoop('idle'); await a.play('appear'); await wait(c, 34); await a.play('vanish'); a.setLoop('hidden'); await wait(c, 6); } } },
+    ] },
+];
+
+/* ---------- mini flock used by the flock cards ---------- */
+class MiniFlock {
+  constructor(card, n) {
+    this.card = card; this.u = 3; this.n = n;
+    this.actors = Array.from({ length: n }, (_, i) => new Actor({ u: 3, base: 'idle' }));
+    const states = ['running', 'waiting', 'idle'];
+    this.actors.forEach((a, i) => { a.variant = 'laptop'; enterState(a, states[i % states.length], { quiet: true }); });
+    this.merged = false; this.shiftX = 0;
+  }
+  geom() {
+    const u = this.u, c = this.card, colW = 18 * u + 10;
+    const right = c.w / 2 + (this.n * colW) / 2 + this.shiftX;
+    return { u, colW, right };
+  }
+  backCount() { return Math.min(2, this.n - 1); }
+  slotAx(i) { const g = this.geom(); return Math.round(g.right - (this.n - 1 - i) * g.colW - g.colW / 2 - 9 * g.u); }
+  pileAx() { return this.slotAx(this.n - 1) - 4 * this.u; }
+  leadIndex() { return 1; }
+  layoutNow(merged) {
+    this.merged = merged;
+    this.shiftX = 0;
+    this.actors.forEach((a, i) => {
+      a.ground = this.card.ground; a.traveling = false; a.cancelOnce();
+      a.offX = 0; a.offY = 0; a.follow = false; a.followHold = false; a.lift = 0; a.lag = 0;
+      restoreLook(a);
+      if (merged) { a.ax = this.pileAx(); a.hidden = i !== this.leadIndex(); }
+      else { a.ax = this.slotAx(i); a.hidden = false; }
+      a.noAcc = merged;
+    });
+  }
+  collapseNow() { this.layoutNow(true); }
+  expandNow() { this.layoutNow(false); }
+  expand() {
+    const pile = this.pileAx(), L = this.leadIndex(); this.merged = false;
+    const order = this.actors.map((a, i) => i).sort((p, q) => Math.abs(this.slotAx(p) - pile) - Math.abs(this.slotAx(q) - pile));
+    let j = 0;
+    order.forEach((i, k) => {
+      const a = this.actors[i];
+      a.hidden = false; restoreLook(a);
+      const back = i === L ? 0 : Math.max(1, this.backCount() - j++);
+      travel(a, pile + back * 4 * this.u, this.slotAx(i), back, k * 2, 12);
+    });
+  }
+  collapse() {
+    const pile = this.pileAx(), u = this.u, L = this.leadIndex(), nb = this.backCount();
+    const order = this.actors.map((a, i) => i).sort((p, q) => Math.abs(this.slotAx(p) - pile) - Math.abs(this.slotAx(q) - pile));
+    let left = order.length, j = 0;
+    const seat = {};
+    const done = () => { if (--left === 0) { this.merged = true; this.actors.forEach((b, i) => { b.noAcc = true; if (i !== L) b.hidden = true; }); } };
+    this.actors.forEach((a) => { a.noAcc = true; });
+    order.forEach((i, k) => {
+      const a = this.actors[i];
+      if (i === L) { a.z = 3; travel(a, a.ax, pile, 0, k * 2, 12).then(done); return; }
+      // the first ones home take the far back of the pile, later ones sit in front of them
+      const slot = j < nb ? nb - j : 1; j++;
+      a.z = 2; a.settleAlpha = slot === 2 ? 0.55 : 0.75; a.settleZ = 2 - slot;
+      a.setLoop(pileHold(slot));
+      travel(a, a.ax, pile + slot * 4 * u, 0, k * 2, 12, slot).then(() => {
+        if (seat[slot] && seat[slot] !== a) seat[slot].hidden = true;
+        seat[slot] = a; done();
+      });
+    });
+  }
+  drawBacks(ctx) {
+    if (!this.merged) return;
+    const pile = this.pileAx(), u = this.u, g = this.card.ground;
+    for (let k = this.backCount(); k >= 1; k--) drawPose(ctx, (this.card.clock + k * 17) % 70 < 2 ? 'shut' : 'base', pile + k * 4 * u, g - k * u, u, 0, 0, 'dim', k === 2 ? 0.55 : 0.75);
+  }
+}
+
+/* ---------- build catalog cards ---------- */
+const cards = [];
+const catalog = document.getElementById('catalog');
+for (const grp of GROUPS) {
+  const sec = document.createElement('section');
+  sec.className = 'group';
+  sec.setAttribute('aria-labelledby', 'g-' + grp.key);
+  sec.innerHTML = `<div class="group-head"><h2 id="g-${grp.key}">${grp.title}</h2><span class="eyebrow">${grp.en}</span><p>${grp.blurb}</p></div><div class="grid"></div>`;
+  const grid = sec.querySelector('.grid');
+  for (const def of grp.cards) {
+    const el = document.createElement('article');
+    el.className = 'card';
+    const sheetKeys = def.clip ? M.clips[def.clip] : null;
+    const ticks = sheetKeys ? sheetKeys.reduce((s, k) => s + k[1], 0) : 0;
+    const strip = sheetKeys
+      ? `<div class="xs" aria-hidden="true">${sheetKeys.map((k) => `<i style="flex:${k[1]}" title="${k[0]} · ${k[1]} 格"></i>`).join('')}</div>
+         <div class="meta"><span>${sheetKeys.length} 个关键姿势 · ${ticks} 格 · ${(ticks * TICK / 1000).toFixed(2)} s</span><b class="src ${def.src}">${def.src === 'official' ? '官方' : '新设计'}</b></div>`
+      : `<div class="meta"><span>${def.sheet}</span><b class="src ${def.src}">${def.src === 'official' ? '官方' : '新设计'}</b></div>`;
+    el.innerHTML = `<canvas role="img" aria-label="${def.name}动画演示，点击重播"></canvas>
+      <div class="body"><h3>${def.name}<span class="kind">${def.kind}</span></h3><p class="trig">${def.trig}</p><p class="desc">${def.desc}</p><div class="foot">${strip}</div></div>`;
+    grid.appendChild(el);
+    const card = { def, el, cv: el.querySelector('canvas'), cells: el.querySelectorAll('.xs i'), clock: 0, waiters: [], actors: [], visible: false, started: false, ptr: null, ptrPath: null, ptrDown: false, carry: null, w: 0, h: 150, ground: 118, gen: 0 };
+    cards.push(card);
+    card.cv.addEventListener('click', () => restartCard(card));
+  }
+  catalog.appendChild(sec);
+}
+
+function setupCard(card) {
+  const { w } = fitCanvas(card.cv);
+  card.w = w; card.h = 150; card.ground = 118;
+  card.waiters = []; card.clock = 0; card.ptr = null; card.ptrPath = null; card.ptrDown = false; card.carry = null; card.flockDrag = null;
+  card.gen++;
+  if (card.def.flock) {
+    card.flock = new MiniFlock(card, card.def.flock);
+    card.actors = card.flock.actors;
+    card.flock.expandNow();
+  } else {
+    const u = 5;
+    const a = new Actor({ u, base: 'idle', reduce: REDUCED });
+    a.ax = Math.round(w / 2 - 9 * u); a.ground = card.ground;
+    card.actors = [a];
+    card.flock = null;
+  }
+  card.actors.forEach((a) => { a.reduce = REDUCED; });
+  card.hl = card.def.flock ? card.actors[card.actors.length - 1] : card.actors[0];
+  card.def.run(card).catch(() => {});
+}
+function restartCard(card) {
+  // drop the old script by failing its pending waits, then start over
+  const old = card.waiters; card.waiters = [];
+  card.actors.forEach((a) => { a.onceResolve = null; a.once = null; });
+  old.forEach((w) => { w.res = null; });
+  setupCard(card);
+}
+
+/* pointer path stepping (cards) */
+function stepPointer(card) {
+  const pp = card.ptrPath;
+  if (!pp) return;
+  const { pts } = pp;
+  if (pp.i >= pts.length - 1) { card.ptr = { x: pts[pts.length - 1][0], y: pts[pts.length - 1][1] }; return; }
+  const [x0, y0] = pts[pp.i], [x1, y1, t1] = pts[pp.i + 1];
+  pp.t++;
+  const p = Math.min(1, pp.t / t1);
+  const ease = p < 0.5 ? 2 * p * p : 1 - Math.pow(-2 * p + 2, 2) / 2;
+  card.ptr = { x: x0 + (x1 - x0) * ease, y: y0 + (y1 - y0) * ease };
+  if (p >= 1) { pp.i++; pp.t = 0; }
+}
+function gazeFor(a, px, py) {
+  const cx = a.ax + 9 * a.u, cy = a.ground - 7 * a.u;
+  const dx = px - cx, dy = py - cy;
+  if (Math.hypot(dx, dy) > 170) return null;
+  if (dy < -Math.max(28, Math.abs(dx) * 1.1)) return 'look_up';
+  if (dx < -6 * a.u) return 'look_l';
+  if (dx > 6 * a.u) return 'look_r';
+  return dy > 10 ? 'look_down' : 'base';
+}
+
+function stepCard(card) {
+  card.clock++;
+  const due = card.waiters.filter((w) => w.at <= card.clock);
+  card.waiters = card.waiters.filter((w) => w.at > card.clock);
+  due.forEach((w) => w.res && w.res());
+  stepPointer(card);
+  const prevPtr = card.prevPtr;
+  card.prevPtr = card.ptr ? { ...card.ptr } : null;
+  if (card.carry && card.ptr) {
+    const a = card.carry.a;
+    const vx = prevPtr ? card.ptr.x - prevPtr.x : 0;
+    a.ax = Math.round((card.ptr.x + card.carry.ox) / a.u) * a.u;
+    a.lag = Math.max(-3, Math.min(3, Math.round(-vx / 4)));
+    a.lift = Math.max(0, Math.round((card.ground - 26 - card.ptr.y) / a.u) + 1);
+  }
+  if (card.flockDrag && card.ptr) {
+    const f = card.flock, g = card.flockDrag.g, dx = prevPtr ? card.ptr.x - prevPtr.x : 0;
+    f.shiftX += dx;
+    f.actors.forEach((a, i) => { a.ax = f.slotAx(i); if (a !== g) followShift(a, dx, 0); });
+    g.lag = dx ? Math.max(-3, Math.min(3, Math.round(-dx / 3))) : g.lag - Math.sign(g.lag);
+    g.lift = Math.max(1, Math.min(6, Math.round((card.flockDrag.y0 - card.ptr.y) / g.u) + 2));
+  }
+  for (const a of card.actors) {
+    if (card.def.name === '目光跟随' || card.def.name === '注意到你') a.gaze = card.ptr ? gazeFor(a, card.ptr.x, card.ptr.y) : null;
+    followStep(a);
+    a.step();
+  }
+}
+function drawCard(card) {
+  const { ctx, w, h } = fitCanvas(card.cv);
+  ctx.clearRect(0, 0, w, h);
+  // ground line
+  ctx.fillStyle = '#3A404C';
+  for (let x = 8; x < w - 8; x += 6) ctx.fillRect(x, card.ground, 3, 1);
+  if (card.flock) card.flock.drawBacks(ctx);
+  [...card.actors].sort((p, q) => p.z - q.z).forEach((a) => a.draw(ctx));
+  if (card.ptr) drawGlyph(ctx, card.ptrDown ? 'grab' : 'ptr', Math.round(card.ptr.x), Math.round(card.ptr.y), 2, '#fff');
+  // exposure strip highlight
+  const a = card.hl;
+  if (card.cells.length && a) {
+    const want = card.def.clip;
+    const playing = a.curName === want ? a.ki : -1;
+    card.cells.forEach((c, i) => c.classList.toggle('on', i === playing));
+  }
+}
+
+/* visibility: only tick cards on screen */
+const io = new IntersectionObserver((entries) => {
+  for (const e of entries) {
+    const card = cards.find((c) => c.el === e.target);
+    if (!card) continue;
+    card.visible = e.isIntersecting;
+    if (card.visible && !card.started) { card.started = true; setupCard(card); drawCard(card); }
+  }
+}, { rootMargin: '120px' });
+cards.forEach((c) => io.observe(c.el));
+
+/* ======================= pose sheet ======================= */
+const poseHost = document.getElementById('poses');
+for (const name of Object.keys(M.poses)) {
+  const box = document.createElement('div');
+  box.className = 'pose';
+  box.innerHTML = `<canvas></canvas><code>${name}</code>`;
+  poseHost.appendChild(box);
+  const cv = box.querySelector('canvas');
+  requestAnimationFrame(() => {
+    const { ctx, w } = fitCanvas(cv);
+    const u = 4, ground = 52, ax = Math.round(w / 2 - 9 * u);
+    ctx.fillStyle = '#3A404C';
+    for (let x = 4; x < w - 4; x += 5) ctx.fillRect(x, ground, 3, 1);
+    drawPose(ctx, name, ax, ground, u, 0, name.startsWith('held') ? 1 : 0, null, 1);
+  });
+}
+
+/* ======================= desk stage ======================= */
+const desk = document.getElementById('desk');
+const deskCv = document.getElementById('deskCanvas');
+const overlay = document.getElementById('overlay');
+const toastEl = document.getElementById('toast');
+const STATE_LABEL = { idle: '空闲', running: '运行中', waiting: '等你确认', done: '做完了', error: '出错' };
+const STATE_STRIPE = { idle: '#8E8E93', running: '#8E8E93', waiting: '#FF9F0A', done: '#34C759', error: '#FF3B30' };
+const TAG_COLOR = { idle: '#48484A', running: '#636366', waiting: '#C77800', done: '#248A3D', error: '#D70015' };
+const CHIP_TEXT = { waiting: '?', error: '!', done: '✓', running: '✻', idle: 'z' };
+const PRIORITY = { waiting: 4, error: 3, done: 2, running: 1, idle: 0 };
+const POOL = [['blog', '终端'], ['infra', 'VS Code'], ['design-sys', 'Desktop'], ['docs', '终端'], ['mobile', 'VS Code']];
+
+const stage = {
+  u: 4, sessions: [], merged: false, userChoice: null, right: 0, bottom: 0, reduce: REDUCED,
+  colW: 132, gap: 10, tagH: 22, handleW: 44, threshold: 4,
+  pointer: null, press: null, drag: null, hoverId: null, rub: null, busy: 0,
+};
+document.getElementById('chkReduce').checked = REDUCED;
+
+function mkSession(id, name, src, state, variant) {
+  const a = new Actor({ u: stage.u, brain: true, reduce: stage.reduce });
+  a.variant = variant || 'laptop';
+  enterState(a, state, { quiet: true });
+  return { id, name, src, actor: a, dom: {} };
+}
+function detailOf(s) {
+  const a = s.actor;
+  if (a.state === 'running') return VARIANT_DETAIL[a.variant];
+  if (a.state === 'waiting') return '需要你确认：Bash(npm test)';
+  if (a.state === 'done') return '做完了：重构了 FlockLayout';
+  if (a.state === 'error') return '出错了：API 请求超时';
+  return null;
+}
+function lead() { return stage.sessions.reduce((b, s) => (!b || PRIORITY[s.actor.state] > PRIORITY[b.actor.state] ? s : b), null); }
+function expandedWidth(n) { return n * stage.colW + (n - 1) * stage.gap + stage.gap + stage.handleW; }
+function fits() { return expandedWidth(stage.sessions.length) <= desk.clientWidth - 24; }
+function autoMerged() { return stage.sessions.length > stage.threshold || !fits(); }
+function groundY() { return stage.bottom - stage.tagH - 6; }
+function slotCenter(i) {
+  const n = stage.sessions.length;
+  return stage.right - stage.handleW - stage.gap - (n - 1 - i) * (stage.colW + stage.gap) - stage.colW / 2;
+}
+function slotAx(i) { return Math.round(slotCenter(i) - 9 * stage.u); }
+function pileCenter() { return stage.right - stage.colW / 2; }
+function pileAx() { return Math.round(pileCenter() - 13 * stage.u); }
+
+function placeAll(snap) {
+  const g = groundY();
+  stage.sessions.forEach((s, i) => {
+    const a = s.actor; a.u = stage.u; a.ground = g; a.noAcc = stage.merged;
+    if (snap) {
+      if (stage.merged) { a.ax = pileAx(); a.hidden = s !== lead(); }
+      else { a.ax = slotAx(i); a.hidden = false; }
+    }
+  });
+  renderOverlay();
+}
+
+function applyOffsets() {
+  for (const s of stage.sessions) {
+    if (!s.dom) continue;
+    const a = s.actor, u = a.u;
+    const t = a.offX || a.offY ? `translate(${Math.round(a.offX / u) * u}px, ${Math.round(a.offY / u) * u}px)` : '';
+    for (const e of [s.dom.bubble, s.dom.tag]) if (e) e.style.transform = t;
+  }
+}
+function el(tag, cls, html) { const e = document.createElement(tag); e.className = cls; if (html != null) e.innerHTML = html; return e; }
+// overlay elements are kept and updated in place (keyed), so showing or hiding one never
+// re-creates the others: a tag that is created visible and then hidden would fade out, i.e. flash
+const overlayEls = new Map();
+function renderOverlay() {
+  for (const e of overlayEls.values()) e._used = false;
+  const u = stage.u, g = groundY(), bubbleBottom = g - 10 * u - 9 * u;
+  stage.sessions.forEach((s) => { s.dom = {}; });
+  const L0 = lead();
+  const put = (key, cls, html, hidden, onClick) => {
+    let e = overlayEls.get(key);
+    const fresh = !e;
+    if (fresh) {
+      e = el('div', cls);
+      e.addEventListener('click', () => e._onClick && e._onClick());
+      overlayEls.set(key, e);
+    }
+    if (e._html !== html) { e.innerHTML = html; e._html = html; }
+    e.classList.toggle('is-hidden', !!hidden);
+    if (fresh) overlay.appendChild(e);
+    e._onClick = onClick; e._used = true;
+    return e;
+  };
+  const addBubble = (s, cx) => {
+    const d = detailOf(s);
+    if (!d) return;
+    const b = put('bubble:' + s.id, 'bubble', `<small>${s.name} · ${STATE_LABEL[s.actor.state]}</small><span>${d}</span>`, s.actor.traveling || s.actor.hidden, () => jumpTo(s));
+    b.style.setProperty('--stripe', STATE_STRIPE[s.actor.state]);
+    b.style.left = Math.round(cx - stage.colW / 2) + 'px';
+    b.style.bottom = Math.round(desk.clientHeight - bubbleBottom) + 'px';
+    s.dom.bubble = b;
+  };
+  const addTag = (key, text, src, color, cx, onClick, hidden, s) => {
+    const t = put(key, 'tag', `${text}${src ? `<em>${src}</em>` : ''}`, hidden, onClick);
+    t.style.background = color;
+    t.style.left = Math.round(cx - t.offsetWidth / 2) + 'px';
+    t.style.top = Math.round(g + 4) + 'px';
+    if (s) s.dom.tag = t;
+  };
+  if (stage.merged && L0) {
+    const cx = pileCenter();
+    addBubble(L0, cx);
+    const counts = {};
+    stage.sessions.forEach((s) => { counts[s.actor.state] = (counts[s.actor.state] || 0) + 1; });
+    const html = Object.keys(PRIORITY).sort((p, q) => PRIORITY[q] - PRIORITY[p]).filter((st) => counts[st])
+      .map((st) => `<b style="background:${STATE_STRIPE[st]}">${CHIP_TEXT[st]} ${counts[st]}</b>`).join('');
+    const chips = put('chips', 'chips', html, stage.busy, () => doExpand());
+    chips.style.left = Math.round(cx - chips.offsetWidth / 2) + 'px';
+    chips.style.top = Math.round(g - 12 * u - 16) + 'px';
+    addTag('tag:merged', `${stage.sessions.length} 个会话 · 点击展开`, null, '#3A3A3C', cx, () => doExpand(), stage.busy);
+  } else if (!stage.merged) {
+    stage.sessions.forEach((s, i) => {
+      const cx = slotCenter(i);
+      addBubble(s, cx);
+      addTag('tag:' + s.id, s.name, s.src, TAG_COLOR[s.actor.state], cx, () => jumpTo(s), s.actor.traveling || s.actor.hidden, s);
+    });
+    if (stage.sessions.length) {
+      const h = put('handle', 'handle', '⇥ 收起', stage.busy, () => doCollapse());
+      h.style.left = Math.round(stage.right - stage.handleW) + 'px';
+      h.style.top = Math.round(g - 5 * u - 9) + 'px';
+    }
+  }
+  for (const [key, e] of overlayEls) if (!e._used) { e.remove(); overlayEls.delete(key); }
+  applyOffsets();
+}
+
+let toastTimer = 0;
+function toast(msg) { toastEl.textContent = msg; toastEl.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { toastEl.hidden = true; }, 1600); }
+function jumpTo(s) {
+  toast(`跳回「${s.name}」所在的窗口（演示）`);
+  const a = s.actor;
+  if (a.state === 'done') { setTimeout(() => setState(s, 'idle', true), 900); }
+}
+
+async function doExpand() {
+  if (!stage.merged || stage.busy || !fits()) { if (!fits()) toast('屏幕放不下展开的一排，先保持合并'); return; }
+  stage.userChoice = 'expanded';
+  stage.merged = false; stage.busy++;
+  const pile = pileAx();
+  const L0 = lead();
+  const order = stage.sessions.map((s, i) => i).sort((p, q) => Math.abs(slotAx(p) - pile) - Math.abs(slotAx(q) - pile));
+  let j = 0;
+  const nb = Math.min(2, stage.sessions.length - 1);
+  const jobs = order.map((i, k) => {
+    const s = stage.sessions[i], a = s.actor;
+    a.hidden = false; a.ground = groundY(); restoreLook(a);
+    const back = s === L0 ? 0 : Math.max(1, nb - j++);
+    return travel(a, pile + back * 4 * stage.u, slotAx(i), back, k * 2).then(() => renderOverlay());
+  });
+  renderOverlay();
+  await Promise.all(jobs);
+  stage.busy--; renderOverlay(); syncButtons();
+}
+async function doCollapse(auto) {
+  if (stage.merged || stage.busy) return;
+  if (!auto) stage.userChoice = 'merged';
+  stage.busy++;
+  const pile = pileAx();
+  const L0 = lead();
+  const order = stage.sessions.map((s, i) => i).sort((p, q) => Math.abs(slotAx(p) - pile) - Math.abs(slotAx(q) - pile));
+  stage.sessions.forEach((s) => { s.actor.traveling = true; s.actor.noAcc = true; });
+  renderOverlay();
+  const u = stage.u, nb = Math.min(2, stage.sessions.length - 1), seat = {};
+  let j = 0;
+  const jobs = order.map((i, k) => {
+    const s = stage.sessions[i], a = s.actor;
+    if (s === L0) { a.z = 3; return travel(a, a.ax, pile, 0, k * 2); }
+    // the first ones home take the far back of the pile, later ones sit in front of them
+    const slot = j < nb ? nb - j : 1; j++;
+    a.z = 2; a.settleAlpha = slot === 2 ? 0.55 : 0.75; a.settleZ = 2 - slot;
+    a.setLoop(pileHold(slot));
+    return travel(a, a.ax, pile + slot * 4 * u, 0, k * 2, 14, slot).then(() => {
+      if (seat[slot] && seat[slot] !== a) seat[slot].hidden = true;
+      seat[slot] = a;
+    });
+  });
+  await Promise.all(jobs);
+  stage.merged = true; stage.busy--;
+  placeAll(true); syncButtons();
+}
+
+function setState(s, st, quiet) {
+  const a = s.actor;
+  enterState(a, st);
+  if (quiet && st === 'idle') a.play('seen');
+  renderOverlay(); buildPanel();
+}
+
+/* ---------- desk pointer interaction ---------- */
+function actorAt(x, y) {
+  if (stage.merged) {
+    const L0 = lead(); if (!L0) return null;
+    const ax = pileAx(), g = groundY(), u = stage.u;
+    if (x >= ax - u && x <= ax + 27 * u && y >= g - 13 * u && y <= g + 2) return L0;
+    return null;
+  }
+  for (const s of stage.sessions) {
+    const a = s.actor; if (a.hidden) continue;
+    const u = a.u;
+    if (x >= a.ax + u && x <= a.ax + 17 * u && y >= a.ground - 11 * u && y <= a.ground + 2) return s;
+  }
+  return null;
+}
+function localPt(e) { const r = desk.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; }
+
+desk.addEventListener('pointermove', (e) => {
+  const p = localPt(e);
+  const prev = stage.pointer;
+  stage.pointer = p;
+  if (stage.press && !stage.drag) {
+    if (Math.hypot(p.x - stage.press.x, p.y - stage.press.y) >= 3) startDrag(p);
+  }
+  if (stage.drag) {
+    const d = stage.drag;
+    const minRight = (stage.merged ? stage.colW : expandedWidth(stage.sessions.length)) + 8;
+    const minBottom = stage.tagH + 6 + 19 * stage.u + 64;
+    const nr = Math.max(minRight, Math.min(desk.clientWidth - 8, d.right0 + (p.x - d.x)));
+    const nb = Math.max(minBottom, Math.min(desk.clientHeight - 6, d.bottom0 + (p.y - d.y)));
+    stage.lastDragMove = performance.now();
+    const vx = prev ? p.x - prev.x : 0;
+    const dR = nr - stage.right, dB = nb - stage.bottom;
+    stage.right = nr; stage.bottom = nb;
+    stage.sessions.forEach((s) => {
+      if (s === d.grabbed) s.actor.lag = Math.max(-3, Math.min(3, Math.round(-vx / 3)));
+      else followShift(s.actor, dR, dB);
+    });
+    placeAll(true);
+    return;
+  }
+  const hit = actorAt(p.x, p.y);
+  desk.style.cursor = hit ? 'pointer' : 'default';
+  if (hit && stage.hoverId !== hit.id) {
+    stage.hoverId = hit.id;
+    const a = hit.actor;
+    if (a.asleep) wake(a);
+    else if (!a.once && !a.modeLoop) a.play('notice');
+    stage.rub = { id: hit.id, lastX: p.x, dir: 0, flips: [] };
+  } else if (!hit && stage.hoverId) {
+    endPet(); stage.hoverId = null; stage.rub = null;
+  }
+  // rubbing back and forth over a Clawd
+  if (hit && stage.rub && stage.rub.id === hit.id) {
+    const r = stage.rub, dx = p.x - r.lastX;
+    if (Math.abs(dx) >= 3) {
+      const d = Math.sign(dx);
+      if (r.dir && d !== r.dir) r.flips.push(performance.now());
+      r.dir = d; r.lastX = p.x;
+      r.flips = r.flips.filter((t) => performance.now() - t < 1000);
+      if (r.flips.length >= 3 && hit.actor.modeLoop !== 'pet') { hit.actor.setMode('pet'); }
+      r.lastMove = performance.now();
+    }
+  }
+  // everyone nearby looks at the pointer
+  stage.sessions.forEach((s) => { s.actor.gaze = gazeFor(s.actor, p.x, p.y); });
+});
+function endPet() {
+  for (const s of stage.sessions) if (s.actor.modeLoop === 'pet') { s.actor.setMode(null); s.actor.play('pet_end'); }
+}
+desk.addEventListener('pointerleave', () => {
+  stage.pointer = null; endPet(); stage.hoverId = null; stage.rub = null;
+  stage.sessions.forEach((s) => { s.actor.gaze = null; });
+});
+desk.addEventListener('pointerdown', (e) => {
+  if (e.target !== deskCv) return;
+  const p = localPt(e);
+  const hit = actorAt(p.x, p.y);
+  if (!hit || stage.busy) return;
+  desk.setPointerCapture(e.pointerId);
+  stage.press = { x: p.x, y: p.y, s: hit };
+  endPet();
+  hit.actor.cancelOnce();
+  hit.actor.setMode('press');
+});
+function startDrag(p) {
+  const pr = stage.press;
+  stage.drag = { x: pr.x, y: pr.y, right0: stage.right, bottom0: stage.bottom, grabbed: pr.s };
+  const g = pr.s.actor;
+  g.cancelOnce(); g.setMode('held'); g.lift = 3; g.gaze = null;
+  stage.sessions.forEach((s) => { if (s !== pr.s && !s.actor.hidden) startFollow(s.actor, g); });
+  desk.style.cursor = 'grabbing';
+}
+desk.addEventListener('pointerup', (e) => {
+  const pr = stage.press;
+  stage.press = null;
+  if (stage.drag) {
+    const g = stage.drag.grabbed.actor;
+    stage.drag = null;
+    g.lag = 0; g.lift = 0; g.setMode(null); g.play('drop');
+    stage.sessions.forEach((s) => { s.actor.followHold = false; });
+    desk.style.cursor = 'default';
+    return;
+  }
+  if (!pr) return;
+  const a = pr.s.actor;
+  a.setMode(null);
+  a.play('boop_end');
+  if (stage.merged) setTimeout(() => doExpand(), 200);
+  else setTimeout(() => jumpTo(pr.s), 250);
+});
+
+/* ---------- desk controls ---------- */
+const panel = document.getElementById('sessPanel');
+function buildPanel() {
+  panel.querySelectorAll('.srow').forEach((r) => r.remove());
+  stage.sessions.forEach((s) => {
+    const row = el('div', 'srow');
+    const states = ['idle', 'running', 'waiting', 'done', 'error'];
+    row.innerHTML = `<span class="nm">${s.name}</span><span class="seg" role="group" aria-label="${s.name} 的状态">${states.map((st) => `<button type="button" data-st="${st}" aria-pressed="${s.actor.state === st}">${STATE_LABEL[st].replace('运行中', '运行').replace('等你确认', '提问').replace('做完了', '完成')}</button>`).join('')}</span>` +
+      (s.actor.state === 'running' ? `<select aria-label="${s.name} 正在用的工具">${Object.entries(VARIANTS).map(([k, v]) => `<option value="${k}"${k === s.actor.variant ? ' selected' : ''}>${v}</option>`).join('')}</select>` : '');
+    row.querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setState(s, b.dataset.st)));
+    const sel = row.querySelector('select');
+    if (sel) sel.addEventListener('change', async () => {
+      const a = s.actor, from = a.variant, to = sel.value;
+      if (from === 'laptop' && to !== 'laptop') await a.play('lap_close');
+      a.variant = to; a.prop = to === 'juggle' ? 'juggle' : null; a.setLoop(to);
+      if (to === 'laptop') a.play('lap_open');
+      renderOverlay();
+    });
+    panel.appendChild(row);
+  });
+}
+function syncButtons() {
+  document.getElementById('bToggle').textContent = stage.merged ? '展开成一排' : '合并成一堆';
+  document.getElementById('bLeave').disabled = stage.sessions.length <= 1;
+}
+document.getElementById('bToggle').addEventListener('click', () => (stage.merged ? doExpand() : doCollapse()));
+document.getElementById('bJoin').addEventListener('click', async () => {
+  if (stage.busy) return;
+  const used = new Set(stage.sessions.map((s) => s.name));
+  const pick = POOL.find(([n]) => !used.has(n));
+  if (!pick) { toast('演示里最多 9 个会话'); return; }
+  const s = mkSession('s' + Date.now(), pick[0], pick[1], 'idle');
+  const wasMerged = stage.merged;
+  stage.sessions.push(s);
+  stage.userChoice = null;
+  const willMerge = autoMerged();
+  if (wasMerged) {
+    placeAll(true); buildPanel(); syncButtons();
+    if (!willMerge) doExpand();
+    return;
+  }
+  // existing Clawds scoot left to make room, the newcomer peeks up from the ground
+  stage.busy++;
+  const g = groundY();
+  const jobs = stage.sessions.slice(0, -1).map((o, i) => { const from = o.actor.ax; return travel(o.actor, from, slotAx(i), 0, i, 16); });
+  s.actor.ax = slotAx(stage.sessions.length - 1); s.actor.ground = g; s.actor.u = stage.u;
+  s.actor.traveling = true;
+  renderOverlay(); buildPanel();
+  jobs.push(s.actor.play('peekaboo').then(() => { s.actor.traveling = false; renderOverlay(); }));
+  await Promise.all(jobs);
+  stage.busy--;
+  renderOverlay();
+  if (willMerge) doCollapse(true);
+  syncButtons();
+});
+document.getElementById('bLeave').addEventListener('click', async () => {
+  if (stage.busy || stage.sessions.length <= 1) return;
+  const s = stage.sessions[stage.sessions.length - 1];
+  stage.busy++;
+  if (!stage.merged) {
+    await s.actor.play('leave');
+    stage.sessions.pop();
+    stage.userChoice = null;
+    const jobs = stage.sessions.map((o, i) => travel(o.actor, o.actor.ax, slotAx(i), 0, i, 16));
+    renderOverlay(); buildPanel();
+    await Promise.all(jobs);
+    stage.busy--;
+  } else {
+    stage.sessions.pop();
+    stage.busy--;
+    stage.userChoice = null;
+    if (!autoMerged()) { stage.merged = true; placeAll(true); doExpand(); }
+    else placeAll(true);
+  }
+  buildPanel(); renderOverlay(); syncButtons();
+});
+document.getElementById('bSleep').addEventListener('click', () => {
+  let n = 0;
+  stage.sessions.forEach((s) => { const a = s.actor; if (a.state === 'idle' && !a.asleep) { a.idleTicks = M.states.idle.sleepAfter - 1; n++; } });
+  toast(n ? `${n} 个空闲的会话要睡着了` : '现在没有空闲的会话');
+});
+document.getElementById('bShow').addEventListener('click', async () => {
+  if (stage.busy) return;
+  stage.busy++;
+  const vis = stage.sessions.filter((s) => !s.actor.hidden);
+  renderOverlay();
+  await Promise.all(vis.map((s, i) => new Promise((r) => setTimeout(r, i * 60)).then(() => s.actor.play('vanish'))));
+  vis.forEach((s) => s.actor.setMode('hidden'));
+  overlay.style.opacity = '0';
+  await new Promise((r) => setTimeout(r, 700));
+  overlay.style.opacity = '';
+  await Promise.all(vis.map((s, i) => new Promise((r) => setTimeout(r, i * 90)).then(() => { s.actor.setMode(null); return s.actor.play('appear'); })));
+  stage.busy--;
+  renderOverlay();
+});
+document.getElementById('selSize').addEventListener('change', (e) => { stage.u = +e.target.value; placeAll(true); });
+document.getElementById('chkReduce').addEventListener('change', (e) => {
+  stage.reduce = e.target.checked;
+  stage.sessions.forEach((s) => { s.actor.reduce = stage.reduce; s.actor.fx = []; });
+});
+
+function initStage() {
+  stage.right = desk.clientWidth - 16;
+  stage.bottom = desk.clientHeight - 10;
+  stage.sessions = [
+    mkSession('a', 'clawd', '终端', 'running', 'laptop'),
+    mkSession('b', 'robocup', 'VS Code', 'waiting'),
+    mkSession('c', 'notes', 'Desktop', 'done'),
+    mkSession('d', 'api-gw', '终端', 'idle'),
+  ];
+  stage.merged = autoMerged();
+  placeAll(true); buildPanel(); syncButtons();
+}
+initStage();
+setTimeout(() => stage.sessions.forEach((s, i) => setTimeout(() => {
+  const st = M.states[s.actor.state];
+  const enter = (st.enterBy && st.enterBy[s.actor.variant]) || st.enter;
+  if (enter && !s.actor.once && !stage.busy) s.actor.play(enter);
+}, i * 260)), 700);
+window.addEventListener('resize', () => {
+  cards.forEach((c) => { if (c.started) restartCard(c); });
+  stage.right = Math.min(stage.right, desk.clientWidth - 8);
+  if (!stage.merged && !fits()) { stage.merged = true; }
+  placeAll(true); syncButtons();
+});
+
+function drawDesk() {
+  const { ctx, w, h } = fitCanvas(deskCv);
+  ctx.clearRect(0, 0, w, h);
+  if (stage.merged || stage.busy) {
+    const L0 = lead();
+    if (stage.merged && L0 && !L0.actor.hidden) {
+      const ax = pileAx(), g = groundY(), u = stage.u;
+      for (let k = Math.min(2, stage.sessions.length - 1); k >= 1; k--) drawPose(ctx, (L0.actor.clock + k * 23) % 80 < 2 ? 'shut' : 'base', ax + k * 4 * u, g - k * u, u, 0, 0, 'dim', k === 2 ? 0.55 : 0.75);
+    }
+  }
+  const L1 = lead();
+  const order = [...stage.sessions].sort((p, q) => (p === L1 ? 9 : p.actor.z) - (q === L1 ? 9 : q.actor.z));
+  for (const s of order) s.actor.draw(ctx);
+}
+
+/* ======================= main clock ======================= */
+let last = performance.now(), acc = 0;
+function frame(now) {
+  acc += Math.min(500, now - last); last = now;
+  let stepped = false;
+  while (acc >= TICK) {
+    acc -= TICK; stepped = true;
+    let moved = false;
+    for (const s of stage.sessions) { const a = s.actor; if (a.follow) { followStep(a); moved = true; } brainStep(a); a.step(); }
+    if (moved) applyOffsets();
+    if (stage.rub && stage.rub.lastMove && performance.now() - stage.rub.lastMove > 700) { endPet(); stage.rub.lastMove = 0; stage.rub.flips = []; }
+    if (stage.drag && performance.now() - (stage.lastDragMove || 0) > 120) stage.sessions.forEach((s) => { const a = s.actor; a.lag -= Math.sign(a.lag); });
+    for (const c of cards) if (c.visible && c.started) stepCard(c);
+  }
+  if (stepped) {
+    drawDesk();
+    for (const c of cards) if (c.visible && c.started) drawCard(c);
+  }
+  requestAnimationFrame(frame);
+}
+requestAnimationFrame(frame);
+// keep the desk responsive to the pointer between ticks
+desk.addEventListener('pointermove', () => drawDesk());
+})();
+</script>
