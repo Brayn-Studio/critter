@@ -209,6 +209,21 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     #expect(a.currentClipName == "pet")
 }
 
+@Test func hiddenClawdHoldsItsFidgetButKeepsItsOtherTimers() {
+    let a = makeActor()
+    a.enterState(.idle, quiet: true)
+    a.hidden = true
+    let fidgetIn = a.fidgetIn
+    for _ in 0..<300 { a.step() }
+    #expect(!a.isPlayingOnce)                  // no invisible fidgets waking the clock
+    #expect(a.fidgetIn == fidgetIn)
+    #expect(a.idleTicks == 300)                // still on its way to sleep
+    #expect(a.brainTicksLeft() == 2000 - 300)  // only the way to sleep counts, not the fidget
+    a.hidden = false
+    for _ in 0..<fidgetIn { a.step() }
+    #expect(a.isPlayingOnce)                   // shown again: the countdown carries on
+}
+
 // MARK: - Work variants
 
 @Test func activityDebounce() {

@@ -116,7 +116,9 @@ extension MotionActor {
             if waitTicks == impatient.after { setLoop(impatient.loop) }
         }
         if state == .running { debounceVariant() }
-        if let fidget = st.fidget, !onceActive, !asleep, !reduceMotion {
+        // Nobody sees a hidden Clawd fidget (a pile member behind the lead), and its one-shot
+        // would keep the clock waking for nothing: its countdown waits until it shows again.
+        if let fidget = st.fidget, !onceActive, !asleep, !reduceMotion, !hidden {
             fidgetIn -= 1
             if fidgetIn <= 0 {
                 if let clip = rng.pick(fidget.pick) { play(clip) }
@@ -158,7 +160,7 @@ extension MotionActor {
         guard brainActive else { return Self.never }
         let st = skin.state(state)
         var n = Self.never
-        if st.fidget != nil, !onceActive, !asleep, !reduceMotion { n = Swift.min(n, fidgetIn) }
+        if st.fidget != nil, !onceActive, !asleep, !reduceMotion, !hidden { n = Swift.min(n, fidgetIn) }
         if state == .idle, !asleep, let sleep = st.sleep { n = Swift.min(n, sleep.after - idleTicks) }
         if state == .waiting, let impatient = st.impatient, waitTicks < impatient.after {
             n = Swift.min(n, impatient.after - waitTicks)
