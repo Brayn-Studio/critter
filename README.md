@@ -301,3 +301,11 @@ Critter is an unofficial fan project, not affiliated with or endorsed by Anthrop
   - 偏移（部件位置、关键格的 dx/dy、常驻 `!` 的 x、`stillDy`）在 ±64 格以内，部件和字形不超过 64×64；
   - 时长和周期在 1–100000 之间（单位是格，转圈标记的 `periodMs` 是毫秒），常驻 `!` 的跳动周期在 1–1000 格之间，随机小动作的权重在 1–1000 之间；
   - 每组粒子最多 64 个，寿命 1–300 格，位置、速度、加速度和摆动都在 ±1000 以内。
+
+## 许可
+
+代码以 [MIT 许可证](LICENSE) 发布。
+
+例外：`Skins/clawd/` 里的 Clawd 形象（包括 `SkinLoader.builtinJSON` 里内置的那份副本，以及 `docs/superpowers/specs/` 里由它生成的清单和预览）不在 MIT 许可范围内，形象归 Anthropic 所有。`Sounds/` 里的提示音由 `scripts/dev/make-sounds.py` 合成，随代码一起以 MIT 发布。
+
+The source code is released under the [MIT License](LICENSE). The Clawd character artwork in `Skins/clawd/` (including its embedded copy in `SkinLoader.builtinJSON`, and the manifest and preview derived from it under `docs/superpowers/specs/`) is not covered by the MIT License; the character is the property of Anthropic.
