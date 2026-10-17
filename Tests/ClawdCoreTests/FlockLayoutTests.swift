@@ -252,3 +252,39 @@ private func allPresentations() -> [FlockPresentation] {
     #expect(FlockLayout.fitted(expanded, metrics: m, maxWidth: width) == expanded)
     #expect(FlockLayout.fitted(expanded, metrics: m, maxWidth: width - 1) != expanded)
 }
+
+@Test func mergedChipsKeepTheirHeightAtTheBottomOfTheAccessoryRow() {
+    let five = (0..<5).map { s("\($0)", state: $0 == 2 ? .waiting : .running) }
+    let merged = FlockModel.present(five, threshold: 4, override: nil)
+    for scale in [1, 2] as [CGFloat] {
+        let m = FlockLayout.Metrics(scale: scale)
+        let r = FlockLayout.layout(merged, metrics: m)
+        guard let chips = r.chips else {
+            Issue.record("no chips at scale \(scale)")
+            continue
+        }
+        #expect(chips.height == 14, "chips are \(chips.height) pt tall at scale \(scale)")
+        // Bottom of the accessory row: just above the pile, like before the square-pixel rows.
+        #expect(chips.minY == r.slots[0].clawd.maxY + 2)
+        #expect(m.accessoryHeight > chips.height)
+    }
+}
+
+/// The flock is anchored by its content edge, so with whole-point content sizes every window
+/// for a given anchor shares one fractional offset: AppKit's frame rounding then shifts the
+/// expanded row and the merged pile alike, and a collapse's predicted pile position (aligned
+/// on the anchored edge) is where the still pile really appears -- no sub-pixel jump.
+@Test func contentSizesAreWholePoints() {
+    for scale in [1, 1.25, 1.3, 1.75, 2] as [CGFloat] {
+        for p in allPresentations() {
+            let r = FlockLayout.layout(p, metrics: .init(scale: scale))
+            #expect(r.content.width == r.content.width.rounded(.down), "width \(r.content.width) at scale \(scale)")
+            #expect(r.content.height == r.content.height.rounded(.down), "height \(r.content.height) at scale \(scale)")
+        }
+        let five = (0..<5).map { s("\($0)", state: [.waiting, .done, .running, .running, .idle][$0]) }
+        let row = FlockLayout.layout(.expanded(five, showCollapse: true), metrics: .init(scale: scale))
+        let pile = FlockLayout.layout(FlockModel.merged(five), metrics: .init(scale: scale))
+        let shift = row.content.maxX - pile.content.maxX
+        #expect(shift == shift.rounded(.down), "right-edge alignment shift \(shift) at scale \(scale)")
+    }
+}

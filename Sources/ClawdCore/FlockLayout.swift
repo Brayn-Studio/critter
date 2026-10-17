@@ -76,7 +76,7 @@ public struct FlockLayout {
         /// bottom-left corner, the other two offset by `Metrics.pileStep`).
         public var clawd: CGRect
         /// The accessory row above the Clawd (`z z`, `•••`, `?`, …). In the merged pile the
-        /// count chips take this row instead.
+        /// count chips (14 pt tall, at the bottom of the row) take it instead.
         public var accessory: CGRect
         public var tag: CGRect
         public var bubble: CGRect?
@@ -134,6 +134,8 @@ public struct FlockLayout {
     static let accessoryToBubbleGap: CGFloat = 4
     static let bareColumnExtra: CGFloat = 12
     static let chipGap: CGFloat = 4
+    /// The count chips keep their own height at the bottom of the (taller) accessory row.
+    static let chipHeight: CGFloat = 14
     static let chipFontSize: CGFloat = 9
     static let tagFontSize: CGFloat = 10
     static let tagHorizontalPadding: CGFloat = 12
@@ -246,7 +248,7 @@ public struct FlockLayout {
             x += m.handleSize.width
         }
 
-        let size = CGSize(width: x + m.padding, height: rows.totalHeight)
+        let size = wholePoints(CGSize(width: x + m.padding, height: rows.totalHeight))
         let hitRects = slots.flatMap { [$0.clawd, $0.tag] + ($0.bubble.map { [$0] } ?? []) } + (handle.map { [$0] } ?? [])
         return Result(size: size, content: CGRect(origin: .zero, size: size), slots: slots, handle: handle, chips: nil, hitRects: hitRects)
     }
@@ -266,7 +268,7 @@ public struct FlockLayout {
         )
 
         let x = m.padding
-        let chips = CGRect(x: x + (width - chipsWidth) / 2, y: rows.accessoryY, width: chipsWidth, height: m.accessoryHeight)
+        let chips = CGRect(x: x + (width - chipsWidth) / 2, y: rows.accessoryY, width: chipsWidth, height: min(chipHeight, m.accessoryHeight))
         let slot = Slot(
             id: leadId,
             clawd: CGRect(x: x + (width - pile.width) / 2, y: rows.clawdY, width: pile.width, height: pile.height),
@@ -277,7 +279,7 @@ public struct FlockLayout {
                 : nil
         )
 
-        let size = CGSize(width: x + width + m.padding, height: rows.totalHeight)
+        let size = wholePoints(CGSize(width: x + width + m.padding, height: rows.totalHeight))
         let hitRects = [slot.clawd, slot.tag] + (slot.bubble.map { [$0] } ?? []) + [chips]
         return Result(size: size, content: CGRect(origin: .zero, size: size), slots: [slot], handle: nil, chips: chips, hitRects: hitRects)
     }
@@ -299,6 +301,12 @@ public struct FlockLayout {
             bubbleY = accessoryY + m.accessoryHeight + FlockLayout.accessoryToBubbleGap
             totalHeight = (hasBubbleRow ? bubbleY + m.bubbleHeight : accessoryY + m.accessoryHeight) + m.padding
         }
+    }
+
+    /// Rounds a flock size up to whole points (the slack goes to the right/top padding), so
+    /// windows anchored at the same edge differ by whole points and get rounded alike.
+    private static func wholePoints(_ size: CGSize) -> CGSize {
+        CGSize(width: size.width.rounded(.up), height: size.height.rounded(.up))
     }
 
     private static func tagWidth(_ text: String) -> CGFloat {
