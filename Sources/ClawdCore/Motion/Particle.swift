@@ -42,6 +42,19 @@ public struct Particle: Equatable, Sendable {
 
     public var isAlive: Bool { age < life }
 
+    /// Ticks (of `dt` seconds) until it is drawn differently -- another cell, glyph or alpha --
+    /// or dies; at least 1. A slow particle (a floating z) keeps its cell for a few ticks.
+    public func ticksUntilDrawChanges(dt: Double) -> Int {
+        let now = draw()
+        var next = self
+        var ticks = 0
+        repeat {
+            next.step(dt: dt)
+            ticks += 1
+        } while next.isAlive && next.draw() == now
+        return ticks
+    }
+
     /// Where and how to draw it, relative to the particle frame (the caller adds the body offset).
     public func draw() -> GlyphDraw {
         let swayShift = Double(jsRound(sin(Double(age) * 0.5) * sway))

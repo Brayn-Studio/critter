@@ -242,9 +242,11 @@ public final class MotionActor {
 
     /// Ticks until the snapshot can next change on its own (at least 1).
     public func ticksUntilChange() -> Int {
-        if !particles.isEmpty || followMoving { return 1 }
+        if followMoving { return 1 }
         var n = Self.never
         if let key = currentKey { n = key.ticks - keyTicks } else if onceActive { n = 1 }
+        let dt = Double(skin.tickMs) / 1000
+        for particle in particles { n = Swift.min(n, particle.ticksUntilDrawChanges(dt: dt)) }
         n = Swift.min(n, markerTicksLeft(), brainTicksLeft())
         return Swift.max(1, n)
     }

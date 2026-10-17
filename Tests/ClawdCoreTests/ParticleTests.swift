@@ -97,3 +97,40 @@ import Testing
     #expect(lives == Set(13...19))
     #expect(rng.value(Span(4)) == 4)
 }
+
+@Test func particleKnowsWhenItsDrawingChanges() {
+    // A still particle changes only when it fades (age 7 of 10) -- or, past that, when it dies.
+    let still = Particle(glyph: "dot", color: "#B4BAC4", x: 0, y: 0, life: 10)
+    #expect(still.ticksUntilDrawChanges(dt: 0.06) == 7)
+    var faded = still
+    faded.age = 7
+    #expect(faded.ticksUntilDrawChanges(dt: 0.06) == 3)
+
+    // A floating z: each predicted tick is the first one drawn differently, and stepping that
+    // far always lands on a different drawing (or the end of its life).
+    var z = Particle(glyph: "z", color: "#A3A9B4", x: 15, y: -2, vx: 3, vy: -5, sway: 1, life: 30)
+    var waits: [Int] = []
+    while z.isAlive {
+        let wait = z.ticksUntilDrawChanges(dt: 0.06)
+        waits.append(wait)
+        let before = z.draw()
+        for step in 1...wait {
+            z.step(dt: 0.06)
+            if step < wait { #expect(z.draw() == before) }
+        }
+        #expect(!z.isAlive || z.draw() != before)
+    }
+    #expect(waits.reduce(0, +) == 30)
+    #expect(waits.contains { $0 > 1 })          // it doesn't need the clock every tick
+}
+
+@Test func actorSleepsBetweenParticleMoves() {
+    let a = MotionActor(skin: SkinLoader.builtin(), rng: MotionRNG(seed: 7))
+    a.setLoop(clip: [ClipKey(pose: "base", ticks: 1000)], name: nil)
+    a.brainEnabled = false
+    a.particles = [Particle(glyph: "dot", color: "#B4BAC4", x: 0, y: 0, life: 10)]
+    #expect(a.ticksUntilChange() == 7)          // its fade, not every tick
+    for _ in 0..<7 { a.step() }
+    #expect(a.snapshot().particles.first?.alpha == 0.5)
+    #expect(a.ticksUntilChange() == 3)          // then its end
+}
