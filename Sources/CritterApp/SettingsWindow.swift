@@ -13,13 +13,17 @@ final class SettingsWindowController {
     private let skinSearchDirs: [URL]
     /// Counts `reloadSkins` requests, so a listing that finishes late can't replace a newer one.
     private var skinListRequest = 0
+    /// Every new list of skins, also handed on (to "随机宠物").
+    private let onSkinsListed: ([SkinChoice]) -> Void
     private let onPreviewSound: (PetState) -> Void
     private let onResetPosition: () -> Void
     private var window: NSWindow?
 
-    init(store: SettingsStore, skinSearchDirs: [URL], onPreviewSound: @escaping (PetState) -> Void, onResetPosition: @escaping () -> Void) {
+    init(store: SettingsStore, skinSearchDirs: [URL], onSkinsListed: @escaping ([SkinChoice]) -> Void,
+         onPreviewSound: @escaping (PetState) -> Void, onResetPosition: @escaping () -> Void) {
         self.store = store
         self.skinSearchDirs = skinSearchDirs
+        self.onSkinsListed = onSkinsListed
         self.onPreviewSound = onPreviewSound
         self.onResetPosition = onResetPosition
         recorder = HotKeyRecorder(store: store)
@@ -38,6 +42,7 @@ final class SettingsWindowController {
                 MainActor.assumeIsolated {
                     guard let self, request == self.skinListRequest else { return }
                     self.skinPicker.update(choices)
+                    self.onSkinsListed(choices)
                 }
             }
         }
@@ -185,6 +190,10 @@ struct SettingsView: View {
                 } else {
                     LabeledContent("当前形象", value: store.skin)
                 }
+                Toggle(isOn: $store.randomSkins) {
+                    Text("随机宠物")
+                    Text("同时开多个会话时，每个会话随机分到一个形象；上面选中的仍用作菜单栏图标")
+                }
             }
 
             Section {
@@ -194,6 +203,21 @@ struct SettingsView: View {
                     Text("小")
                 } maximumValueLabel: {
                     Text("大")
+                }
+                LabeledContent {
+                    HStack {
+                        Slider(value: $store.idleDim, in: SettingsStore.idleDimRange, step: SettingsStore.idleDimStep) {
+                            Text("空闲淡化")
+                        }
+                        .labelsHidden()
+                        .accessibilityValue("\(idleDimPercent)%")
+                        Text("\(idleDimPercent)%")
+                            .monospacedDigit()
+                            .frame(width: 36, alignment: .trailing)
+                    }
+                } label: {
+                    Text("空闲淡化")
+                    Text("空闲和出错时变灰、变透明的程度；0% 时和忙碌时一样")
                 }
             }
 
@@ -249,6 +273,10 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 420)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private var idleDimPercent: Int {
+        Int((store.idleDim * 100).rounded())
     }
 
     /// The name of the tile the pet is wearing: `store.skin`'s (ignoring case, like the

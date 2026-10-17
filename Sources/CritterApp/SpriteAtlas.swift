@@ -4,9 +4,11 @@ import CoreGraphics
 /// The skin's bitmaps, rendered once and reused for as long as the flock view lives: each
 /// pose plain and dimmed (with the pixel grid that says where it sits in the base box), and
 /// each glyph per color. One bitmap pixel per cell; layers scale them up with
-/// nearest-neighbour filtering so the pixel art stays crisp.
+/// nearest-neighbour filtering so the pixel art stays crisp. The dimming strength ("空闲淡化")
+/// is fixed for the atlas's life: a new one comes with the rebuilt flock view.
 final class SpriteAtlas {
     let skin: SkinManifest
+    private let dimStrength: Double
 
     private struct PoseKey: Hashable {
         var name: String
@@ -22,8 +24,9 @@ final class SpriteAtlas {
     private var poses: [PoseKey: (image: CGImage, grid: PixelGrid)?] = [:]
     private var glyphs: [GlyphKey: CGImage?] = [:]
 
-    init(skin: SkinManifest) {
+    init(skin: SkinManifest, dimStrength: Double) {
         self.skin = skin
+        self.dimStrength = dimStrength
     }
 
     /// `name`'s bitmap (dimmed for the `dim` tint) and its grid, or nil for an unknown pose.
@@ -32,7 +35,7 @@ final class SpriteAtlas {
         if let cached = poses[key] { return cached }
         var entry: (image: CGImage, grid: PixelGrid)?
         if let grid = SkinRenderer.grid(pose: name, in: skin),
-           let image = SkinRenderer.image(grid, palette: skin.palette, dim: dim) {
+           let image = SkinRenderer.image(grid, palette: skin.palette, dim: dim, dimStrength: dimStrength) {
             entry = (image, grid)
         }
         poses[key] = entry

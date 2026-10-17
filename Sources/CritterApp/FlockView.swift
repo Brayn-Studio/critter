@@ -45,10 +45,22 @@ final class FlockView: NSView {
     /// The pointer and the press/drag in progress (`FlockView+Interaction.swift`).
     var pointer = FlockPointer()
 
+    /// The default skin: the empty state's placeholder wears it, and so does every Critter
+    /// "随机宠物" hasn't dealt another (`sessionSkins`). Its `tickMs` runs the clock.
     let skin: SkinManifest
+    /// "随机宠物": the skin each session's Critter puts on when it comes on stage, by session
+    /// id. A Critter keeps its skin for life, so a change only reaches Critters created later.
+    var sessionSkins: [String: SkinManifest] = [:] {
+        didSet { everDealt.merge(sessionSkins) { _, new in new } }
+    }
+    /// Every skin `sessionSkins` has named for a session, kept once it drops out: a Critter
+    /// cast late (a newcomer whose request outlived it in the snapshot) still wears its own.
+    private var everDealt: [String: SkinManifest] = [:]
     private let metrics: FlockLayout.Metrics
     private(set) var reduceMotion: Bool
-    private let atlas: SpriteAtlas
+    private let dimStrength: Double
+    /// One atlas per skin on stage, the default skin's first.
+    private var atlases: [SpriteAtlas]
     private let clock: MotionClock
     private lazy var choreographer = FlockChoreographer(view: self)
 
@@ -61,6 +73,9 @@ final class FlockView: NSView {
     /// The merged pile's back rows (row 1, row 2), drawn as still dimmed poses.
     private let pileLayers: [CALayer] = [CALayer(), CALayer()]
     private var drawnPile: [PileRow] = []
+    /// Who sat in each back row (row → session id) when the last collapse ended: the still
+    /// pile keeps showing their skins there (see `pileShown`).
+    var pileOccupants: [Int: String] = [:]
     private var bubbles: [String: BubbleView] = [:]
     private var tags: [String: TagView] = [:]
     /// Bubbles and tags of Critters walking after a dragged one move with their follow offset.
@@ -74,6 +89,8 @@ final class FlockView: NSView {
     private(set) var layoutResult: FlockLayout.Result
     /// The latest session data, by id: states and texts apply at once, whatever is shown.
     private var sessionsById: [String: PetSession] = [:]
+    /// The latest session ids, in snapshot order.
+    private var sessionOrder: [String] = []
 
     /// Bubbles and tags of these Critters stay hidden (hopping, joining or leaving).
     private var heldIds: Set<String> = []
@@ -88,11 +105,12 @@ final class FlockView: NSView {
     private var deferDepth = 0
     private var deferred: [() -> Void] = []
 
-    init(skin: SkinManifest, metrics: FlockLayout.Metrics, reduceMotion: Bool) {
+    init(skin: SkinManifest, metrics: FlockLayout.Metrics, reduceMotion: Bool, dimStrength: Double) {
         self.skin = skin
         self.metrics = metrics
         self.reduceMotion = reduceMotion
-        atlas = SpriteAtlas(skin: skin)
+        self.dimStrength = dimStrength
+        atlases = [SpriteAtlas(skin: skin, dimStrength: dimStrength)]
         clock = MotionClock(tickMs: skin.tickMs)
         layoutResult = FlockLayout.layout(.empty, metrics: metrics)
         super.init(frame: NSRect(origin: .zero, size: layoutResult.size))
@@ -156,6 +174,7 @@ final class FlockView: NSView {
     func present(_ presentation: FlockPresentation, layout: FlockLayout.Result, sessions: [PetSession],
                  frame: @escaping () -> CGRect, place: @escaping () -> Void) {
         sessionsById = Dictionary(sessions.map { ($0.id, $0) }) { first, _ in first }
+        sessionOrder = sessions.map(\.id)
         batch {
             applyStates()
             refreshTexts()
@@ -238,6 +257,19 @@ final class FlockView: NSView {
         sessionsById[id]
     }
 
+    /// The skin `id`'s Critter wears when it comes on stage.
+    private func skin(for id: String) -> SkinManifest {
+        sessionSkins[id] ?? everDealt[id] ?? skin
+    }
+
+    /// `skin`'s atlas, made the first time a Critter wears it.
+    private func atlas(for skin: SkinManifest) -> SpriteAtlas {
+        if let atlas = atlases.first(where: { $0.skin == skin }) { return atlas }
+        let atlas = SpriteAtlas(skin: skin, dimStrength: dimStrength)
+        atlases.append(atlas)
+        return atlas
+    }
+
     /// Creates a quietly entered Critter for each id without one (hidden or not); returns those.
     @discardableResult
     func ensureActors(_ ids: [String], hidden: Bool) -> [String] {
@@ -247,12 +279,13 @@ final class FlockView: NSView {
         defer { CATransaction.commit() }
         for id in ids where actors[id] == nil {
             let session = sessionsById[id]
-            let actor = MotionActor(skin: skin, rng: .system(), reduceMotion: reduceMotion)
+            let actorSkin = skin(for: id)
+            let actor = MotionActor(skin: actorSkin, rng: .system(), reduceMotion: reduceMotion)
             actor.setActivity(session?.activity)
             actor.enterState(session?.state ?? .idle, quiet: true)
             actor.hidden = hidden
             actors[id] = actor
-            let sprite = CritterSpriteLayer(atlas: atlas, unit: unit)
+            let sprite = CritterSpriteLayer(atlas: atlas(for: actorSkin), unit: unit)
             spriteHost.layer?.addSublayer(sprite)
             sprites[id] = sprite
             created.append(id)
@@ -278,7 +311,9 @@ final class FlockView: NSView {
         pointer.forget(id)
     }
 
-    /// The Critter (with its bubble and tag) of `from` now stands for `to`.
+    /// The Critter (with its bubble and tag) of `from` now stands for `to`. If `to` wears
+    /// another skin ("随机宠物"), a Critter of its own takes the old one's place instead, in the
+    /// state the old one was in, so whatever comes next treats it exactly the same.
     func rekey(from: String, to: String) {
         guard from != to, let actor = actors[from] else { return }
         removeActor(to)
@@ -291,6 +326,26 @@ final class FlockView: NSView {
         if concealed.remove(from) != nil { concealed.insert(to) }
         if let shift = overlayShifts.removeValue(forKey: from) { overlayShifts[to] = shift }
         pointer.forget(from)
+        if actor.skin != skin(for: to) { recast(to, replacing: actor) }
+    }
+
+    /// Puts a Critter in `id`'s own skin where `old` stands: same spot, same state (taken
+    /// quietly), shown or hidden alike. `old`'s one-shot is cancelled, as on removal.
+    private func recast(_ id: String, replacing old: MotionActor) {
+        guard let oldSprite = sprites[id] else { return }
+        old.cancelOnce()
+        let actorSkin = skin(for: id)
+        let actor = MotionActor(skin: actorSkin, rng: .system(), reduceMotion: reduceMotion)
+        actor.enterState(old.state, quiet: true)
+        actor.hidden = old.hidden
+        actors[id] = actor
+        let sprite = CritterSpriteLayer(atlas: atlas(for: actorSkin), unit: unit)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        sprite.groundOrigin = oldSprite.groundOrigin
+        spriteHost.layer?.replaceSublayer(oldSprite, with: sprite)
+        CATransaction.commit()
+        sprites[id] = sprite
     }
 
     /// Whether a choreography has `id`'s Critter in hand right now (see `FlockChoreographer.isBusy`).
@@ -326,6 +381,7 @@ final class FlockView: NSView {
     func adopt(_ presentation: FlockPresentation, layout: FlockLayout.Result) {
         self.presentation = presentation
         layoutResult = layout
+        if !isMerged { pileOccupants = [:] }
 
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -511,10 +567,10 @@ final class FlockView: NSView {
     }
 
     /// The merged pile's lead actor and back-row count, or nil when not merged.
-    private var pile: (lead: MotionActor, rows: Int, front: CGPoint)? {
+    private var pile: (id: String, lead: MotionActor, rows: Int, front: CGPoint)? {
         guard case .merged(let lead, _, let total) = presentation, let actor = actors[lead.id],
               let front = layoutResult.slots.first?.critter.origin else { return nil }
-        return (actor, PileSeating.backRows(total: total), front)
+        return (lead.id, actor, PileSeating.backRows(total: total), front)
     }
 
     private func pileBlinks(row: Int, clock: Int) -> Bool {
@@ -543,19 +599,28 @@ final class FlockView: NSView {
         CATransaction.commit()
     }
 
-    /// One back row of the still pile: where it goes and which pose it shows.
+    /// One back row of the still pile: where it goes and which pose (of which skin) it shows.
     private struct PileRow: Equatable {
         var frame: CGRect
         var pose: String
+        var atlas: SpriteAtlas
+
+        static func == (a: PileRow, b: PileRow) -> Bool {
+            a.frame == b.frame && a.pose == b.pose && a.atlas === b.atlas
+        }
     }
 
     /// Row k sits 4k cells right and k cells up from the lead, dimmed, as a still pose --
-    /// exactly where (and how) a Critter seated in that row by a collapse is drawn.
+    /// exactly where (and how) a Critter seated in that row by a collapse is drawn. With
+    /// "随机宠物" each row wears the skin of the Critter it stands for (`pileShown`).
     private func pileRows() -> [PileRow] {
         guard let pile, !pile.lead.hidden, pile.rows > 0 else { return [] }
-        let names = skin.interactions
+        let leadAtlas = sprites[pile.id]?.atlas ?? atlases[0]
+        let shown = sessionSkins.isEmpty ? [:] : pileShown()
         let u = unit
         return (1...min(pile.rows, pileLayers.count)).compactMap { row in
+            let atlas = shown[row].flatMap { sprites[$0]?.atlas } ?? leadAtlas
+            let names = atlas.skin.interactions
             let poseName = pileBlinks(row: row, clock: pile.lead.clock) ? names.blinkPose : names.land
             guard let grid = atlas.pose(poseName, dim: true)?.grid else { return nil }
             let frame = CGRect(
@@ -563,8 +628,18 @@ final class FlockView: NSView {
                 y: pile.front.y + CGFloat(row + 10 - grid.minY - grid.height) * u,
                 width: CGFloat(grid.width) * u, height: CGFloat(grid.height) * u
             )
-            return PileRow(frame: frame, pose: poseName)
+            return PileRow(frame: frame, pose: poseName, atlas: atlas)
         }
+    }
+
+    /// The Critter each back row of the still pile stands for (row → session id, see
+    /// `PileSeating.shown`): Critters still in the pile, in snapshot order, with whoever sat in
+    /// each row when the last collapse ended first. Empty when not merged. An expand seats
+    /// exactly these in their rows, so no row changes skin when the Critters replace the pile.
+    func pileShown() -> [Int: String] {
+        guard case .merged(let lead, _, let total) = presentation else { return [:] }
+        let inPile = sessionOrder.filter { $0 != lead.id && actors[$0] != nil && !choreographer.isLeaving($0) }
+        return PileSeating.shown(order: inPile, lead: lead.id, total: total, occupants: pileOccupants)
     }
 
     private func drawPile(_ rows: [PileRow]) {
@@ -575,7 +650,7 @@ final class FlockView: NSView {
                 continue
             }
             layer.frame = rows[index].frame
-            layer.contents = atlas.pose(rows[index].pose, dim: true)?.image
+            layer.contents = rows[index].atlas.pose(rows[index].pose, dim: true)?.image
             layer.isHidden = false
         }
     }

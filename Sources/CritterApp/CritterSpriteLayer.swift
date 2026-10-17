@@ -18,7 +18,8 @@ final class CritterSpriteLayer: CALayer {
     private static let groundRow: CGFloat = 10
     private static let shadowOpacity: Float = 0.28
 
-    private let atlas: SpriteAtlas
+    /// The bitmaps of the skin this Critter wears.
+    let atlas: SpriteAtlas
     private let unit: CGFloat
     private let shadowLayer = CALayer()
     private let clipLayer = CALayer()

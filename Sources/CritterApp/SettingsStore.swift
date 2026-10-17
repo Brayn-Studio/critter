@@ -10,18 +10,22 @@ import Observation
 @Observable
 final class SettingsStore {
     enum Change {
-        case skin, petScale, sounds, mergeThreshold, hotKey, launchAtLogin
+        case skin, randomSkins, petScale, idleDim, sounds, mergeThreshold, hotKey, launchAtLogin
     }
 
     static let scaleRange: ClosedRange<Double> = 0.5...2.0
     static let scaleStep = 0.25
+    static let idleDimRange: ClosedRange<Double> = 0...1
+    static let idleDimStep = 0.05
     static let mergeThresholdRange: ClosedRange<Int> = 2...10
     /// The builtin skin's name (`SkinLoader.builtinJSON`).
     static let defaultSkin = "clawd"
 
     private enum Key {
         static let skin = "skin"
+        static let randomSkins = "randomSkins"
         static let petScale = "petScale"
+        static let idleDim = "idleDim"
         static let soundEnabled = "soundEnabled"
         static let soundOnWaiting = "soundOnWaiting"
         static let soundOnDone = "soundOnDone"
@@ -38,12 +42,26 @@ final class SettingsStore {
     var skin: String {
         didSet { save(skin, Key.skin, changed: skin != oldValue, .skin) }
     }
+    /// "随机宠物": every session's Critter is dealt a skin of its own at random; `skin` is
+    /// then still the menu-bar icon's and the empty state's. Off by default.
+    var randomSkins: Bool {
+        didSet { save(randomSkins, Key.randomSkins, changed: randomSkins != oldValue, .randomSkins) }
+    }
     /// Critter's size: 0.5…2.0 in steps of 0.25, 1.0 ("中") by default.
     var petScale: Double {
         didSet {
             let fixed = Self.snapScale(petScale)
             guard fixed == petScale else { petScale = fixed; return }
             save(petScale, Key.petScale, changed: petScale != oldValue, .petScale)
+        }
+    }
+    /// "空闲淡化": how strongly idle and error Critters (and the pile's back rows) are greyed
+    /// and faded, 0…1 in steps of 0.05; 1.0, the full `dim` tint, by default.
+    var idleDim: Double {
+        didSet {
+            let fixed = Self.snapIdleDim(idleDim)
+            guard fixed == idleDim else { idleDim = fixed; return }
+            save(idleDim, Key.idleDim, changed: idleDim != oldValue, .idleDim)
         }
     }
     var soundEnabled: Bool {
@@ -101,7 +119,9 @@ final class SettingsStore {
             defaults.object(forKey: key) == nil ? true : defaults.bool(forKey: key)
         }
         skin = defaults.string(forKey: Key.skin).flatMap { $0.isEmpty ? nil : $0 } ?? Self.defaultSkin
+        randomSkins = defaults.bool(forKey: Key.randomSkins)
         petScale = Self.snapScale(defaults.object(forKey: Key.petScale) == nil ? 1.0 : defaults.double(forKey: Key.petScale))
+        idleDim = Self.snapIdleDim(defaults.object(forKey: Key.idleDim) == nil ? 1.0 : defaults.double(forKey: Key.idleDim))
         soundEnabled = bool(Key.soundEnabled)
         soundOnWaiting = bool(Key.soundOnWaiting)
         soundOnDone = bool(Key.soundOnDone)
@@ -133,9 +153,15 @@ final class SettingsStore {
         case Key.skin:
             guard !value.isEmpty else { return false }
             skin = value
+        case Key.randomSkins:
+            guard let on = flag() else { return false }
+            randomSkins = on
         case Key.petScale:
             guard let scale = Double(value) else { return false }
             petScale = scale
+        case Key.idleDim:
+            guard let strength = Double(value) else { return false }
+            idleDim = strength
         case Key.mergeThreshold:
             guard let threshold = Int(value) else { return false }
             mergeThreshold = threshold
@@ -173,6 +199,12 @@ final class SettingsStore {
         guard scale.isFinite else { return 1.0 }
         let snapped = (scale / scaleStep).rounded() * scaleStep
         return min(max(snapped, scaleRange.lowerBound), scaleRange.upperBound)
+    }
+
+    private static func snapIdleDim(_ strength: Double) -> Double {
+        guard strength.isFinite else { return 1.0 }
+        let snapped = (strength / idleDimStep).rounded() * idleDimStep
+        return min(max(snapped, idleDimRange.lowerBound), idleDimRange.upperBound)
     }
 
     private static func clampThreshold(_ threshold: Int) -> Int {

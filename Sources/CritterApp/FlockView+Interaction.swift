@@ -119,7 +119,7 @@ extension FlockView {
             // startle gives way to the squeeze), so it doesn't go back to sleep once let go.
             actor.wake()
             actor.cancelOnce()
-            actor.setMode(skin.interactions.press)
+            actor.setMode(actor.skin.interactions.press)
             pointer.pressedId = id
         }
         requestRender()
@@ -180,7 +180,7 @@ extension FlockView {
                 return
             }
             grabbed.cancelOnce()
-            grabbed.setMode(skin.interactions.held)
+            grabbed.setMode(grabbed.skin.interactions.held)
             grabbed.lift = Self.heldLift
             pointer.grabbedId = id
             let grabbedX = groundOrigin(id)?.x ?? 0
@@ -207,7 +207,7 @@ extension FlockView {
                     actor.lift = 0
                     actor.lag = 0
                     actor.setMode(nil)
-                    if isFree(id) { actor.play(skin.interactions.drop) }
+                    if isFree(id) { actor.play(actor.skin.interactions.drop) }
                 }
                 for id in press.followers { actors[id]?.releaseFollow() }
             }
@@ -227,7 +227,7 @@ extension FlockView {
             batch {
                 guard let actor = actors[id] else { return }
                 actor.setMode(nil)
-                if isFree(id) { actor.play(skin.interactions.boopEnd) }
+                if isFree(id) { actor.play(actor.skin.interactions.boopEnd) }
             }
             requestRender()
         }
@@ -259,7 +259,7 @@ extension FlockView {
     /// Ends `id`'s press or held mode (no other mode is the pointer's to end).
     private func releaseMode(_ id: String) {
         guard let actor = actors[id], let mode = actor.modeName,
-              mode == skin.interactions.press || mode == skin.interactions.held else { return }
+              mode == actor.skin.interactions.press || mode == actor.skin.interactions.held else { return }
         actor.setMode(nil)
     }
 
@@ -294,7 +294,6 @@ extension FlockView {
         guard isRunning, pointer.pressLocation == nil, window?.isVisible == true,
               let point = viewPoint(screen: screen) else { return }
         let t = now
-        let names = skin.interactions
         var changes: [() -> Void] = []
 
         let hit = hoverTarget(at: point)
@@ -308,7 +307,7 @@ extension FlockView {
                     actor.wake()
                     DiagnosticLog.shared.log("pointer wake \(hit)")
                 } else if !actor.isPlayingOnce && actor.modeName == nil {
-                    actor.play(names.notice)
+                    actor.play(actor.skin.interactions.notice)
                     DiagnosticLog.shared.log("pointer notice \(hit)")
                 }
             }
@@ -316,7 +315,7 @@ extension FlockView {
         if let hit, pointer.rub.move(x: point.x, at: t), pointer.pettingId != hit, isFree(hit) {
             changes.append { [unowned self] in
                 guard isFree(hit), let actor = actors[hit] else { return }
-                actor.setMode(names.pet)
+                actor.setMode(actor.skin.interactions.pet)
                 pointer.pettingId = hit
                 DiagnosticLog.shared.log("pointer pet \(hit)")
             }
@@ -367,9 +366,9 @@ extension FlockView {
     private func endPet() {
         guard let id = pointer.pettingId else { return }
         pointer.pettingId = nil
-        guard let actor = actors[id], actor.modeName == skin.interactions.pet else { return }
+        guard let actor = actors[id], actor.modeName == actor.skin.interactions.pet else { return }
         actor.setMode(nil)
-        if isFree(id) { actor.play(skin.interactions.petEnd) }
+        if isFree(id) { actor.play(actor.skin.interactions.petEnd) }
         DiagnosticLog.shared.log("pointer petEnd \(id)")
     }
 

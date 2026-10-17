@@ -28,6 +28,12 @@ final class PetController {
     private let soundPlayer: SoundPlayer
     /// The skin being worn (nil until the first one has loaded).
     private(set) var skin: SkinManifest?
+    /// "随机宠物": the skins sessions are dealt from (listed off the main thread), which one
+    /// each session got, and those skins by session id for the flock view.
+    private var skinPool: [SkinChoice] = []
+    private var dealtSkins: [String: String] = [:]
+    private var sessionSkins: [String: SkinManifest] = [:]
+    private let dealer = MotionRNG.system()
     private var panel: PetPanel?
     private var flockView: FlockView?
     private var clickThrough: ClickThroughController?
@@ -109,6 +115,7 @@ final class PetController {
     /// Builds the panel once the skin has been loaded (off the main thread).
     func install(skin: SkinManifest) {
         self.skin = skin
+        dealSkins()
         let view = makeFlockView(skin: skin)
         let newPanel = PetPanel(contentRect: NSRect(origin: .zero, size: view.frame.size))
         newPanel.contentView = view
@@ -143,6 +150,8 @@ final class PetController {
 
     func show(sessions: [PetSession]) {
         self.sessions = sessions
+        // Newcomers are dealt a skin before the flock view casts them.
+        dealSkins()
         if let flockOverride, flockOverride.sessionCount != sessions.count {
             self.flockOverride = nil
         }
@@ -181,7 +190,62 @@ final class PetController {
     /// pet is shown. Before the panel exists it is only remembered.
     func setSkin(_ skin: SkinManifest) {
         self.skin = skin
+        dealSkins()
         rebuildFlockView(skin: skin)
+    }
+
+    /// How strongly idle and error Critters are dimmed changed ("空闲淡化"): sprites are drawn
+    /// for one strength, so the flock view is rebuilt like for a new size.
+    func idleDimDidChange() {
+        guard let skin else { return }
+        rebuildFlockView(skin: skin)
+    }
+
+    /// The skins "随机宠物" deals from were listed again (at launch and whenever the settings
+    /// open).
+    func setSkinPool(_ pool: [SkinChoice]) {
+        guard pool != skinPool else { return }
+        skinPool = pool
+        redealSkins()
+    }
+
+    /// "随机宠物" was switched on or off.
+    func randomSkinsDidChange() {
+        redealSkins()
+    }
+
+    /// Deals afresh after the pool or the setting changed. A Critter keeps its skin for life,
+    /// so if any session's skin changes the flock view is rebuilt.
+    private func redealSkins() {
+        let before = sessionSkins
+        dealSkins()
+        guard sessionSkins != before, let skin else { return }
+        rebuildFlockView(skin: skin)
+    }
+
+    /// With "随机宠物" on, every session keeps its skin or is dealt one (`SkinAssigner`) from
+    /// the pool's skins that run on the default skin's clock (the flock runs one); with it
+    /// off, nobody is dealt one and all wear the default skin. A session whose Critter is still
+    /// on stage (leaving, or missing from one snapshot mid-choreography) keeps its skin until
+    /// the Critter is gone, so it never comes back in another one.
+    private func dealSkins() {
+        let old = dealtSkins
+        if settings.randomSkins, let skin {
+            let pool = skinPool.filter { $0.manifest.tickMs == skin.tickMs }
+            let onStage = flockView.map { $0.actors.keys.filter { !$0.isEmpty }.sorted() } ?? []
+            dealtSkins = SkinAssigner.assign(
+                sessionIDs: sessions.map(\.id), onStage: onStage, skins: pool.map(\.name), previous: dealtSkins, rng: dealer
+            )
+            let manifests = Dictionary(pool.map { ($0.name, $0.manifest) }) { first, _ in first }
+            sessionSkins = dealtSkins.compactMapValues { manifests[$0] }
+        } else {
+            dealtSkins = [:]
+            sessionSkins = [:]
+        }
+        flockView?.sessionSkins = sessionSkins
+        if dealtSkins != old {
+            DiagnosticLog.shared.log("skins dealt " + dealtSkins.sorted { $0.key < $1.key }.map { "\($0.key):\($0.value)" }.joined(separator: " "))
+        }
     }
 
     /// Swaps in a new flock view for `skin` (at the current scale) in place of the old one.
@@ -192,6 +256,8 @@ final class PetController {
         if isVanishing { finishHiding() }
         flockView?.setRunning(false)
         let view = makeFlockView(skin: skin)
+        // A merged pile's back rows keep standing for the same Critters, in the same skins.
+        view.pileOccupants = flockView?.pileOccupants ?? [:]
         panel.contentView = view
         flockView = view
         render()
@@ -240,8 +306,10 @@ final class PetController {
         let view = FlockView(
             skin: skin,
             metrics: metrics,
-            reduceMotion: Self.reduceMotion
+            reduceMotion: Self.reduceMotion,
+            dimStrength: settings.idleDim
         )
+        view.sessionSkins = sessionSkins
         wire(view)
         return view
     }

@@ -72,6 +72,8 @@ final class FlockChoreographer {
     private var pendingCollapseEnd: (() -> Void)?
     /// Critters still in the pile during an expand, each waiting for its turn to hop out.
     private var departures: [Departure] = []
+    /// During an expand, the Critter shown in each back row (the others in it wait hidden).
+    private var rowShown: [Int: String] = [:]
     /// Critters kept under ground after sinking (goodbye or hide) until shown again. Their
     /// actors hold them there (`MotionActor.holdUnderground`) from the moment they start
     /// sinking, so no state, fidget or mode brings them back up meanwhile.
@@ -86,6 +88,9 @@ final class FlockChoreographer {
     /// Bumped by every show/hide, so a superseded one's staggered steps and completion lapse.
     private var showHideGeneration = 0
     private var vanishGroup: JobGroup?
+    /// Critters handed to another id (`reuse`) since the last show, so a drop-in still waiting
+    /// for the old id reaches the Critter now standing for it.
+    private var renamed: [String: String] = [:]
     /// Critters playing their hide (sink) right now.
     private var vanishing: Set<String> = []
 
@@ -302,7 +307,7 @@ final class FlockChoreographer {
     }
 
     private func seat(_ actor: MotionActor, row: Int) {
-        actor.setLoop(clip: [ClipKey(pose: view.skin.interactions.land, ticks: 9999, dx: 0, dy: row)], name: nil)
+        actor.setLoop(clip: [ClipKey(pose: actor.skin.interactions.land, ticks: 9999, dx: 0, dy: row)], name: nil)
         let seat = PileSeating.seat(row: row)
         actor.tint = .dim
         actor.alpha = seat.alpha
@@ -320,6 +325,7 @@ final class FlockChoreographer {
         seatOccupants.removeAll()
         arriving.removeAll()
         departures.removeAll()
+        rowShown.removeAll()
     }
 
     /// `id` has sunk into the ground (goodbye or hide), where its hold keeps it until shown
@@ -379,6 +385,9 @@ final class FlockChoreographer {
     /// one session), taking the new state on the spot.
     private func reuse(_ item: FlockRequest, from: String, to: String, _ done: @escaping () -> Void) {
         view.rekey(from: from, to: to)
+        renamed = renamed.mapValues { $0 == from ? to : $0 }
+        renamed[from] = to
+        renamed[to] = nil
         if let actor = view.actors[to] {
             let session = view.session(to)
             actor.setActivity(session?.activity)
@@ -451,7 +460,7 @@ final class FlockChoreographer {
         if view.reduceMotion {
             arrived(true)
         } else {
-            actor.play(view.skin.interactions.join, completion: arrived)
+            actor.play(actor.skin.interactions.join, completion: arrived)
         }
     }
 
@@ -478,7 +487,7 @@ final class FlockChoreographer {
             if view.reduceMotion {
                 gone(true)
             } else {
-                actor.play(view.skin.interactions.leave, completion: gone)
+                actor.play(actor.skin.interactions.leave, completion: gone)
             }
         }
         group.seal()
@@ -493,6 +502,9 @@ final class FlockChoreographer {
         guard case .merged(let oldLead, _, _) = view.presentation,
               let oldFront = view.layoutResult.slots.first?.critter.origin
         else { return snap(item, done) }
+        // "随机宠物": whoever the still pile shows in a back row is the one seated there,
+        // shown, so the row keeps its skin when the Critters take the pile's place.
+        let pileShown = view.sessionSkins.isEmpty ? [:] : view.pileShown()
         cast(item)
         unseatAll()
         view.hold(item.layout.slots.map(\.id))
@@ -502,13 +514,19 @@ final class FlockChoreographer {
         let u = view.unit
 
         let order = departureOrder(item.layout.slots) { abs($0.critter.minX - pile.x) }
-        let rows = PileSeating.seats(departureOrder: order.map(\.id), lead: oldLead.id, total: order.count)
+        var rows = PileSeating.seats(departureOrder: order.map(\.id), lead: oldLead.id, total: order.count)
+        for (row, id) in pileShown where rows[id] != nil && id != oldLead.id { rows[id] = row }
+        // One Critter shows per back row: the pile's own, else the first to set off.
+        rowShown = pileShown.filter { rows[$0.value] == $0.key }
+        for slot in order where slot.id != oldLead.id {
+            let row = rows[slot.id] ?? 1
+            if rowShown[row] == nil { rowShown[row] = slot.id }
+        }
         let group = makeGroup(gen) { [weak self] in
             self?.view.actors[oldLead.id]?.z = 2
             self?.view.releaseChrome(fade: true)
             done()
         }
-        var shownRows: Set<Int> = []
         for (k, slot) in order.enumerated() {
             guard let actor = view.actors[slot.id] else { continue }
             let row = slot.id == oldLead.id ? 0 : rows[slot.id] ?? 1
@@ -523,8 +541,7 @@ final class FlockChoreographer {
                 seatRows[slot.id] = row
                 view.setSeatRow(slot.id, row)
                 actor.noAccessory = true
-                actor.hidden = shownRows.contains(row) || view.restHidden(slot.id)
-                shownRows.insert(row)
+                actor.hidden = rowShown[row] != slot.id || view.restHidden(slot.id)
             }
             group.enter()
             departures.append(Departure(
@@ -555,8 +572,12 @@ final class FlockChoreographer {
         actor.noAccessory = false
         actor.hidden = view.restHidden(id)
         // The next Critter waiting in this back row now shows in its place.
-        if departure.row > 0, let next = departures.first(where: { $0.row == departure.row }) {
-            view.actors[next.id]?.hidden = view.restHidden(next.id)
+        if departure.row > 0, rowShown[departure.row] == id {
+            rowShown[departure.row] = nil
+            if let next = departures.first(where: { $0.row == departure.row }) {
+                rowShown[departure.row] = next.id
+                view.actors[next.id]?.hidden = view.restHidden(next.id)
+            }
         }
         hop(id, from: departure.from, to: departure.to, raise: departure.row, delay: 0, reveal: true,
             group: departure.group)
@@ -644,6 +665,8 @@ final class FlockChoreographer {
     }
 
     private func endCollapse(_ item: FlockRequest, _ done: @escaping () -> Void) {
+        // The still pile shows whoever sat in each row last, in their skins.
+        view.pileOccupants = seatOccupants
         unseatAll()
         _ = moveWindow(item)
         view.placeAtRest()
@@ -659,6 +682,7 @@ final class FlockChoreographer {
         showHideGeneration += 1
         let generation = showHideGeneration
         vanishGroup = nil
+        renamed = [:]
         // Called off mid-sink: back up (hidden until each drops in). The sunk ones come back
         // up in `surface`.
         for id in vanishing { view.actors[id]?.releaseUnderground() }
@@ -682,11 +706,12 @@ final class FlockChoreographer {
 
     private func dropIn(_ id: String, generation: Int) {
         guard generation == showHideGeneration else { return }
+        let id = renamed[id] ?? id
         view.batch {
             view.concealed.remove(id)
             guard let actor = view.actors[id] else { return }
             actor.hidden = view.restHidden(id)
-            if !view.reduceMotion { actor.play(view.skin.interactions.appear) }
+            if !view.reduceMotion { actor.play(actor.skin.interactions.appear) }
         }
         view.requestRender()
     }
@@ -746,7 +771,7 @@ final class FlockChoreographer {
                 gone(true)
             } else {
                 vanishing.insert(id)
-                actor.play(view.skin.interactions.vanish, completion: gone)
+                actor.play(actor.skin.interactions.vanish, completion: gone)
             }
         }
         view.requestRender()

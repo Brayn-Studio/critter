@@ -27,6 +27,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsWindow = SettingsWindowController(
         store: settings,
         skinSearchDirs: skinSearchDirs,
+        // The same list the "形象" tiles show is what "随机宠物" deals from.
+        onSkinsListed: { [weak self] choices in self?.petController.setSkinPool(choices) },
         onPreviewSound: { [weak self] state in self?.previewSound(state) },
         onResetPosition: { [weak self] in self?.petController.resetPosition() }
     )
@@ -107,7 +109,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         refreshHotKey()
         applyLaunchAtLogin()
         loadSkin()
-        // Listed ahead of time, so the settings open with the skins already in place.
+        // Listed ahead of time, so the settings open with the skins already in place (and
+        // "随机宠物" has them to deal from).
         settingsWindow.reloadSkins()
     }
 
@@ -202,7 +205,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let request = skinRequest
         let name = settings.skin
         let searchDirs = skinSearchDirs
+        // "随机宠物" at launch: the skins to deal from come along, so the first Critters already
+        // wear theirs instead of all switching once the list arrives.
+        let listPool = settings.randomSkins && !petController.isInstalled
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            let pool = listPool ? SkinLibrary.available(searchDirs: searchDirs) : nil
             let found = SkinLoader.find(name: name, searchDirs: searchDirs)
             let skin = found ?? SkinLoader.builtin()
             // Asking for the builtin by name isn't falling back to it.
@@ -213,6 +220,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 // as the heartbeat timer below).
                 MainActor.assumeIsolated {
                     guard let self, request == self.skinRequest else { return }
+                    if let pool { self.petController.setSkinPool(pool) }
                     self.wear(skin, named: name, fellBack: fellBack)
                 }
             }
@@ -251,8 +259,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         switch change {
         case .skin:
             loadSkin()
+        case .randomSkins:
+            DiagnosticLog.shared.log("event random-skins \(settings.randomSkins ? "on" : "off")")
+            petController.randomSkinsDidChange()
+            // Dealt from a fresh list, in case skins came or went since the last one.
+            if settings.randomSkins { settingsWindow.reloadSkins() }
         case .petScale:
             petController.scaleDidChange()
+        case .idleDim:
+            petController.idleDimDidChange()
         case .mergeThreshold:
             petController.layoutSettingsDidChange()
         case .sounds:
