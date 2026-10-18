@@ -265,15 +265,22 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         return true
     }
 
-    /** Hidden content stays measured (so insets keep coming, to show it again) but takes no touches and no clock. */
+    /**
+     * Hidden content stays measured (so insets keep coming, to show it again) but takes no touches and no clock.
+     * The hidden window is also fully transparent: Android 12+ blocks touches that pass through an untrusted
+     * FLAG_NOT_TOUCHABLE overlay unless it is (nearly) see-through, so at alpha 1 it would still eat the touches
+     * meant for the app below.
+     */
     private fun applyVisibility() {
         if (!attached) return
         val shown = contentShown()
         root.visibility = View.VISIBLE
         for (i in 0 until root.childCount) root.getChildAt(i).visibility = if (shown) View.VISIBLE else View.INVISIBLE
         val flags = if (shown) FLAGS else FLAGS or WindowManager.LayoutParams.FLAG_NOT_TOUCHABLE
-        if (params.flags != flags) {
+        val alpha = if (shown) 1f else 0f
+        if (params.flags != flags || params.alpha != alpha) {
             params.flags = flags
+            params.alpha = alpha
             if (added) windowManager.updateViewLayout(root, params)
         }
     }
