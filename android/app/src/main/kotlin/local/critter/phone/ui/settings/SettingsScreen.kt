@@ -8,12 +8,15 @@ import android.provider.Settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,7 +53,14 @@ fun SettingsScreen(
     val state by repo.state.collectAsState()
     val pairing by repo.pairing.collectAsState()
     var ignoring by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
-    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) { ignoring = isIgnoringBatteryOptimizations(context) }
+    var canOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
+    LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
+        ignoring = isIgnoringBatteryOptimizations(context)
+        val granted = Settings.canDrawOverlays(context)
+        // Back from the permission screen: the service shows the pile now.
+        if (granted && !canOverlay && settings.overlayEnabled) BridgeService.sync(context, repo)
+        canOverlay = granted
+    }
 
     Column(Modifier.fillMaxSize().safeDrawingPadding().verticalScroll(rememberScrollState())) {
         Row(Modifier.fillMaxWidth().padding(start = 8.dp, top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
@@ -84,6 +94,52 @@ fun SettingsScreen(
         }
         SwitchRow("出错时通知", null, settings.notifyError) { on ->
             repo.settingsStore.update { it.copy(notifyError = on) }
+        }
+
+        Section("悬浮球")
+        SwitchRow("显示悬浮球", "浮在其他 App 上，点一下展开所有会话", settings.overlayEnabled) { on ->
+            repo.settingsStore.update { it.copy(overlayEnabled = on) }
+            BridgeService.sync(context, repo)
+        }
+        if (settings.overlayEnabled && !canOverlay) {
+            Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text("需要「显示在其他应用上层」的权限", Modifier.weight(1f), style = MaterialTheme.typography.bodyMedium)
+                OutlinedButton(onClick = {
+                    context.startActivity(
+                        Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")),
+                    )
+                }) { Text("去授权") }
+            }
+        }
+        Row(Modifier.padding(horizontal = 20.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text("大小", Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
+            listOf(1 to "小", 2 to "中", 3 to "大").forEach { (size, name) ->
+                if (settings.overlaySize == size) {
+                    Button(onClick = {}) { Text(name) }
+                } else {
+                    OutlinedButton(onClick = { repo.settingsStore.update { it.copy(overlaySize = size) } }) { Text(name) }
+                }
+                Spacer(Modifier.width(6.dp))
+            }
+        }
+        SwitchRow("空闲淡化跟着电脑", null, settings.overlayIdleDim == null) { follow ->
+            repo.settingsStore.update { it.copy(overlayIdleDim = if (follow) null else 0.6f) }
+        }
+        settings.overlayIdleDim?.let { dim ->
+            Column(Modifier.padding(horizontal = 20.dp)) {
+                Text("空闲淡化 ${(dim * 100).roundToInt()}%", style = MaterialTheme.typography.bodyLarge)
+                Slider(
+                    value = dim,
+                    onValueChange = { v -> repo.settingsStore.update { it.copy(overlayIdleDim = v.coerceIn(0f, 1f)) } },
+                    valueRange = 0f..1f,
+                )
+            }
+        }
+        SwitchRow("没有会话时自动隐藏", "关着时显示一只睡着的小人", settings.overlayAutoHide) { on ->
+            repo.settingsStore.update { it.copy(overlayAutoHide = on) }
+        }
+        SwitchRow("全屏应用里隐藏", null, settings.overlayHideInFullscreen) { on ->
+            repo.settingsStore.update { it.copy(overlayHideInFullscreen = on) }
         }
 
         Section("看板")

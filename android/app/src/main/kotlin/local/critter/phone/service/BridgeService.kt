@@ -20,6 +20,7 @@ import local.critter.core.logic.AlertPrefs
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.bridge.BridgeRepository
+import local.critter.phone.overlay.OverlayController
 import local.critter.phone.repository
 
 /**
@@ -30,12 +31,14 @@ class BridgeService : Service() {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private lateinit var repo: BridgeRepository
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
+    private lateinit var overlay: OverlayController
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onCreate() {
         super.onCreate()
         repo = repository
+        overlay = OverlayController(this, repo)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -50,6 +53,7 @@ class BridgeService : Service() {
             return START_NOT_STICKY
         }
         if (networkCallback == null) run()
+        syncOverlay()
         return START_STICKY
     }
 
@@ -77,9 +81,23 @@ class BridgeService : Service() {
                 val s = repo.settingsStore.settings.value
                 val prefs = AlertPrefs(s.vibrateOnWaiting, s.notifyDone, s.notifyError)
                 val plan = AlertPlanner.plan(previous, body, prefs)
-                Alerts.apply(this@BridgeService, plan, body, canVibrate = Alerts.vibrationAllowed(this@BridgeService))
+                // Notifications only when the floating pile cannot be seen (spec §8.7); the buzz stays.
+                Alerts.apply(
+                    this@BridgeService, plan, body,
+                    canVibrate = Alerts.vibrationAllowed(this@BridgeService),
+                    notify = !overlay.isVisible,
+                )
                 previous = body
             }
+        }
+
+        // The floating pile follows the data, the connection and the settings.
+        scope.launch {
+            combine(repo.snapshot, repo.state, repo.settingsStore.settings) { body, state, settings -> Triple(body, state, settings) }
+                .collect { (body, state, settings) ->
+                    overlay.update(body, state is ConnState.Connected, settings)
+                    syncOverlay()
+                }
         }
 
         // Stop when unpaired or switched off in settings.
@@ -87,6 +105,16 @@ class BridgeService : Service() {
             combine(repo.pairing, repo.settingsStore.settings) { p, s -> p != null && s.bridgeEnabled }
                 .collect { if (!it) stopSelf() }
         }
+    }
+
+    /** Shows or hides the floating pile to match the setting and the "display over other apps" permission. */
+    private fun syncOverlay() {
+        if (repo.settingsStore.settings.value.overlayEnabled) overlay.show() else overlay.hide()
+    }
+
+    override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
+        super.onConfigurationChanged(newConfig)
+        overlay.onConfigurationChanged()
     }
 
     private fun watchNetwork() {
@@ -110,6 +138,7 @@ class BridgeService : Service() {
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
         networkCallback = null
         scope.cancel()
+        overlay.hide()
         repo.stopClient()
         super.onDestroy()
     }

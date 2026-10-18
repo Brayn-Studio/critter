@@ -94,8 +94,11 @@ object Alerts {
             .build()
     }
 
-    /** Posts and withdraws notifications for [plan], and buzzes once if it says so. [body] is the new snapshot. */
-    fun apply(context: Context, plan: AlertPlan, body: SnapshotBody, canVibrate: Boolean) {
+    /**
+     * Posts and withdraws notifications for [plan], and buzzes once if it says so. [body] is the new snapshot.
+     * With [notify] false (the floating pile is on screen) nothing is posted, but stale ones are still withdrawn.
+     */
+    fun apply(context: Context, plan: AlertPlan, body: SnapshotBody, canVibrate: Boolean, notify: Boolean = true) {
         val nm = context.getSystemService(NotificationManager::class.java)
         plan.cancel.forEach { nm.cancel(TAG_REQUEST, notificationId(it)) }
         // After a reconnect the first snapshot cannot tell which notifications went stale offline.
@@ -106,8 +109,10 @@ object Alerts {
 
         if (!canPost(context)) return
         val sessions = body.sessions.associateBy { it.id }
-        plan.post.forEach { post(context, nm, it, sessions[it.sessionId]) }
-        plan.sessionAlerts.forEach { (session, state) -> postSessionResult(context, nm, session, state) }
+        if (notify) {
+            plan.post.forEach { post(context, nm, it, sessions[it.sessionId]) }
+            plan.sessionAlerts.forEach { (session, state) -> postSessionResult(context, nm, session, state) }
+        }
         if (plan.vibrate && canVibrate) vibrate(context)
     }
 

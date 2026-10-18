@@ -358,7 +358,8 @@ class CritterView(context: Context) : View(context) {
             p.lastRawX = e.rawX
         }
         // Rubbing back and forth pets, even after the drag started lifting it.
-        if (rub.move((e.x / density).toDouble(), t) && pettingId != p.id && isFree(p.id)) startPet(p)
+        // Screen coordinates: the view's own move with the window while it is dragged.
+        if (rub.move((e.rawX / density).toDouble(), t) && pettingId != p.id && isFree(p.id)) startPet(p)
         clock.poke()
     }
 
@@ -397,6 +398,7 @@ class CritterView(context: Context) : View(context) {
         val actor = entries[p.id]?.actor
         if (pettingId != null) {
             endPet() // a rub is not a tap
+            if (p.dragging) listener?.onLongDragEnd(p.id) // the window may have been moved before the rub was noticed
         } else if (p.dragging) {
             if (actor != null && p.grabbedId != null) {
                 actor.lift = 0
