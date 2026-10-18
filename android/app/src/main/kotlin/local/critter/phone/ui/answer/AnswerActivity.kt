@@ -1,7 +1,5 @@
 package local.critter.phone.ui.answer
 
-import android.app.Activity
-import android.app.KeyguardManager
 import android.content.Context
 import android.content.Intent
 import android.os.Bundle
@@ -40,6 +38,7 @@ import local.critter.core.protocol.ResultReason
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.repository
 import local.critter.phone.ui.theme.CritterTheme
+import local.critter.phone.ui.withKeyguardDismissed
 
 /**
  * The answer card for one pending request (spec §8.5). The entry intent carries only the requestId; the
@@ -146,18 +145,6 @@ class AnswerActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    /** On the lock screen, ask to unlock before anything is sent (spec §8.6). */
-    private fun withKeyguardDismissed(action: () -> Unit) {
-        val keyguard = getSystemService(KeyguardManager::class.java)
-        if (!keyguard.isKeyguardLocked) {
-            action()
-            return
-        }
-        keyguard.requestDismissKeyguard(this as Activity, object : KeyguardManager.KeyguardDismissCallback() {
-            override fun onDismissSucceeded() = action()
-        })
     }
 
     companion object {

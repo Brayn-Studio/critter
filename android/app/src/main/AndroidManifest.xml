@@ -44,28 +44,36 @@
             android:exported="false"
             android:screenOrientation="portrait" />
 
+        <!-- The sheets float over whatever app is in front: started with NEW_TASK (the floating pile, a
+             notification) they get a task of their own instead of bringing Critter's main screen forward. -->
         <activity
             android:name=".ui.answer.AnswerActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
+            android:taskAffinity=""
             android:theme="@style/Theme.Critter.Sheet" />
 
+        <!-- Not over the lock screen: it shows a session's folder and model and sends "发一句". -->
         <activity
             android:name=".ui.detail.DetailActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
-            android:showWhenLocked="true"
+            android:taskAffinity=""
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Critter.Sheet" />
 
+        <!-- Opened by itself (NEW_TASK from the service) it runs in a task of its own, out of Recents, and closing
+             it returns to whatever was in front; opened from the home screen it stays in Critter's task. -->
         <activity
             android:name=".ui.board.BoardActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+            android:excludeFromRecents="true"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
+            android:taskAffinity=""
             android:theme="@style/Theme.Critter.Board" />
 
         <service

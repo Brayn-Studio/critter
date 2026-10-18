@@ -1,6 +1,5 @@
 package local.critter.phone.ui.board
 
-import android.app.KeyguardManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
@@ -51,6 +50,7 @@ import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.repository
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.rememberMinuteClock
+import local.critter.phone.ui.withKeyguardDismissed
 
 /**
  * The landscape pro dashboard. Kept on while charging; the content only changes when the Mac sends something.
@@ -214,14 +214,7 @@ class BoardActivity : ComponentActivity() {
 
     /** On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). */
     private fun answerPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
-        val keyguard = getSystemService(KeyguardManager::class.java)
-        if (!keyguard.isKeyguardLocked) {
-            sendPermission(repo, request, allow)
-            return
-        }
-        keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
-            override fun onDismissSucceeded() = sendPermission(repo, request, allow)
-        })
+        withKeyguardDismissed { sendPermission(repo, request, allow) }
     }
 
     private fun sendPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {

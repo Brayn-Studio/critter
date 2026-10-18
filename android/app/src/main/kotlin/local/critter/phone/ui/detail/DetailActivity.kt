@@ -53,6 +53,7 @@ import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.stateColor
 import local.critter.phone.ui.stateLabel
 import local.critter.phone.ui.theme.CritterTheme
+import local.critter.phone.ui.withKeyguardDismissed
 
 /** The longest message "发一句" sends. */
 const val MAX_SAY_LENGTH = 4000
@@ -69,11 +70,20 @@ fun sayFeedback(result: ServerMessage.Result): String = when {
  * the answer card. An activity rather than an overlay so the keyboard can come up.
  */
 class DetailActivity : ComponentActivity() {
+    /** The session shown; a tap on another Critter while the sheet is up (singleTop) switches it. */
+    private var sessionId by mutableStateOf<String?>(null)
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        val sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+        sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
         setContent { CritterTheme { Content(sessionId) } }
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
     }
 
     @Composable
@@ -173,13 +183,16 @@ class DetailActivity : ComponentActivity() {
                 Button(
                     enabled = online && !busy && text.isNotBlank(),
                     onClick = {
-                        busy = true
-                        feedback = null
-                        scope.launch {
-                            val result = repository.say(session.id, text.trim())
-                            busy = false
-                            feedback = sayFeedback(result) to result.ok
-                            if (result.ok) text = ""
+                        // Like an answer, nothing goes to the Mac from the lock screen before the phone is unlocked.
+                        withKeyguardDismissed {
+                            busy = true
+                            feedback = null
+                            scope.launch {
+                                val result = repository.say(session.id, text.trim())
+                                busy = false
+                                feedback = sayFeedback(result) to result.ok
+                                if (result.ok) text = ""
+                            }
                         }
                     },
                 ) { Text(if (busy) "发送中…" else "发送") }
