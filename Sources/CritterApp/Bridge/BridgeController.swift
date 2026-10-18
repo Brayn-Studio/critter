@@ -19,6 +19,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     private static let transcriptTailBytes = 64 * 1024
     /// A device's `lastSeen` on disk is refreshed at most this often.
     private static let touchIntervalMs: Int64 = 60_000
+    /// After a failed start, the bridge tries again after this long, doubling up to the cap.
+    private static let firstRetryDelay: TimeInterval = 5
+    private static let maxRetryDelay: TimeInterval = 300
 
     /// Asks the user "允许「设备名」连接？"; the answer must come back through the callback (on
     /// any thread). Without it, pairing requests are declined.
@@ -37,6 +40,8 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     // Shared with the main thread, only behind `lock`.
     private let lock = NSLock()
     private var listening: Listening?
+    /// The listener is ready: phones can actually connect.
+    private var serving = false
     private var pairing: Pairing?
     private var lastSeen: Int64?
     private var deviceList: [DeviceRecord] = []
@@ -56,6 +61,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     private var branchCache: [String: CachedBranch] = [:]
     private var estimateCache: [String: CachedEstimate] = [:]
     private var lastTouched: [String: Int64] = [:]
+    private var retryDelay: TimeInterval = 0
+    /// Bumped when the bridge is switched off, so a retry scheduled before doesn't fire.
+    private var retryGeneration = 0
     private lazy var computerName = Host.current().localizedName ?? "Mac"
 
     private struct Listening {
@@ -99,8 +107,13 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
 
     // MARK: - Main-thread interface
 
-    /// Epoch milliseconds of the last time a paired phone talked to the bridge.
-    var lastClientSeen: Int64? { lock.withLock { lastSeen } }
+    /// Whether phones can reach the bridge right now: it is on and its listener is ready (not
+    /// failed, not waiting for the Local Network permission or a network).
+    var isServing: Bool { lock.withLock { serving } }
+
+    /// Epoch milliseconds of the last time a paired phone talked to the bridge; nil whenever
+    /// the bridge isn't serving, so `critter-hook ask` never waits on an unreachable one.
+    var lastClientSeen: Int64? { lock.withLock { serving ? lastSeen : nil } }
 
     func devices() -> [DeviceRecord] {
         lock.withLock { deviceList }
@@ -179,22 +192,40 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
                 callbacks: BridgeServer.Callbacks(
                     pairRequested: { [weak self] client, deviceName in self?.pairRequested(client: client, deviceName: deviceName) },
                     deviceActive: { [weak self] deviceId in self?.deviceActive(deviceId) },
+                    listeningChanged: { [weak self] listening in self?.listeningChanged(listening) },
                     failed: { [weak self] in self?.serverFailed() }
                 )
             )
             let port = try server.start(identity: identity)
             self.server = server
-            lock.withLock { listening = Listening(port: port, fingerprint: fingerprint, macName: macName) }
+            let ready = server.isListening
+            lock.withLock {
+                listening = Listening(port: port, fingerprint: fingerprint, macName: macName)
+                serving = ready
+            }
+            retryDelay = 0
             startWatchers()
-            DiagnosticLog.shared.log("bridge listening port=\(port) fp=\(fingerprint.prefix(12))")
+            DiagnosticLog.shared.log("bridge listening port=\(port) ready=\(ready) fp=\(fingerprint.prefix(12))")
         } catch {
-            // Stays switched on but deaf until it is switched off and on again.
             DiagnosticLog.shared.log("bridge failed to start: \(error)")
+            lock.withLock {
+                serving = false
+                lastSeen = nil
+            }
+            scheduleRetry()
         }
     }
 
+    /// Switched off (or about to be reset): also drops any retry that was due.
     private func stop() {
         guard enabled else { return }
+        retryGeneration += 1
+        retryDelay = 0
+        tearDown()
+        DiagnosticLog.shared.log("bridge stopped")
+    }
+
+    private func tearDown() {
         enabled = false
         server?.stop()
         server = nil
@@ -202,22 +233,44 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         watchers = []
         lock.withLock {
             listening = nil
+            serving = false
             pairing = nil
+            lastSeen = nil
         }
         approveNextPairing = false
         branchCache = [:]
         estimateCache = [:]
-        DiagnosticLog.shared.log("bridge stopped")
     }
 
-    /// The listener broke (e.g. the network went away under it) and the server has stopped:
-    /// start over in a while, unless the bridge was switched off (or back on) meanwhile.
+    /// The listener became ready, or went back to waiting (e.g. no network). While it waits,
+    /// no phone can be talking to the bridge.
+    private func listeningChanged(_ ready: Bool) {
+        lock.withLock {
+            serving = ready
+            if !ready { lastSeen = nil }
+        }
+        DiagnosticLog.shared.log("bridge \(ready ? "ready" : "waiting")")
+    }
+
+    /// The listener broke after it had started, and the server has stopped itself.
     private func serverFailed() {
         server = nil
-        lock.withLock { listening = nil }
-        queue.asyncAfter(deadline: .now() + 10) { [self] in
-            guard enabled, server == nil else { return }
-            stop()
+        lock.withLock {
+            serving = false
+            lastSeen = nil
+        }
+        scheduleRetry()
+    }
+
+    /// Starts over after `retryDelay` (5 s, doubling up to 5 min), for as long as the bridge
+    /// stays switched on and isn't running.
+    private func scheduleRetry() {
+        retryDelay = min(max(retryDelay * 2, Self.firstRetryDelay), Self.maxRetryDelay)
+        let generation = retryGeneration
+        DiagnosticLog.shared.log("bridge retry in \(Int(retryDelay)) s")
+        queue.asyncAfter(deadline: .now() + retryDelay) { [self] in
+            guard enabled, server == nil, generation == retryGeneration else { return }
+            tearDown()
             start()
         }
     }

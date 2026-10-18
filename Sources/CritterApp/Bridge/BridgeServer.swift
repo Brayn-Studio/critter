@@ -5,7 +5,8 @@ import Network
 /// The bridge's network side: a TLS WebSocket listener (Network.framework) on the first free
 /// port of `BridgeProtocol.portRange`, advertised over Bonjour, with one `BridgeConnection`
 /// state machine per phone. It only moves frames: what they mean is the state machine's
-/// business, and pairing decisions are the controller's (`Callbacks`).
+/// business, and pairing decisions are the controller's (`Callbacks`). Who gets in and for
+/// how long is `BridgeAdmission`'s.
 ///
 /// Everything runs on `queue` (the bridge queue) and only there, apart from the listener's own
 /// events, which hop onto it -- that confinement is what makes the `@unchecked Sendable` sound.
@@ -17,13 +18,13 @@ final class BridgeServer: @unchecked Sendable {
         var pairRequested: (_ client: Int, _ deviceName: String) -> Void
         /// A paired phone's connection became ready or sent something (pings included).
         var deviceActive: (_ deviceId: String) -> Void
+        /// Whether phones can reach the listener changed (`isListening`).
+        var listeningChanged: (_ listening: Bool) -> Void
         /// The listener broke after it had started; the server has stopped.
         var failed: () -> Void
     }
 
-    /// A connection that sends nothing at all (not even a ping) for this long is closed.
-    static let idleTimeout: TimeInterval = 600
-    /// How long `start` waits for one port to be bound.
+    /// How long `start` waits for one port's listener to settle.
     private static let bindTimeout: TimeInterval = 3
 
     private let queue: DispatchQueue
@@ -33,8 +34,12 @@ final class BridgeServer: @unchecked Sendable {
     private let serviceName: String
     private let makeConnection: () -> BridgeConnection
     private let callbacks: Callbacks
+    private let admission = BridgeAdmission.standard
 
     private var listener: NWListener?
+    /// The listener is ready, so phones can connect. It can also be kept while still
+    /// waiting -- for the Local Network permission, or for a network -- and become ready later.
+    private(set) var isListening = false
     private var clients: [Int: Client] = [:]
     private var lastClientNumber = 0
 
@@ -43,7 +48,10 @@ final class BridgeServer: @unchecked Sendable {
         let number: Int
         let connection: NWConnection
         let machine: BridgeConnection
-        let idleTimer: DispatchSourceTimer
+        /// Closes the connection when its phase's `BridgeAdmission` timeout runs out.
+        let deadline: DispatchSourceTimer
+        /// The phase `deadline` was last set for.
+        var deadlinePhase: BridgeConnection.Phase = .awaitingFirst
         /// The last `seq` sent: snapshots are numbered per connection, from 1.
         var seq = 0
         /// The body of the last snapshot sent, so an unchanged one isn't sent again.
@@ -51,17 +59,20 @@ final class BridgeServer: @unchecked Sendable {
         var askedForApproval = false
         var closing = false
 
-        init(number: Int, connection: NWConnection, machine: BridgeConnection, idleTimer: DispatchSourceTimer) {
+        init(number: Int, connection: NWConnection, machine: BridgeConnection, deadline: DispatchSourceTimer) {
             self.number = number
             self.connection = connection
             self.machine = machine
-            self.idleTimer = idleTimer
+            self.deadline = deadline
         }
 
         var deviceId: String? {
             if case .ready(let id) = machine.phase { return id }
             return nil
         }
+
+        /// What counts against `BridgeAdmission`: a connection on its way out still holds its socket.
+        var admissionPhase: BridgeConnection.Phase { closing ? .closed : machine.phase }
     }
 
     init(queue: DispatchQueue, serviceName: String, makeConnection: @escaping () -> BridgeConnection, callbacks: Callbacks) {
@@ -78,8 +89,9 @@ final class BridgeServer: @unchecked Sendable {
 
     // MARK: - Listening
 
-    /// Listens on the first port of `BridgeProtocol.portRange` that can be bound and returns
-    /// it. Blocks the bridge queue while binding (at most a few seconds per port).
+    /// Listens on the first port of `BridgeProtocol.portRange` that isn't taken and returns it;
+    /// `isListening` then tells whether it is reachable yet. Blocks the bridge queue while
+    /// binding (at most a few seconds per port).
     func start(identity: SecIdentity) throws -> UInt16 {
         dispatchPrecondition(condition: .onQueue(queue))
         stop()
@@ -94,11 +106,16 @@ final class BridgeServer: @unchecked Sendable {
                 continue
             }
             listener.service = NWListener.Service(name: serviceName, type: BridgeProtocol.bonjourType)
-            if let error = bind(listener) {
+            let outcome = bind(listener)
+            if case .failed(let error) = outcome {
                 lastError = error
+                listener.stateUpdateHandler = nil
+                listener.newConnectionHandler = nil
+                listener.cancel()
                 continue
             }
             self.listener = listener
+            if case .ready = outcome { isListening = true }
             return port
         }
         throw lastError
@@ -110,54 +127,75 @@ final class BridgeServer: @unchecked Sendable {
         listener?.newConnectionHandler = nil
         listener?.cancel()
         listener = nil
+        isListening = false
         for client in clients.values {
-            client.idleTimer.cancel()
+            client.deadline.cancel()
             client.connection.stateUpdateHandler = nil
             client.connection.cancel()
         }
         clients = [:]
     }
 
-    /// Starts `listener` and waits until it is listening (nil) or has failed (the error).
-    private func bind(_ listener: NWListener) -> Error? {
+    /// Starts `listener` and waits until it is listening, has failed, or is waiting (or still
+    /// silent after `bindTimeout`) -- the last two are kept, since a listener waiting for the
+    /// Local Network permission or a network becomes ready by itself. Only a taken port is a
+    /// reason to move on to the next one.
+    private func bind(_ listener: NWListener) -> BindOutcome.Result {
         let settled = DispatchSemaphore(value: 0)
         let outcome = BindOutcome()
         listener.stateUpdateHandler = { [weak self, weak listener] state in
             switch state {
             case .ready:
-                if outcome.settle(nil) { settled.signal() }
+                if outcome.settle(.ready) { settled.signal() }
+            case .waiting(let error):
+                if outcome.settle(Self.isPortTaken(error) ? .failed(error) : .pending) { settled.signal() }
             case .failed(let error):
-                if outcome.settle(error) {
-                    settled.signal()
-                } else if let self, let listener {
-                    // Broke later (after `start` returned).
-                    self.queue.async { self.listenerFailed(listener, error) }
-                }
+                if outcome.settle(.failed(error)) { settled.signal() }
             default:
                 break
             }
+            // Every change also goes to the bridge queue, where it only counts for the
+            // listener that was kept (it runs after `start` returns).
+            guard let self, let listener else { return }
+            self.queue.async { self.listenerStateChanged(listener, state) }
         }
         listener.newConnectionHandler = { [weak self, weak listener] connection in
             guard let self, let listener else { connection.cancel(); return }
             self.queue.async { self.accept(connection, from: listener) }
         }
         listener.start(queue: listenerQueue)
-        if settled.wait(timeout: .now() + Self.bindTimeout) == .timedOut, outcome.settle(NWError.posix(.ETIMEDOUT)) {
-            listener.stateUpdateHandler = nil
-            listener.cancel()
-            return NWError.posix(.ETIMEDOUT)
+        if settled.wait(timeout: .now() + Self.bindTimeout) == .timedOut {
+            _ = outcome.settle(.pending)
         }
-        guard let error = outcome.error else { return nil }
-        listener.stateUpdateHandler = nil
-        listener.cancel()
-        return error
+        return outcome.result ?? .pending
     }
 
-    private func listenerFailed(_ failed: NWListener, _ error: NWError) {
-        guard failed === listener else { return }
-        DiagnosticLog.shared.log("bridge listener failed: \(error)")
-        stop()
-        callbacks.failed()
+    private func listenerStateChanged(_ changed: NWListener, _ state: NWListener.State) {
+        guard changed === listener else { return }
+        switch state {
+        case .ready:
+            setListening(true)
+        case .waiting(let error):
+            DiagnosticLog.shared.log("bridge listener waiting: \(error)")
+            setListening(false)
+        case .failed(let error):
+            DiagnosticLog.shared.log("bridge listener failed: \(error)")
+            stop()
+            callbacks.failed()
+        default:
+            break
+        }
+    }
+
+    private func setListening(_ listening: Bool) {
+        guard listening != isListening else { return }
+        isListening = listening
+        callbacks.listeningChanged(listening)
+    }
+
+    private static func isPortTaken(_ error: NWError) -> Bool {
+        if case .posix(let code) = error { return code == .EADDRINUSE }
+        return false
     }
 
     private static func parameters(identity: SecIdentity) -> NWParameters {
@@ -176,24 +214,29 @@ final class BridgeServer: @unchecked Sendable {
 
     // MARK: - Connections
 
-    /// Every connection from outside the private networks is cancelled right away, as is
-    /// one that arrives from a listener that has since been stopped.
+    /// Cancelled right away: a connection from outside the private networks, one beyond
+    /// `BridgeAdmission`'s caps, and one that arrives from a listener since stopped.
     private func accept(_ connection: NWConnection, from origin: NWListener) {
-        guard origin === listener, let host = Self.host(of: connection.endpoint), PrivateNetwork.isAllowed(host: host) else {
+        guard origin === listener, let host = Self.host(of: connection.endpoint), PrivateNetwork.isAllowed(host: host),
+              admission.admits(open: clients.values.map(\.admissionPhase))
+        else {
             connection.cancel()
             return
         }
         lastClientNumber += 1
         let number = lastClientNumber
-        let idleTimer = DispatchSource.makeTimerSource(queue: queue)
-        let client = Client(number: number, connection: connection, machine: makeConnection(), idleTimer: idleTimer)
+        let deadline = DispatchSource.makeTimerSource(queue: queue)
+        let client = Client(number: number, connection: connection, machine: makeConnection(), deadline: deadline)
         clients[number] = client
-        idleTimer.setEventHandler { [weak self] in self?.close(number) }
-        idleTimer.schedule(deadline: .now() + Self.idleTimeout)
-        idleTimer.resume()
+        deadline.setEventHandler { [weak self] in self?.close(number) }
+        deadline.schedule(deadline: .now() + (admission.timeout(for: .awaitingFirst) ?? 0))
+        deadline.resume()
+        // A started connection must be cancelled once it's no longer needed -- a failed one
+        // too -- and is only forgotten when that has happened.
         connection.stateUpdateHandler = { [weak self] state in
             switch state {
-            case .failed, .cancelled: self?.forget(number)
+            case .failed: self?.abandon(number)
+            case .cancelled: self?.forget(number)
             default: break
             }
         }
@@ -210,7 +253,6 @@ final class BridgeServer: @unchecked Sendable {
                 self.close(client.number)
                 return
             }
-            client.idleTimer.schedule(deadline: .now() + Self.idleTimeout)
             switch metadata.opcode {
             case .text, .binary:
                 self.perform(client.machine.receive(content ?? Data()), on: client)
@@ -220,9 +262,20 @@ final class BridgeServer: @unchecked Sendable {
                 break // ping (answered by `autoReplyPing`), pong, continuation
             }
             guard !client.closing else { return }
+            self.resetDeadline(client, traffic: true)
             if let deviceId = client.deviceId { self.callbacks.deviceActive(deviceId) }
             self.receive(on: client)
         }
+    }
+
+    /// A new phase gets its own timeout; within a phase, only a paired phone's traffic
+    /// starts it over (pings can't keep an unauthenticated connection open).
+    private func resetDeadline(_ client: Client, traffic: Bool) {
+        let phase = client.machine.phase
+        guard phase != client.deadlinePhase || (traffic && admission.trafficExtends(phase)) else { return }
+        client.deadlinePhase = phase
+        guard let timeout = admission.timeout(for: phase) else { return }
+        client.deadline.schedule(deadline: .now() + timeout)
     }
 
     private func perform(_ outputs: [BridgeConnection.Output], on client: Client) {
@@ -260,7 +313,7 @@ final class BridgeServer: @unchecked Sendable {
     private func close(_ number: Int) {
         guard let client = clients[number], !client.closing else { return }
         client.closing = true
-        client.idleTimer.cancel()
+        client.deadline.cancel()
         let metadata = NWProtocolWebSocket.Metadata(opcode: .close)
         metadata.closeCode = .protocolCode(.normalClosure)
         let context = NWConnection.ContentContext(identifier: "close", metadata: [metadata])
@@ -271,9 +324,18 @@ final class BridgeServer: @unchecked Sendable {
         queue.asyncAfter(deadline: .now() + 2) { connection.forceCancel() }
     }
 
+    /// The connection failed (a refused TLS handshake, a reset): nothing more can be sent, so
+    /// it is just cancelled.
+    private func abandon(_ number: Int) {
+        guard let client = clients[number] else { return }
+        client.closing = true
+        client.deadline.cancel()
+        client.connection.cancel()
+    }
+
     private func forget(_ number: Int) {
         guard let client = clients.removeValue(forKey: number) else { return }
-        client.idleTimer.cancel()
+        client.deadline.cancel()
     }
 
     // MARK: - Driven by the controller
@@ -293,6 +355,8 @@ final class BridgeServer: @unchecked Sendable {
     func approvePairing(_ number: Int, deviceId: String, token: String) {
         guard let client = clients[number] else { return }
         perform(client.machine.approvePairing(deviceId: deviceId, token: token), on: client)
+        guard !client.closing else { return }
+        resetDeadline(client, traffic: false)
         if let deviceId = client.deviceId { callbacks.deviceActive(deviceId) }
     }
 
@@ -329,22 +393,27 @@ final class BridgeServer: @unchecked Sendable {
     }
 }
 
-/// The first of a listener's ready/failed reports while `bind` waits, set from the listener's
-/// queue and read on the bridge queue after the semaphore.
+/// The first report that settles `bind`, set from the listener's queue and read on the bridge
+/// queue after the semaphore.
 private final class BindOutcome: @unchecked Sendable {
+    enum Result {
+        case ready
+        /// Waiting, or nothing reported in time: kept, it may still become ready.
+        case pending
+        case failed(Error)
+    }
+
     private let lock = NSLock()
-    private var settled = false
-    private var result: Error?
+    private var settled: Result?
 
     /// Records the outcome unless one already was; returns whether this call did.
-    func settle(_ error: Error?) -> Bool {
+    func settle(_ result: Result) -> Bool {
         lock.withLock {
-            guard !settled else { return false }
-            settled = true
-            result = error
+            guard settled == nil else { return false }
+            settled = result
             return true
         }
     }
 
-    var error: Error? { lock.withLock { result } }
+    var result: Result? { lock.withLock { settled } }
 }

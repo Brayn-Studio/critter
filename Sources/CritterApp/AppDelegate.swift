@@ -498,8 +498,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func writeHeartbeat() {
         guard !isTerminating else { return }
         let visible = petController.visible
-        // Read by `critter-hook ask` to decide whether a phone could answer.
-        let bridgeEnabled = settings.bridgeEnabled
+        // Read by `critter-hook ask` to decide whether a phone could answer: only while the
+        // bridge is switched on and actually reachable.
+        let bridgeEnabled = settings.bridgeEnabled && bridge.isServing
         let lastClientSeen = bridge.lastClientSeen
         let heartbeat = Int64(Date().timeIntervalSince1970 * 1000)
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
