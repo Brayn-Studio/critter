@@ -9,6 +9,8 @@ nonisolated(unsafe) private let questionInput: [String: Any] = try! JSONSerializ
 nonisolated(unsafe) private let planInput: [String: Any] = ["plan": "# Plan\n1. touch x\n", "planFilePath": "/Users/u/.claude/plans/x.md"]
 
 private let start: Int64 = 1_000_000
+/// The hook environment of a terminal session (`ask` only waits for those).
+private let cli = ["CLAUDE_CODE_ENTRYPOINT": "cli"]
 
 /// A virtual clock: `sleep` advances it and then runs `onSleep(callCount)`, which is where a
 /// test plays the app (writes an answer, ages the heartbeat, removes the request...).
@@ -64,7 +66,28 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
         let paths = tmpPaths()
         setUp(paths)
         let clock = Clock()
-        let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+        let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
+        #expect(result == HookResult(stdout: "", exitCode: 0), Comment(rawValue: name))
+        #expect(PendingStore(paths: paths).readAll().isEmpty, Comment(rawValue: name))
+        #expect(clock.sleeps == 0, Comment(rawValue: name))
+    }
+}
+
+/// VS Code, Desktop and SDK sessions (spec 13.3, unverified) and a missing entrypoint: `ask`
+/// returns at once even with the gate wide open, prints nothing and publishes nothing.
+@Test func askExitsImmediatelyOutsideTheCli() {
+    let environments: [(String, [String: String])] = [
+        ("vscode", ["CLAUDE_CODE_ENTRYPOINT": "claude-vscode"]),
+        ("desktop", ["CLAUDE_CODE_ENTRYPOINT": "claude-desktop"]),
+        ("sdk", ["CLAUDE_CODE_ENTRYPOINT": "sdk-cli"]),
+        ("empty", ["CLAUDE_CODE_ENTRYPOINT": ""]),
+        ("missing", [:]),
+    ]
+    for (name, environment) in environments {
+        let paths = tmpPaths()
+        writeStatus(paths)
+        let clock = Clock()
+        let result = AskCommand.run(stdin: request(), paths: paths, environment: environment, env: clock.environment())
         #expect(result == HookResult(stdout: "", exitCode: 0), Comment(rawValue: name))
         #expect(PendingStore(paths: paths).readAll().isEmpty, Comment(rawValue: name))
         #expect(clock.sleeps == 0, Comment(rawValue: name))
@@ -77,7 +100,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     let store = PendingStore(paths: paths)
     let clock = Clock()
     clock.onSleep = { _ in try! store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "req-1") }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(result.exitCode == 0)
     #expect(parse(result.stdout) == parse(#"{"hookSpecificOutput":{"hookEventName":"PermissionRequest","decision":{"behavior":"allow"}}}"#))
     #expect(store.read(requestId: "req-1") == nil)
@@ -94,7 +117,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
         seen = store.read(requestId: "req-1")
         store.remove(requestId: "req-1")
     }
-    _ = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    _ = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(seen?.kind == .permission)
     #expect(seen?.sessionId == "s1")
     #expect(seen?.toolName == "Bash")
@@ -118,7 +141,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
         summary = store.read(requestId: "req-1")?.summary
         try! store.writeAnswer(AnswerPayload(answers: ["Pick a number": "Two"]), requestId: "req-1")
     }
-    let result = AskCommand.run(stdin: request(tool: "AskUserQuestion", input: questionInput), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(tool: "AskUserQuestion", input: questionInput), paths: paths, environment: cli, env: clock.environment())
     #expect(kind == .question)
     #expect(summary == BubbleText.askQuestion)
     #expect(decision(result)?["behavior"] == .string("allow"))
@@ -132,7 +155,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     let store = PendingStore(paths: paths)
     let clock = Clock()
     clock.onSleep = { _ in try! store.writeAnswer(AnswerPayload(decision: "revise", message: "改名为 x"), requestId: "req-1") }
-    let result = AskCommand.run(stdin: request(tool: "ExitPlanMode", input: planInput), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(tool: "ExitPlanMode", input: planInput), paths: paths, environment: cli, env: clock.environment())
     #expect(decision(result)?["behavior"] == .string("deny"))
     #expect(decision(result)?["message"] == .string("改名为 x"))
 }
@@ -143,7 +166,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     let store = PendingStore(paths: paths)
     let clock = Clock()
     clock.onSleep = { _ in store.remove(requestId: "req-1") }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(result == HookResult(stdout: "", exitCode: 0))
     #expect(clock.sleeps == 1)
 }
@@ -153,7 +176,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     writeStatus(paths)
     let clock = Clock()
     clock.onSleep = { _ in writeStatus(paths, heartbeat: start - 60_000) }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(result == HookResult(stdout: "", exitCode: 0))
     #expect(PendingStore(paths: paths).readAll().isEmpty)
 }
@@ -163,7 +186,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     writeStatus(paths)
     let clock = Clock()
     clock.onSleep = { _ in writeStatus(paths, heartbeat: clock.now, bridge: false) }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(result == HookResult(stdout: "", exitCode: 0))
     #expect(PendingStore(paths: paths).readAll().isEmpty)
 }
@@ -177,7 +200,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
         if n == 1 { writeStatus(paths, heartbeat: clock.now, client: start - 20 * 60_000) }
         if n == 3 { try! store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "req-1") }
     }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(decision(result)?["behavior"] == .string("allow"))
 }
 
@@ -185,7 +208,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     let paths = tmpPaths()
     writeStatus(paths)
     let clock = Clock()
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment(maxWaitMs: 1_000))
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment(maxWaitMs: 1_000))
     #expect(result == HookResult(stdout: "", exitCode: 0))
     #expect(PendingStore(paths: paths).readAll().isEmpty)
     #expect(clock.sleeps == 5)
@@ -204,7 +227,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
             try! store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "req-1")
         }
     }
-    let result = AskCommand.run(stdin: request(), paths: paths, env: clock.environment())
+    let result = AskCommand.run(stdin: request(), paths: paths, environment: cli, env: clock.environment())
     #expect(decision(result)?["behavior"] == .string("allow"))
 }
 
@@ -213,7 +236,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     writeStatus(paths)
     let clock = Clock()
     for stdin in [Data("nope".utf8), Data(#"{"hook_event_name":"PreToolUse","session_id":"s1","tool_name":"Bash","tool_input":{}}"#.utf8), Data(#"{"hook_event_name":"PermissionRequest","session_id":"s1"}"#.utf8)] {
-        #expect(AskCommand.run(stdin: stdin, paths: paths, env: clock.environment()) == HookResult(stdout: "", exitCode: 0))
+        #expect(AskCommand.run(stdin: stdin, paths: paths, environment: cli, env: clock.environment()) == HookResult(stdout: "", exitCode: 0))
     }
     #expect(clock.sleeps == 0)
 }

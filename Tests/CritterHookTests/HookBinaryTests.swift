@@ -89,6 +89,8 @@ private func critterHookBinaryURL() throws -> URL {
     process.executableURL = binary
     process.arguments = ["ask"]
     process.environment = [
+        // A terminal session, so it is the missing app that closes the gate.
+        "CLAUDE_CODE_ENTRYPOINT": "cli",
         "CRITTER_HOME": base.appendingPathComponent(".critter").path,
         "CLAUDE_CONFIG_DIR": base.appendingPathComponent(".claude").path,
         "HOME": base.path,

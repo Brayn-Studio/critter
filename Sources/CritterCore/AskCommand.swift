@@ -57,8 +57,15 @@ public struct AskEnvironment: Sendable {
 /// and prints its decision. Printing nothing leaves Claude Code to ask in the terminal, so every
 /// failure and give-up path is silent.
 public enum AskCommand {
-    public static func run(stdin: Data, paths: CritterPaths, env: AskEnvironment) -> HookResult {
+    /// The only `CLAUDE_CODE_ENTRYPOINT` `ask` waits for. The terminal's prompt was verified to
+    /// stay up beside a waiting hook (spec 4.1); VS Code, Desktop and SDK sessions were not
+    /// (spec 13.3), and a hook waiting there could hold their prompt for up to 590 s.
+    public static let entrypoint = "cli"
+
+    /// `environment` is the hook's own (Claude Code sets `CLAUDE_CODE_ENTRYPOINT` for it).
+    public static func run(stdin: Data, paths: CritterPaths, environment: [String: String], env: AskEnvironment) -> HookResult {
         let silent = HookResult(stdout: "", exitCode: 0)
+        guard environment["CLAUDE_CODE_ENTRYPOINT"] == entrypoint else { return silent }
         guard let root = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any],
               root["hook_event_name"] as? String == "PermissionRequest",
               let sessionId = root["session_id"] as? String,

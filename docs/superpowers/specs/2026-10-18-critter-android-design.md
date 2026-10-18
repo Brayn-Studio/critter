@@ -236,6 +236,7 @@
   3. 最近 10 分钟内有任何一台已配对的手机连过。
 
   第 3 条用"10 分钟内连过"而不是"此刻在线"，是因为手机熄屏时 Wi-Fi 可能短暂断开，熄屏期间来的请求，亮屏后应该还能答。
+  - 另外，在 §13.3 验证之前，`ask` 只对终端里的会话生效：hook 环境里的 `CLAUDE_CODE_ENTRYPOINT` 必须是 `cli`。VS Code、Desktop、SDK 的会话，以及这个变量缺失时，一律立刻 exit 0、不输出、不写 pending 文件。
 - **等待**：
   1. 原子写入 `~/.critter/pending/<requestId>.json`（目录 0700）。内容是：
      - `requestId`（随机）、`sessionId`；
@@ -621,7 +622,9 @@
    - 多选：把选中的 label 用 `", "`（逗号加一个空格）连成一个字符串。回答 `A, B` 后，终端显示 `· Pick letters → A, B`，Claude 复述收到的是 `A, B`，两个选项都拿到了，所以不需要试 `,` 连接或 JSON 数组。已写进协议文档和 `AskDecision.multiSelectSeparator`，单元测试 `questionMultiSelectFormat`；安卓端的 `joinMultiSelect` 本来就是 `", "`，不用改。
    - 自由文本：直接把文字当值。回答 `Mango` 后 Claude 复述 `FRUIT=Mango`。
 2. 【按本方案基本不会触发，不做测试】电脑上先答之后，本方案会删除 pending 文件，等待中的 hook 看到自己的 pending 文件没了就不输出、exit 0，所以不会出现"先答之后 hook 又输出决策"。要在手工里验证的话，需要绕过撤销逻辑手写 answers 文件，意义不大。
-3. 【需手工检查】VS Code 或 Antigravity 里的会话：在里面触发一次需要确认的命令，看手机上是否收到请求、界面上的确认框是否和 hook 并行等待；不是的话，`ask` 只能对 CLI 会话开启，需要按 `entrypoint` 判断。
+3. 【需手工检查；在那之前 `ask` 只对 CLI 开启】VS Code 或 Antigravity、Desktop 里的会话：在里面触发一次需要确认的命令，看界面上的确认框是否和 hook 并行等待、手机上答了以后是否自动关闭。
+   - 2026-10-19 起，`ask` 只在 `CLAUDE_CODE_ENTRYPOINT == "cli"` 时等待，其它入口（`claude-vscode`、`claude-desktop`、`sdk-*`）和变量缺失时立刻退出（单元测试 `askExitsImmediatelyOutsideTheCli`）。原因：没验证过的入口里，如果确认框要等 hook 返回才出现，一个等待中的 `ask` 会把那里的提示卡住最多 590 秒。
+   - 这些会话照样出现在手机上，只是它们的确认只能在电脑上答。验证通过后，把对应的入口加进 `AskCommand` 的允许列表。
 4. 【已实测】子代理触发的权限请求：形状和主会话一样，`toolName` 是 `Bash`，`input` 是 `{"command":"touch e2e-sub.txt","description":"…"}`；快照里该请求的 `sessionId` **就是父会话的 id**（没有单独的子代理会话），手机上按父会话显示即可。
 5. 【需手工检查】状态栏命令输出为空时（原来没有状态栏、接成不带 `--` 的形式），终端底部的样子是否和没有状态栏一样：在没有 `statusLine` 的 settings 里接入后开一个会话，对比底部。
 6. 开发用的 vivo 手机上，从后台打开看板会不会被拦，以及需要打开哪些开关。`ACCESS_LOCAL_NETWORK` 的实际弹窗表现，在模拟器上验证。
