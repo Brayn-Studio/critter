@@ -225,6 +225,8 @@ class BridgeRepository(private val app: Application) {
             pairingStore.save(p)
             _pairing.value = p
             BridgeService.sync(app, this)
+            // A running service only re-delivers onStartCommand; the client must be restarted here (idempotent).
+            startClient()
             success = true
             return true
         } finally {

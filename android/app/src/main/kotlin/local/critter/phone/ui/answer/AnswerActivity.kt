@@ -80,7 +80,7 @@ class AnswerActivity : ComponentActivity() {
         var busy by remember(id) { mutableStateOf(false) }
         var failure by remember(id) { mutableStateOf<String?>(null) }
         var attempt by remember(id) { mutableIntStateOf(0) }
-        val draft = remember(id, attempt) { request?.let { AnswerDraft(it) } }
+        val draft = remember(id, attempt, request?.requestId) { request?.let { AnswerDraft(it) } }
 
         val gone = request == null || handledElsewhere
         LaunchedEffect(gone) {
