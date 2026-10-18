@@ -113,6 +113,7 @@ class BoardActivity : ComponentActivity() {
         }
         keepScreenOn(window, charging)
         repository.boardVisible(true)
+        repository.ensureConnected()
     }
 
     override fun onDestroy() {

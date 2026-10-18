@@ -12,9 +12,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.filterNotNull
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import local.critter.phone.critter.MotionPrefs
 import local.critter.core.net.BridgeClient
 import local.critter.core.net.ConnState
@@ -22,6 +25,7 @@ import local.critter.core.net.Credentials
 import local.critter.core.net.Endpoint
 import local.critter.core.net.PrivateNetwork
 import local.critter.core.protocol.AnswerPayload
+import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.ClientMessage
 import local.critter.core.protocol.PairingUri
 import local.critter.core.protocol.ResultReason
@@ -138,6 +142,66 @@ class BridgeRepository(private val app: Application) {
 
     fun reconnectNow() {
         client?.reconnectNow()
+    }
+
+    /**
+     * Brings the connection back if it is down. A notification button or a sheet may be the first thing a process
+     * runs after vivo killed or froze it, with no client at all: this starts the service (a notification tap is a
+     * foreground-service start exemption), starts the client in case the service is not up yet, and skips the
+     * backoff wait. A connection that is up is left alone.
+     */
+    fun ensureConnected() {
+        BridgeService.sync(app, this)
+        if (!BridgeService.shouldRun(this)) return
+        startClient()
+        if (_state.value !is ConnState.Connected) client?.reconnectNow()
+    }
+
+    /** What [awaitRequest] found. */
+    sealed interface LiveRequest {
+        data class Found(val request: BridgePending) : LiveRequest
+
+        /** Connected, and the Mac no longer lists it: answered elsewhere, or expired. */
+        data object Gone : LiveRequest
+
+        /** No connection came up in time. */
+        data object Offline : LiveRequest
+    }
+
+    /**
+     * Waits up to [timeoutMs] for a live connection (its snapshot, never the cached one) and looks [requestId] up
+     * in it (spec §8.5: only a request the Mac still lists may be answered).
+     */
+    suspend fun awaitRequest(requestId: String, timeoutMs: Long = LIVE_WAIT_MS): LiveRequest {
+        val body = withTimeoutOrNull(timeoutMs) {
+            combine(state, live) { s, l -> if (s is ConnState.Connected) l else null }.filterNotNull().first()
+        } ?: return LiveRequest.Offline
+        val request = body.pending.firstOrNull { it.requestId == requestId } ?: return LiveRequest.Gone
+        return LiveRequest.Found(request)
+    }
+
+    /**
+     * For a caller with no screen (a notification button): brings the connection back, waits for it to list
+     * [requestId], and answers with what [payloadFor] makes of the request (null: cannot be answered this way,
+     * reason `invalid`). If the connection dropped under the answer, it tries once more on the next one; the Mac
+     * refuses a second answer to the same request, so that is safe. A request that is gone gives `resolved`;
+     * no connection gives `unknown` "没连上电脑".
+     */
+    suspend fun answerWhenLive(requestId: String, payloadFor: (BridgePending) -> AnswerPayload?): ServerMessage.Result {
+        for (attempt in 0..1) {
+            ensureConnected()
+            when (val found = awaitRequest(requestId)) {
+                LiveRequest.Offline -> return failure(ResultReason.unknown, "没连上电脑，没有发送")
+                LiveRequest.Gone -> return failure(ResultReason.resolved, "已在电脑上处理")
+                is LiveRequest.Found -> {
+                    val payload = payloadFor(found.request) ?: return failure(ResultReason.invalid, "要打开卡片回答")
+                    val result = answer(requestId, payload)
+                    val dropped = !result.ok && result.reason == ResultReason.unknown && _state.value !is ConnState.Connected
+                    if (!dropped || attempt == 1) return result
+                }
+            }
+        }
+        return failure(ResultReason.unknown, "没有发送出去")
     }
 
     /** The board is open: ping every 30 s; otherwise every 3 minutes (spec §8.3). */
@@ -298,5 +362,10 @@ class BridgeRepository(private val app: Application) {
         true
     } catch (_: Exception) {
         false
+    }
+
+    companion object {
+        /** How long a notification button or a sheet waits for the connection to come back. */
+        const val LIVE_WAIT_MS = 8_000L
     }
 }

@@ -65,10 +65,17 @@ class AnswerActivity : ComponentActivity() {
         requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Opened from a notification, the process may be fresh (or just thawed) with no connection yet.
+        repository.ensureConnected()
+    }
+
     @Composable
     private fun Content(repo: BridgeRepository) {
         val id = requestId
         val snapshot by repo.snapshot.collectAsState()
+        val live by repo.live.collectAsState()
         val state by repo.state.collectAsState()
         val scope = rememberCoroutineScope()
 
@@ -81,7 +88,14 @@ class AnswerActivity : ComponentActivity() {
         var attempt by remember(id) { mutableIntStateOf(0) }
         val draft = remember(id, attempt, request?.requestId) { request?.let { AnswerDraft(it) } }
 
-        val gone = request == null || handledElsewhere
+        // Missing from a cached snapshot (a fresh process, offline) proves nothing: wait for the live one a while.
+        var waitedOut by remember(id) { mutableStateOf(false) }
+        LaunchedEffect(id) {
+            delay(BridgeRepository.LIVE_WAIT_MS)
+            waitedOut = true
+        }
+        val waiting = request == null && live == null && !waitedOut && !handledElsewhere
+        val gone = !waiting && (request == null || handledElsewhere)
         LaunchedEffect(gone) {
             if (gone) {
                 delay(1_500)
@@ -131,7 +145,13 @@ class AnswerActivity : ComponentActivity() {
                             .background(MaterialTheme.colorScheme.surface, RoundedCornerShape(topStart = 20.dp, topEnd = 20.dp))
                             .padding(28.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text("已在电脑上处理", style = MaterialTheme.typography.titleMedium) }
+                    ) {
+                        Text(
+                            if (waiting) "正在连接电脑…" else "已在电脑上处理",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 } else {
                     AnswerSheet(
                         request = draft.request,

@@ -45,6 +45,7 @@ import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
+import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.repository
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.contextPercentText
@@ -86,17 +87,31 @@ class DetailActivity : ComponentActivity() {
         sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
     }
 
+    override fun onStart() {
+        super.onStart()
+        // Opened from the floating pile or a notification, the connection may be down (a frozen process).
+        repository.ensureConnected()
+    }
+
     @Composable
     private fun Content(sessionId: String?) {
         val repo = repository
         val snapshot by repo.snapshot.collectAsState()
+        val live by repo.live.collectAsState()
         val state by repo.state.collectAsState()
         val session = snapshot?.sessions?.firstOrNull { it.id == sessionId }
         val now = System.currentTimeMillis()
 
-        // A session that is gone (it ended while the sheet was open): close after a moment.
-        LaunchedEffect(session == null) {
-            if (session == null) {
+        // A session that is gone (it ended while the sheet was open): close after a moment. Missing from a cached
+        // snapshot only counts once the live one had a chance to arrive.
+        var waitedOut by remember(sessionId) { mutableStateOf(false) }
+        LaunchedEffect(sessionId) {
+            delay(BridgeRepository.LIVE_WAIT_MS)
+            waitedOut = true
+        }
+        val gone = session == null && (live != null || waitedOut)
+        LaunchedEffect(gone) {
+            if (gone) {
                 delay(1_500)
                 finish()
             }
@@ -119,7 +134,13 @@ class DetailActivity : ComponentActivity() {
                     Box(
                         Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surface, SHEET_SHAPE).padding(28.dp),
                         contentAlignment = Alignment.Center,
-                    ) { Text("这个会话已经结束", style = MaterialTheme.typography.titleMedium) }
+                    ) {
+                        Text(
+                            if (gone) "这个会话已经结束" else "正在连接电脑…",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = MaterialTheme.colorScheme.onSurface,
+                        )
+                    }
                 } else {
                     DetailSheet(session, online = state is ConnState.Connected, now = now)
                 }

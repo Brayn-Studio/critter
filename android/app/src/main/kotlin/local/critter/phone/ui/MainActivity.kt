@@ -42,7 +42,6 @@ import local.critter.core.protocol.PairingUri
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.onboarding.OnboardingActivity
 import local.critter.phone.repository
-import local.critter.phone.service.BridgeService
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.board.BoardActivity
 import local.critter.phone.ui.home.HomeScreen
@@ -132,8 +131,8 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
-        // Opening the app is a good moment to make sure the connection service is up.
-        BridgeService.sync(this, repository)
+        // Opening the app is a good moment to make sure the connection service is up, and connected.
+        repository.ensureConnected()
     }
 
     private fun pairingUriOf(intent: Intent?): PairingUri? {
