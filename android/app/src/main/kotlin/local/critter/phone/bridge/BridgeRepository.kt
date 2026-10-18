@@ -19,6 +19,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import local.critter.phone.critter.MotionPrefs
+import local.critter.core.logic.AlertTracker
 import local.critter.core.net.BridgeClient
 import local.critter.core.net.ConnState
 import local.critter.core.net.Credentials
@@ -36,6 +37,7 @@ import local.critter.phone.data.Pairing
 import local.critter.phone.data.PairingStore
 import local.critter.phone.data.SettingsStore
 import local.critter.phone.data.SnapshotCache
+import local.critter.phone.service.Alerts
 import local.critter.phone.service.BridgeService
 import java.net.InetSocketAddress
 import java.net.Socket
@@ -77,6 +79,9 @@ class BridgeRepository(private val app: Application) {
     private val _live = MutableStateFlow<SnapshotBody?>(null)
     /** The latest snapshot of the current connection only: null whenever not connected. Drives alerts. */
     val live: StateFlow<SnapshotBody?> = _live.asStateFlow()
+
+    /** What has been alerted already, across reconnects (used by the service on its main thread). */
+    val alertTracker = AlertTracker()
 
     private val answering = ConcurrentHashMap.newKeySet<String>()
     private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
@@ -323,6 +328,7 @@ class BridgeRepository(private val app: Application) {
 
     fun unpair() {
         stopClient()
+        Alerts.withdrawAll(app, results = true)
         pairingStore.clear()
         cache.clear()
         _pairing.value = null

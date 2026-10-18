@@ -18,12 +18,22 @@ data class AlertPrefs(
  * @property post notifications to show, one per new request
  * @property cancel request ids whose notifications should be withdrawn
  * @property sessionAlerts sessions that just finished or failed, with the state they entered
+ * @property cancelSessionAlerts sessions whose done/error notification should go: they left that state, or ended
+ * @property waitingNotices sessions waiting for something the phone cannot answer (`ask` is CLI-only, so a VS Code
+ *   session never has a request): "<名字> 等你确认（请在电脑上处理）"
+ * @property cancelWaitingNotices sessions whose waiting notice should go
+ * @property reconcile the set of pending requests changed (or this is the first snapshot of the process): worth
+ *   checking the notification shade for leftovers, such as a previous process's
  */
 data class AlertPlan(
     val vibrate: Boolean,
     val post: List<BridgePending>,
     val cancel: List<String>,
     val sessionAlerts: List<Pair<BridgeSession, PetState>>,
+    val cancelSessionAlerts: List<String> = emptyList(),
+    val waitingNotices: List<BridgeSession> = emptyList(),
+    val cancelWaitingNotices: List<String> = emptyList(),
+    val reconcile: Boolean = true,
 )
 
 object AlertPlanner {
@@ -57,6 +67,100 @@ object AlertPlanner {
             post = current.pending.filter { it.requestId !in before },
             cancel = previous.pending.map { it.requestId }.filter { it !in after },
             sessionAlerts = sessionAlerts,
+        )
+    }
+
+    /** Sessions in a done/error state: the ones whose result notification may stay up. */
+    fun finishedSessions(body: SnapshotBody): Set<String> =
+        body.sessions.filter { it.state == PetState.done || it.state == PetState.error }.mapTo(HashSet()) { it.id }
+}
+
+/**
+ * [AlertPlanner] across a whole process: one per app, fed every live snapshot, told when the connection drops.
+ *
+ * A reconnect makes the next snapshot "the first" again (no buzz for what happened offline), but what was already
+ * alerted is remembered, so a notification the user dismissed is not posted again on every reconnect; requests
+ * that were resolved while offline are withdrawn. A request counts as alerted once a live snapshot listed it,
+ * whether a notification went up or the floating pile was on screen.
+ *
+ * Not thread-safe: one caller (the service's main-thread collector).
+ */
+class AlertTracker {
+    private var previous: SnapshotBody? = null
+    private var lastPending: Set<String>? = null
+
+    /** Request ids a live snapshot has listed (and still lists). */
+    private val alerted = HashSet<String>()
+
+    /** Sessions with a waiting notice up (or due, had the pile not been on screen). */
+    private val noticed = HashSet<String>()
+
+    /**
+     * Sessions that had a request in their current waiting spell: answering it leaves the session "waiting" until
+     * the tool finishes, and that is not a reason to tell the user to go to the computer.
+     */
+    private val hadRequest = HashSet<String>()
+
+    /** Sessions whose done/error notification may be up. */
+    private val resulted = HashSet<String>()
+
+    /** The connection dropped; the next snapshot describes the past again. */
+    fun disconnected() {
+        previous = null
+    }
+
+    /** Unpaired: forget everything. */
+    fun reset() {
+        previous = null
+        lastPending = null
+        alerted.clear()
+        noticed.clear()
+        hadRequest.clear()
+        resulted.clear()
+    }
+
+    fun next(current: SnapshotBody, prefs: AlertPrefs): AlertPlan {
+        val base = AlertPlanner.plan(previous, current, prefs)
+        val pendingIds = current.pending.mapTo(LinkedHashSet()) { it.requestId }
+        val sessionIds = current.sessions.mapTo(HashSet()) { it.id }
+
+        // Requests: post only the never-alerted ones; withdraw every alerted one that is gone, offline or not.
+        val post = base.post.filter { it.requestId !in alerted }
+        val cancel = alerted.filter { it !in pendingIds }
+        alerted.retainAll(pendingIds)
+        alerted.addAll(pendingIds)
+
+        // Waiting with nothing the phone can answer.
+        val withRequest = current.pending.mapTo(HashSet()) { it.sessionId }
+        hadRequest.retainAll(sessionIds)
+        for (s in current.sessions) {
+            if (s.id in withRequest) hadRequest.add(s.id) else if (s.state != PetState.waiting) hadRequest.remove(s.id)
+        }
+        val wanted = current.sessions.filter {
+            it.state == PetState.waiting && it.id !in withRequest && it.id !in hadRequest
+        }
+        val wantedIds = wanted.mapTo(HashSet()) { it.id }
+        val waitingNotices = wanted.filter { it.id !in noticed }
+        val cancelWaiting = noticed.filter { it !in wantedIds }
+        noticed.retainAll(wantedIds)
+        noticed.addAll(wantedIds)
+
+        // Done / error: withdrawn once the session leaves that state (looked at on the Mac, or busy again).
+        val finished = AlertPlanner.finishedSessions(current)
+        val cancelResults = resulted.filter { it !in finished }
+        resulted.retainAll(finished)
+        base.sessionAlerts.forEach { resulted.add(it.first.id) }
+
+        val reconcile = lastPending != pendingIds
+        lastPending = pendingIds
+        previous = current
+        return base.copy(
+            post = post,
+            cancel = cancel,
+            cancelSessionAlerts = cancelResults,
+            waitingNotices = waitingNotices,
+            cancelWaitingNotices = cancelWaiting,
+            reconcile = reconcile,
         )
     }
 }

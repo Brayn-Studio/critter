@@ -17,6 +17,7 @@ import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
 import local.critter.core.logic.AlertPlan
+import local.critter.core.logic.AlertPlanner
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
@@ -24,6 +25,7 @@ import local.critter.core.protocol.PetState
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.ui.MainActivity
 import local.critter.phone.ui.answer.AnswerActivity
+import local.critter.phone.ui.detail.DetailActivity
 import local.critter.phone.ui.stateLabel
 
 /** Notification channels, and turning an [AlertPlan] into notifications and one buzz. */
@@ -35,6 +37,7 @@ object Alerts {
     const val STATUS_ID = 1
     private const val TAG_REQUEST = "request"
     private const val TAG_SESSION = "session"
+    private const val TAG_WAITING = "waiting"
     private const val TAG_HANDLED = "handled"
 
     const val ACTION_ANSWER = "local.critter.phone.ANSWER"
@@ -101,19 +104,44 @@ object Alerts {
     fun apply(context: Context, plan: AlertPlan, body: SnapshotBody, canVibrate: Boolean, notify: Boolean = true) {
         val nm = context.getSystemService(NotificationManager::class.java)
         plan.cancel.forEach { nm.cancel(TAG_REQUEST, notificationId(it)) }
-        // After a reconnect the first snapshot cannot tell which notifications went stale offline.
-        val live = body.pending.mapTo(HashSet()) { notificationId(it.requestId) }
-        nm.activeNotifications
-            .filter { it.tag == TAG_REQUEST && it.id !in live }
-            .forEach { nm.cancel(TAG_REQUEST, it.id) }
+        plan.cancelWaitingNotices.forEach { nm.cancel(TAG_WAITING, it.hashCode()) }
+        plan.cancelSessionAlerts.forEach { nm.cancel(TAG_SESSION, it.hashCode()) }
+        // Leftovers the plan cannot know about (a previous process's): only worth a look when the pending set changed.
+        if (plan.reconcile) reconcile(nm, body)
 
-        if (!canPost(context)) return
-        val sessions = body.sessions.associateBy { it.id }
-        if (notify) {
-            plan.post.forEach { post(context, nm, it, sessions[it.sessionId]) }
-            plan.sessionAlerts.forEach { (session, state) -> postSessionResult(context, nm, session, state) }
-        }
         if (plan.vibrate && canVibrate) vibrate(context)
+        if (!notify || !canPost(context)) return
+        val sessions = body.sessions.associateBy { it.id }
+        plan.post.forEach { post(context, nm, it, sessions[it.sessionId]) }
+        plan.waitingNotices.forEach { postWaitingNotice(context, nm, it) }
+        plan.sessionAlerts.forEach { (session, state) -> postSessionResult(context, nm, session, state) }
+    }
+
+    private fun reconcile(nm: NotificationManager, body: SnapshotBody) {
+        val requests = body.pending.mapTo(HashSet()) { notificationId(it.requestId) }
+        val waiting = body.sessions.filter { it.state == PetState.waiting }.mapTo(HashSet()) { it.id.hashCode() }
+        val finished = AlertPlanner.finishedSessions(body).mapTo(HashSet()) { it.hashCode() }
+        for (n in nm.activeNotifications) {
+            val stale = when (n.tag) {
+                TAG_REQUEST -> n.id !in requests
+                TAG_WAITING -> n.id !in waiting
+                TAG_SESSION -> n.id !in finished
+                else -> false
+            }
+            if (stale) nm.cancel(n.tag, n.id)
+        }
+    }
+
+    /**
+     * Withdraws every request and waiting notification: the connection service is going away (unpaired, or "保持
+     * 后台连接" switched off), so nothing would withdraw them once they are answered elsewhere. With [results],
+     * the done/error ones too (unpaired: they belong to a Mac this phone no longer follows).
+     */
+    fun withdrawAll(context: Context, results: Boolean = false) {
+        val nm = context.getSystemService(NotificationManager::class.java)
+        for (n in nm.activeNotifications) {
+            if (n.tag == TAG_REQUEST || n.tag == TAG_WAITING || (results && n.tag == TAG_SESSION)) nm.cancel(n.tag, n.id)
+        }
     }
 
     fun cancelRequest(context: Context, requestId: String) {
@@ -158,6 +186,8 @@ object Alerts {
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(false)
             .setOnlyAlertOnce(true)
+        // The hook gives up at expiresAt; the notification goes then even if no snapshot says so (offline).
+        request.expiresAt?.let { it - System.currentTimeMillis() }?.takeIf { it > 0 }?.let { builder.setTimeoutAfter(it) }
         if (request.kind == PendingKind.permission) {
             builder.addAction(decisionAction(context, request, DECISION_ALLOW, "允许"))
             builder.addAction(decisionAction(context, request, DECISION_DENY, "拒绝"))
@@ -184,6 +214,29 @@ object Alerts {
             .setAuthenticationRequired(true)
             .build()
     }
+
+    /** "<名字> 等你确认（请在电脑上处理）": waiting for something only the Mac can answer. Opens the session's details. */
+    private fun postWaitingNotice(context: Context, nm: NotificationManager, session: BridgeSession) {
+        val open = PendingIntent.getActivity(
+            context,
+            session.id.hashCode(),
+            DetailActivity.intent(context, session.id),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+        val n = NotificationCompat.Builder(context, CH_WAITING)
+            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setContentTitle(waitingNoticeTitle(session))
+            .setContentText(session.detail?.takeIf { it.isNotBlank() } ?: session.cwd.substringAfterLast('/'))
+            .setContentIntent(open)
+            .setCategory(NotificationCompat.CATEGORY_REMINDER)
+            .setPriority(NotificationCompat.PRIORITY_HIGH)
+            .setAutoCancel(true)
+            .setOnlyAlertOnce(true)
+            .build()
+        nm.notify(TAG_WAITING, session.id.hashCode(), n)
+    }
+
+    fun waitingNoticeTitle(session: BridgeSession): String = "${session.name} 等你确认（请在电脑上处理）"
 
     private fun postSessionResult(context: Context, nm: NotificationManager, session: BridgeSession, state: PetState) {
         val open = PendingIntent.getActivity(

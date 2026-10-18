@@ -15,7 +15,6 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.launch
-import local.critter.core.logic.AlertPlanner
 import local.critter.core.logic.AlertPrefs
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.SnapshotBody
@@ -76,22 +75,22 @@ class BridgeService : Service() {
         }
 
         scope.launch {
-            var previous: SnapshotBody? = null
+            // The tracker outlives connections (and this service): a reconnect does not re-post what was dismissed.
+            val tracker = repo.alertTracker
             repo.live.collect { body ->
                 if (body == null) {
-                    previous = null
+                    tracker.disconnected()
                     return@collect
                 }
                 val s = repo.settingsStore.settings.value
                 val prefs = AlertPrefs(s.vibrateOnWaiting, s.notifyDone, s.notifyError)
-                val plan = AlertPlanner.plan(previous, body, prefs)
+                val plan = tracker.next(body, prefs)
                 // Notifications only when the floating pile cannot be seen (spec §8.7); the buzz stays.
                 Alerts.apply(
                     this@BridgeService, plan, body,
                     canVibrate = Alerts.vibrationAllowed(this@BridgeService),
                     notify = !overlay.isVisible,
                 )
-                previous = body
             }
         }
 
@@ -146,6 +145,10 @@ class BridgeService : Service() {
         boardTrigger.stop()
         overlay.hide()
         repo.stopClient()
+        // Nothing withdraws them from here on (answered on the Mac, expired); the tracker forgets them too, so they
+        // come back if the service starts again while they are still pending.
+        Alerts.withdrawAll(this)
+        repo.alertTracker.reset()
         super.onDestroy()
     }
 
