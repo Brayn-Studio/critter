@@ -10,10 +10,13 @@ public enum StateStoreError: Error, Sendable, Equatable {
 /// Writes `data` to `url` by first writing a same-directory hidden temp file and renaming
 /// it into place, so readers never observe a partial write. Shared by `StateStore` and
 /// `AppStatusStore`.
-func atomicWrite(_ data: Data, to url: URL) throws {
+func atomicWrite(_ data: Data, to url: URL, permissions: Int? = nil) throws {
     let dir = url.deletingLastPathComponent()
     let tmpURL = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
     try data.write(to: tmpURL)
+    if let permissions {
+        try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: tmpURL.path)
+    }
     let renameStatus = tmpURL.withUnsafeFileSystemRepresentation { tmpPath in
         url.withUnsafeFileSystemRepresentation { destPath in
             rename(tmpPath!, destPath!)

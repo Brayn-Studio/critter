@@ -59,6 +59,7 @@ echo "==> Building and installing critter-hook to $CRITTER_HOME/bin"
 swift build -c release --product critter-hook
 mkdir -p "$CRITTER_HOME/bin"
 cp "$REPO/.build/release/critter-hook" "$CRITTER_HOME/bin/critter-hook"
+"$CRITTER_HOME/bin/critter-hook" statusline-install || echo "warning: 状态栏数据未接入" >&2
 
 echo "==> Installing the /pet command"
 mkdir -p "$CLAUDE_CONFIG_DIR/commands"

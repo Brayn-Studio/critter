@@ -36,6 +36,9 @@ if [ -f "$PET_CMD" ] && grep -qF "$PET_MARKER" "$PET_CMD"; then
   rm -f "$PET_CMD"
 fi
 
+echo "==> Restoring the status line setting"
+"$HOME/.critter/bin/critter-hook" statusline-uninstall || true
+
 echo "==> Removing $CRITTER_HOME"
 rm -rf "$CRITTER_HOME"
 

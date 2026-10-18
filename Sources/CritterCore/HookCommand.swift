@@ -95,9 +95,53 @@ public enum HookCommand {
         case "statusline":
             return StatusLineCommand.run(arguments: arguments, stdin: stdin, paths: paths, now: now, shell: shell)
 
+        // Admin commands, not hooks: unlike the hook subcommands they may exit 1 on refusal.
+        case "statusline-install":
+            return runStatusLineAdmin(install: true, paths: paths, now: now)
+
+        case "statusline-uninstall":
+            return runStatusLineAdmin(install: false, paths: paths, now: now)
+
         default:
             return HookResult(stdout: "", exitCode: 0)
         }
+    }
+
+    // MARK: - statusline-install / statusline-uninstall
+
+    private static func runStatusLineAdmin(install: Bool, paths: CritterPaths, now: Int64) -> HookResult {
+        let hookPath = paths.binDir.appendingPathComponent("critter-hook").path
+        // Edit the real file when settings.json is a symlink (dotfiles setups), not the link itself.
+        let settingsFile = paths.claudeSettingsFile.resolvingSymlinksInPath()
+        func refuse(_ reason: String) -> HookResult { HookResult(stdout: reason + "\n", exitCode: 1) }
+
+        guard let original = try? Data(contentsOf: settingsFile) else {
+            return refuse("找不到 \(paths.claudeSettingsFile.path)，没有改动。")
+        }
+        let text = String(decoding: original, as: UTF8.self)
+        let updated: String
+        do {
+            updated = install
+                ? try StatusLineInstaller.install(settings: text, hookPath: hookPath)
+                : try StatusLineInstaller.uninstall(settings: text, hookPath: hookPath)
+        } catch StatusLineInstaller.Failure.notCommandType {
+            return refuse("statusLine 不是 command 类型，没有改动。")
+        } catch {
+            return refuse("settings.json 不是合法的 JSON，没有改动。")
+        }
+        if updated == text {
+            return HookResult(stdout: install ? "状态栏数据已经接入，无需改动。\n" : "状态栏没有被 Critter 包装，无需改动。\n", exitCode: 0)
+        }
+
+        do {
+            try FileManager.default.createDirectory(at: paths.backupDir, withIntermediateDirectories: true)
+            try atomicWrite(original, to: paths.backupDir.appendingPathComponent("settings.json.\(now)"))
+            let permissions = (try? FileManager.default.attributesOfItem(atPath: settingsFile.path)[.posixPermissions]) as? Int
+            try atomicWrite(Data(updated.utf8), to: settingsFile, permissions: permissions)
+        } catch {
+            return refuse("写入失败：\(error.localizedDescription)，没有改动。")
+        }
+        return HookResult(stdout: install ? "已把状态栏数据接入 Critter（原文件已备份）。\n" : "已还原状态栏设置（原文件已备份）。\n", exitCode: 0)
     }
 
     // MARK: - event
