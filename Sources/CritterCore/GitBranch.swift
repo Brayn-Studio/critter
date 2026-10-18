@@ -7,13 +7,20 @@ public enum GitBranch {
     /// directories below it) or at the filesystem root. A detached HEAD gives the first 7 hex
     /// digits; anything unrecognisable gives nil.
     public static func read(cwd: String, stopAt home: String) -> String? {
+        headFile(cwd: cwd, stopAt: home).flatMap(branch(head:))
+    }
+
+    /// The `HEAD` file `read` takes the branch from, found the same way; nil outside a repo.
+    /// Its modification time changes whenever the branch does, so callers can cache on it.
+    public static func headFile(cwd: String, stopAt home: String) -> URL? {
         let stop = URL(fileURLWithPath: home).standardizedFileURL.path
         var dir = URL(fileURLWithPath: cwd).standardizedFileURL
         while dir.path != stop {
             let dotGit = dir.appendingPathComponent(".git")
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: dotGit.path, isDirectory: &isDirectory) {
-                return branch(gitDir: isDirectory.boolValue ? dotGit : followGitFile(dotGit, base: dir))
+                let gitDir = isDirectory.boolValue ? dotGit : followGitFile(dotGit, base: dir)
+                return gitDir?.appendingPathComponent("HEAD")
             }
             let parent = dir.deletingLastPathComponent()
             if parent.path == dir.path { return nil }
@@ -33,9 +40,8 @@ public enum GitBranch {
         return URL(fileURLWithPath: path, relativeTo: base).standardizedFileURL
     }
 
-    private static func branch(gitDir: URL?) -> String? {
-        guard let gitDir,
-              let head = try? String(contentsOf: gitDir.appendingPathComponent("HEAD"), encoding: .utf8) else { return nil }
+    private static func branch(head file: URL) -> String? {
+        guard let head = try? String(contentsOf: file, encoding: .utf8) else { return nil }
         let text = head.trimmingCharacters(in: .whitespacesAndNewlines)
         let refPrefix = "ref: refs/heads/"
         if text.hasPrefix(refPrefix) {
