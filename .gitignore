@@ -13,3 +13,4 @@ promo/
 /android/.kotlin/
 /android/local.properties
 /android/keystore.properties
+.claude/worktrees/
