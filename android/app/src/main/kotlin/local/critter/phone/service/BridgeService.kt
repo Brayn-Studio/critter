@@ -173,6 +173,9 @@ class BridgeService : Service() {
                 }
             } else {
                 context.stopService(intent)
+                // A client started without the service (BridgeRepository.ensureConnected, when the service could
+                // not start) has nobody else to stop it.
+                repo.stopClient()
             }
         }
 
