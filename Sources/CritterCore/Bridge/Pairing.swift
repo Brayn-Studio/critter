@@ -79,6 +79,10 @@ public struct DeviceRecord: Codable, Equatable, Sendable {
 
 /// The paired phones, persisted as a 0600 JSON file.
 public final class DeviceRegistry: @unchecked Sendable {
+    /// The `deviceName` `critter-bridge-client` pairs under; only such a device may be revoked
+    /// through the debug URL scheme.
+    public static let devClientName = "critter-bridge-client"
+
     private let file: URL
     private let lock = NSLock()
 

@@ -42,3 +42,12 @@ import Testing
     registry.removeAll()
     #expect(registry.list().isEmpty)
 }
+
+/// A phone's name comes off the network: one line, at most 64 characters, never empty.
+@Test func deviceNameIsClampedToOneShortLine() {
+    #expect(BridgeProtocol.deviceName("Pixel 9") == "Pixel 9")
+    #expect(BridgeProtocol.deviceName(String(repeating: "长", count: 1_000)) == String(repeating: "长", count: 64))
+    #expect(BridgeProtocol.deviceName("  a\nb\tc\u{0}d  ") == "a b c d")
+    #expect(BridgeProtocol.deviceName(" \n ") == "手机")
+    #expect(BridgeProtocol.deviceName(DeviceRegistry.devClientName) == DeviceRegistry.devClientName)
+}

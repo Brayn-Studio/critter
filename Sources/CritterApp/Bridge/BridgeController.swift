@@ -61,6 +61,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     private var branchCache: [String: CachedBranch] = [:]
     private var estimateCache: [String: CachedEstimate] = [:]
     private var lastTouched: [String: Int64] = [:]
+    /// The last client number handed to a `BridgeServer`; never reset, so numbers stay unique
+    /// across servers (see `BridgeServer.nextClientNumber`).
+    private var lastClientNumber = 0
     private var retryDelay: TimeInterval = 0
     /// Bumped when the bridge is switched off, so a retry scheduled before doesn't fire.
     private var retryGeneration = 0
@@ -101,8 +104,13 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         statusStore = StatusLineStore(paths: paths)
         inboxStore = InboxStore(paths: paths)
         version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
-        // The settings list the paired phones even while the bridge is off.
-        queue.async { [self] in refreshDevices() }
+        queue.async { [self] in
+            // The settings list the paired phones even while the bridge is off.
+            refreshDevices()
+            // Requests whose hook is gone or that expired while Critter wasn't running, and
+            // answers nobody waits for (spec 6.3) -- also when no phone ever connects.
+            pendingStore.sweep(now: Self.nowMs(), isAlive: ProcessTools.isAlive)
+        }
     }
 
     // MARK: - Main-thread interface
@@ -154,12 +162,34 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         queue.async { [self] in completion(beginPairing(autoApprove: autoApprove)) }
     }
 
+    /// Withdraws the code on show unless it was issued with `autoApprove` (the pairing sheet
+    /// closed: its code must stop working). Queued, so it also covers a code still being made.
+    func cancelPairing() {
+        queue.async { [self] in
+            lock.withLock {
+                if pairing?.autoApprove == false { pairing = nil }
+            }
+        }
+    }
+
     func revoke(deviceId: String) {
         queue.async { [self] in
             registry.revoke(deviceId: deviceId)
             server?.disconnect(deviceId: deviceId)
             refreshDevices()
             DiagnosticLog.shared.log("bridge revoked \(deviceId)")
+        }
+    }
+
+    /// `revoke`, but only for a device `critter-bridge-client` paired (the debug URL scheme
+    /// must never be able to unpair a real phone).
+    func revokeDevClient(deviceId: String) {
+        queue.async { [self] in
+            guard registry.list().contains(where: { $0.id == deviceId && $0.name == DeviceRegistry.devClientName }) else {
+                DiagnosticLog.shared.log("bridge debug revoke refused \(deviceId)")
+                return
+            }
+            revoke(deviceId: deviceId)
         }
     }
 
@@ -189,6 +219,10 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
             let server = BridgeServer(
                 queue: queue, serviceName: macName,
                 makeConnection: { [unowned self] in BridgeConnection(services: self) },
+                nextClientNumber: { [unowned self] in
+                    lastClientNumber += 1
+                    return lastClientNumber
+                },
                 callbacks: BridgeServer.Callbacks(
                     pairRequested: { [weak self] client, deviceName in self?.pairRequested(client: client, deviceName: deviceName) },
                     deviceActive: { [weak self] deviceId in self?.deviceActive(deviceId) },
@@ -362,7 +396,8 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
 
     // MARK: - Pairing
 
-    private func pairRequested(client: Int, deviceName: String) {
+    private func pairRequested(client: Int, deviceName raw: String) {
+        let deviceName = BridgeProtocol.deviceName(raw)
         if approveNextPairing {
             approveNextPairing = false
             finishPairing(client: client, deviceName: deviceName, allowed: true)

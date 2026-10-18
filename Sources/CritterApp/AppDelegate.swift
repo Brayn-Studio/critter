@@ -464,11 +464,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // `critter://debug-bridge-pair?out=<absolute path>`: issues a pairing code that is
             // approved without asking and writes `{"uri": "<pairing URI>"}` to `out`, for
             // pairing `critter-bridge-client` without a display. Waits for the bridge to finish
-            // starting if it was only just switched on.
+            // starting if it was only just switched on. `out` must be under ~/.critter or the
+            // user's temp directory: the file holds a code that lets a phone in unasked.
             guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
             let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
-            guard let out = query.first(where: { $0.name == "out" })?.value, out.hasPrefix("/") else {
-                DiagnosticLog.shared.log("debug-bridge-pair needs an absolute out path")
+            guard let out = query.first(where: { $0.name == "out" })?.value,
+                  CritterPaths.isFile(out, under: [paths.critterHome, URL(fileURLWithPath: NSTemporaryDirectory())])
+            else {
+                DiagnosticLog.shared.log("debug-bridge-pair needs an out path under ~/.critter or the temp directory")
                 break
             }
             bridge.beginPairing(autoApprove: true) { uri in
@@ -480,6 +483,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let json = try? JSONSerialization.data(withJSONObject: ["uri": uri.string], options: [.withoutEscapingSlashes])
                 let written = (try? json?.write(to: URL(fileURLWithPath: out), options: .atomic)) != nil
                 DiagnosticLog.shared.log("debug-bridge-pair wrote=\(written)")
+            }
+        case "debug-bridge-revoke":
+            // `critter://debug-bridge-revoke?deviceId=<id>`: unpairs a device that
+            // `critter-bridge-client` paired (and no other), so a dev run leaves nothing behind.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            if let deviceId = query.first(where: { $0.name == "deviceId" })?.value {
+                bridge.revokeDevClient(deviceId: deviceId)
             }
         default:
             break

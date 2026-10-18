@@ -45,6 +45,18 @@ public struct CritterPaths: Sendable {
         sessionScopedFile(in: sessionsDir, sessionId: sessionId)
     }
 
+    /// Whether the absolute `path` names a file somewhere under one of `roots` -- after `..`
+    /// and symlinks are resolved, so neither can lead out of them.
+    public static func isFile(_ path: String, under roots: [URL]) -> Bool {
+        guard path.hasPrefix("/") else { return false }
+        let target = URL(fileURLWithPath: path).standardizedFileURL
+        let parent = target.deletingLastPathComponent().resolvingSymlinksInPath().path
+        return roots.contains { root in
+            let root = root.standardizedFileURL.resolvingSymlinksInPath().path
+            return parent == root || parent.hasPrefix(root.hasSuffix("/") ? root : root + "/")
+        }
+    }
+
     /// `<dir>/<sessionId>.json`, or nil if the id does not match the expected shape.
     public func sessionScopedFile(in dir: URL, sessionId: String) -> URL? {
         let range = NSRange(sessionId.startIndex..<sessionId.endIndex, in: sessionId)

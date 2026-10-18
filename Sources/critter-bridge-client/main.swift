@@ -174,7 +174,7 @@ func pair(_ raw: String) async -> Never {
     guard let uri = PairingURI(string: raw) else { fail("not a pairing URI: \(raw)") }
     exitAfter(seconds: 600, "pair")
     let link = Link(host: uri.host, port: uri.port, fingerprint: uri.fingerprint)
-    await link.send(.pair(code: uri.code, deviceName: "critter-bridge-client"))
+    await link.send(.pair(code: uri.code, deviceName: DeviceRegistry.devClientName))
     while true {
         let (text, message) = await link.receive()
         switch message {

@@ -62,3 +62,24 @@ import Testing
     let again = try JSONDecoder().decode(SessionRecord.self, from: JSONEncoder().encode(withActivity))
     #expect(again.activity == "bash")
 }
+
+/// `debug-bridge-pair` writes a live pairing code: only under the allowed roots, with no way
+/// out through `..` or a symlinked directory.
+@Test func fileUnderRootsResolvesDotsAndSymlinks() throws {
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("critter-paths-\(UUID().uuidString)")
+    let root = base.appendingPathComponent("root")
+    let outside = base.appendingPathComponent("outside")
+    try FileManager.default.createDirectory(at: root.appendingPathComponent("sub"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: outside, withIntermediateDirectories: true)
+    try FileManager.default.createSymbolicLink(at: root.appendingPathComponent("link"), withDestinationURL: outside)
+    defer { try? FileManager.default.removeItem(at: base) }
+
+    #expect(CritterPaths.isFile(root.appendingPathComponent("pair.json").path, under: [root]))
+    #expect(CritterPaths.isFile(root.appendingPathComponent("sub/pair.json").path, under: [root]))
+    #expect(!CritterPaths.isFile(root.appendingPathComponent("../outside/pair.json").path, under: [root]))
+    #expect(!CritterPaths.isFile(root.appendingPathComponent("link/pair.json").path, under: [root]))
+    #expect(!CritterPaths.isFile(base.appendingPathComponent("rootx/pair.json").path, under: [root]))
+    #expect(!CritterPaths.isFile("/etc/pair.json", under: [root]))
+    #expect(!CritterPaths.isFile("relative/pair.json", under: [root]))
+    #expect(CritterPaths.isFile(outside.appendingPathComponent("pair.json").path, under: [root, outside]))
+}

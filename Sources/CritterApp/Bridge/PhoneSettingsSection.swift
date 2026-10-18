@@ -132,8 +132,10 @@ final class PhoneSettingsModel {
         }
     }
 
+    /// Also withdraws the code on show: once the sheet is gone, nobody is there to watch who uses it.
     func closeSheet() {
         sheetOpen = false
+        bridge.cancelPairing()
         offerToken += 1
         offer = nil
         makingOffer = false
@@ -317,8 +319,8 @@ private struct PairRequestRow: View {
     private var buttons: some View {
         HStack {
             Button("拒绝") { phone.resolvePairRequest(allow: false) }
+            // No default-button shortcut: a stray Return must never let a phone in.
             Button("允许") { phone.resolvePairRequest(allow: true) }
-                .keyboardShortcut(.defaultAction)
         }
         .fixedSize()
     }

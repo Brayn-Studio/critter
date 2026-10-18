@@ -33,6 +33,9 @@ final class BridgeServer: @unchecked Sendable {
     private let listenerQueue = DispatchQueue(label: "local.critter.pet.bridge.listener", qos: .utility)
     private let serviceName: String
     private let makeConnection: () -> BridgeConnection
+    /// Numbers clients. The controller owns the count, so a number is never reused by a later
+    /// server: a late answer meant for an old server's client can't reach a new one's.
+    private let nextClientNumber: () -> Int
     private let callbacks: Callbacks
     private let admission = BridgeAdmission.standard
 
@@ -41,7 +44,6 @@ final class BridgeServer: @unchecked Sendable {
     /// waiting -- for the Local Network permission, or for a network -- and become ready later.
     private(set) var isListening = false
     private var clients: [Int: Client] = [:]
-    private var lastClientNumber = 0
 
     /// Confined to `queue` like the server itself.
     private final class Client: @unchecked Sendable {
@@ -75,10 +77,14 @@ final class BridgeServer: @unchecked Sendable {
         var admissionPhase: BridgeConnection.Phase { closing ? .closed : machine.phase }
     }
 
-    init(queue: DispatchQueue, serviceName: String, makeConnection: @escaping () -> BridgeConnection, callbacks: Callbacks) {
+    init(
+        queue: DispatchQueue, serviceName: String, makeConnection: @escaping () -> BridgeConnection,
+        nextClientNumber: @escaping () -> Int, callbacks: Callbacks
+    ) {
         self.queue = queue
         self.serviceName = serviceName
         self.makeConnection = makeConnection
+        self.nextClientNumber = nextClientNumber
         self.callbacks = callbacks
     }
 
@@ -223,8 +229,7 @@ final class BridgeServer: @unchecked Sendable {
             connection.cancel()
             return
         }
-        lastClientNumber += 1
-        let number = lastClientNumber
+        let number = nextClientNumber()
         let deadline = DispatchSource.makeTimerSource(queue: queue)
         let client = Client(number: number, connection: connection, machine: makeConnection(), deadline: deadline)
         clients[number] = client

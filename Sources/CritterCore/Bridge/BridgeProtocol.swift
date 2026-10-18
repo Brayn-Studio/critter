@@ -9,6 +9,20 @@ public enum BridgeProtocol {
     public static let defaultPort: UInt16 = 47823
     public static let portRange: ClosedRange<UInt16> = 47823...47832
     public static let bonjourType = "_critter._tcp"
+    /// A phone's name, as the Mac shows and keeps it, has at most this many characters.
+    public static let maxDeviceNameChars = 64
+
+    /// `pair.deviceName` as the Mac uses it: it comes off the network, so it is made one line
+    /// (control characters become spaces), trimmed and cut to `maxDeviceNameChars`; "手机" if
+    /// nothing is left.
+    public static func deviceName(_ raw: String) -> String {
+        let oneLine = String(String.UnicodeScalarView(raw.unicodeScalars.map {
+            CharacterSet.controlCharacters.contains($0) || CharacterSet.newlines.contains($0) ? " " : $0
+        }))
+        let name = String(oneLine.trimmingCharacters(in: .whitespaces).prefix(maxDeviceNameChars))
+            .trimmingCharacters(in: .whitespaces)
+        return name.isEmpty ? "手机" : name
+    }
 }
 
 public enum DenyReason: String, Codable, Sendable {
