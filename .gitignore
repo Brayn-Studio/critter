@@ -7,3 +7,9 @@ DerivedData/
 .DS_Store
 /dist/
 promo/
+/android/build/
+/android/*/build/
+/android/.gradle/
+/android/.kotlin/
+/android/local.properties
+/android/keystore.properties
