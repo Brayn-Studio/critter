@@ -1,0 +1,41 @@
+{
+  "type": "snapshot",
+  "seq": 7,
+  "sentAt": 1760000000000,
+  "sessions": [
+    {
+      "id": "s1",
+      "name": "critter",
+      "source": "terminal",
+      "state": "waiting",
+      "detail": "Bash: swift test",
+      "activity": "bash",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": { "usedPercent": 42.5, "windowSize": 1000000, "estimated": false },
+      "skin": "clawd",
+      "eventTime": 1760000000000,
+      "startedAt": 1759990000000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": { "usedPercentage": 12.5, "resetsAt": 1760003600000 },
+    "sevenDay": { "usedPercentage": 30, "resetsAt": 1760500000000 },
+    "updatedAt": 1760000000000
+  },
+  "pending": [
+    {
+      "requestId": "r1",
+      "sessionId": "s1",
+      "kind": "permission",
+      "toolName": "Bash",
+      "summary": "swift test",
+      "input": { "command": "swift test" },
+      "createdAt": 1760000000000,
+      "expiresAt": 1760000600000
+    }
+  ],
+  "prefs": { "skin": "clawd", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+}
