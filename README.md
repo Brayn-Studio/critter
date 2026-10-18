@@ -124,7 +124,9 @@ make install
 make uninstall
 ```
 
-卸载会移除插件、插件市场、`Critter.app`（并从 Launch Services 注销 `critter://`）、`/pet` 命令、`~/.critter` 和开机自启项（`~/Library/LaunchAgents/local.critter.pet.plist`）。
+卸载会先把状态栏设置还原成接入前的样子，再移除插件、插件市场、`Critter.app`（并从 Launch Services 注销 `critter://`）、`/pet` 命令、`~/.critter` 和开机自启项（`~/Library/LaunchAgents/local.critter.pet.plist`）。
+
+如果状态栏设置还原不了（比如 `settings.json` 不是合法的 JSON），卸载会在第一步停下来，什么都不删，并打印现在的命令和手动还原的办法；`~/.critter/backup/` 里有 Critter 改动前的备份。改好后再运行一次 `make uninstall`。
 
 **卸载后请重启仍然开着的 Claude Code 会话。** 这些会话启动时已经加载了插件的 hooks，卸载后它们还会继续触发；hooks 发现 `~/.critter/bin/critter-hook` 不在了会直接跳过，不会报错，但要重启会话才会彻底不再调用。
 
@@ -219,7 +221,15 @@ Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手�
 
 手机上的上下文用量和额度来自 Claude Code 的状态栏。设置里的"状态栏数据"一行显示三种状态：已接入、未接入、已被改成其它类型（`statusLine` 不是 command 类型时不会去改它）。
 
-- 接入的做法：把 `~/.claude/settings.json` 里的 `statusLine.command` 包成 `'~/.critter/bin/critter-hook' statusline -- '<原命令>'`。包装后原命令照常运行，输出原样不变；原来没有状态栏的话，就接成不带 `--` 的形式，什么都不输出。
+- 接入的做法：把 `~/.claude/settings.json` 里的 `statusLine.command` 包成下面这样。路径是展开后的绝对路径（`/Users/你` 换成你的家目录），因为单引号里的 `~` 不会展开：
+
+  ```sh
+  [ -x '/Users/你/.critter/bin/critter-hook' ] && exec '/Users/你/.critter/bin/critter-hook' statusline -- '<原命令>' || exec /bin/sh -c '<原命令>'
+  ```
+
+  包装后原命令照常运行，输出原样不变。万一 `critter-hook` 不在了（比如 `~/.critter` 被删了），`||` 后面那段会直接运行原命令，状态栏不会坏。
+- 原来没有状态栏的话，就接成 `[ -x '/Users/你/.critter/bin/critter-hook' ] && exec '/Users/你/.critter/bin/critter-hook' statusline || exit 0`，什么都不输出。实测（Claude Code 2.1.302）终端底部和没有状态栏时一模一样。
+- 早先的版本接成的是 `'/Users/你/.critter/bin/critter-hook' statusline -- '<原命令>'`，没有后面那段兜底。这种也认得：撤销时照常还原；重新运行 `make install` 会把它升级成上面的形式。
 - 改之前先备份到 `~/.critter/backup/`；除了这一个字符串，文件里的其它字节都不变。
 - 撤销：设置里点"撤销"，或者运行 `~/.critter/bin/critter-hook statusline-uninstall`，恢复成原来的命令。`make install` 会自动接入，`make uninstall` 会自动撤销。
 - 项目级设置如果覆盖了 `statusLine`，那个项目里的会话采不到这些数据，Critter 不做处理。

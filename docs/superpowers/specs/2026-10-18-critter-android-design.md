@@ -200,8 +200,10 @@
   - 字段缺失或 null 时就不写那个字段。
   - 任何错误都吞掉，原命令照样运行。
   - 自己额外增加的耗时目标 < 20 ms。
-- 安装方式：把 `~/.claude/settings.json` 里的 `statusLine.command` 改成 `"$HOME/.critter/bin/critter-hook" statusline -- <原值>`；卸载时去掉这个前缀，就恢复成原值【Claude 定】。
-  - 原来没有状态栏的话，就写成不带 `--` 的形式，这时什么都不输出。实现时要确认：输出为空时，终端的样子和没有状态栏时一样；不一样的话就要换方案。
+- 安装方式：把 `~/.claude/settings.json` 里的 `statusLine.command` 改成 `[ -x '<hook>' ] && exec '<hook>' statusline -- '<原值>' || exec /bin/sh -c '<原值>'`（`<hook>` 是展开后的 `~/.critter/bin/critter-hook` 绝对路径）；卸载时还原成原值【Claude 定】。
+  - 后半段是兜底：hook 文件不在了（`~/.critter` 被删、卸载到一半），shell 直接运行原命令，状态栏不会坏。
+  - 最早的形式是 `'<hook>' statusline -- '<原值>'`，没有兜底。还原和状态判断两种形式都认，`statusline-install` 会把旧形式就地升级成新形式。
+  - 原来没有状态栏的话，就写成 `[ -x '<hook>' ] && exec '<hook>' statusline || exit 0`，这时什么都不输出。已实测：输出为空时，终端的样子和没有状态栏时一样（§13.5）。
   - 编辑 settings.json 的要求：
     - 除了这一个字符串，其它字节都不变；
     - 先备份到 `~/.critter/backup/`；
@@ -320,7 +322,7 @@
 
 ### 6.7 安装 / 卸载
 - `make install`：多执行一步 `statusline-install`，并把插件版本号加一（hooks.json 有改动）。
-- `make uninstall`：先执行 `statusline-uninstall`，再执行原来的卸载步骤。
+- `make uninstall`：先执行 `statusline-uninstall`，再执行原来的卸载步骤。还原不了（`settings.json` 里仍然是 Critter 的包装）时，停在这一步，什么都不删，打印现在的命令、手动还原的办法和 `~/.critter/backup/` 里的备份。
 - 新增 `make android`：调用 `android/gradlew assembleRelease`，签名用本地 keystore，keystore 不进仓库。
 - 新增 `make android-install`：用 `adb install -r` 安装到手机。
 
@@ -626,7 +628,10 @@
    - 2026-10-19 起，`ask` 只在 `CLAUDE_CODE_ENTRYPOINT == "cli"` 时等待，其它入口（`claude-vscode`、`claude-desktop`、`sdk-*`）和变量缺失时立刻退出（单元测试 `askExitsImmediatelyOutsideTheCli`）。原因：没验证过的入口里，如果确认框要等 hook 返回才出现，一个等待中的 `ask` 会把那里的提示卡住最多 590 秒。
    - 这些会话照样出现在手机上，只是它们的确认只能在电脑上答。验证通过后，把对应的入口加进 `AskCommand` 的允许列表。
 4. 【已实测】子代理触发的权限请求：形状和主会话一样，`toolName` 是 `Bash`，`input` 是 `{"command":"touch e2e-sub.txt","description":"…"}`；快照里该请求的 `sessionId` **就是父会话的 id**（没有单独的子代理会话），手机上按父会话显示即可。
-5. 【需手工检查】状态栏命令输出为空时（原来没有状态栏、接成不带 `--` 的形式），终端底部的样子是否和没有状态栏一样：在没有 `statusLine` 的 settings 里接入后开一个会话，对比底部。
+5. 【已实测，2026-10-19】状态栏命令输出为空时（原来没有状态栏、接成不带 `--` 的形式），终端底部和没有状态栏时**一样**，所以 `make install` 继续给没有状态栏的用户接上不带 `--` 的形式。
+   - 做法：tmux 里开一次性的 `claude --model haiku`，`--setting-sources project` 排除用户设置，用 `--settings` 分别给 `{}`（没有状态栏）和 `statusLine = '<hook>' statusline`（输出为空）两种，开场和回复一次之后各截一次屏。
+   - 结果：两边逐行相同，只差路径、会话名、随机的输入提示和用时；底部都是 `⏵⏵ auto mode on (shift+tab to cycle)` 加右侧的 `/rc`，后面没有空行。对照组（`echo SL-CONTROL-LINE`）的状态栏占一行，模式行被挤到下一行，说明这个比较能看出差别。
+   - 新的自带兜底的空形式（`[ -x '<hook>' ] && exec '<hook>' statusline || exit 0`）在 hook 存在和不存在时都输出 0 字节、exit 0（单元测试 `wrapperWithoutTheHookRunsTheOriginal`）。
 6. 开发用的 vivo 手机上，从后台打开看板会不会被拦，以及需要打开哪些开关。`ACCESS_LOCAL_NETWORK` 的实际弹窗表现，在模拟器上验证。
 7. 收件箱 socket 是没有文档的接口，Claude Code 升级后要重新验证。2026-10-19 在 2.1.302 上，"发一句"（场景 `say`）仍然有效：空闲会话立即开始新的一轮并照做。
 

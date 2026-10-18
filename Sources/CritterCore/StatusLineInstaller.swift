@@ -13,26 +13,61 @@ public enum StatusLineInstaller {
 
     // MARK: - wrap / unwrap
 
-    /// `'<hookPath>' statusline -- '<original>'`, or `'<hookPath>' statusline` without an original.
+    /// The status line command with Critter in front of `original`. It guards itself: when the
+    /// hook binary is gone (Critter uninstalled, ~/.critter deleted) the shell runs `original`
+    /// directly -- through `/bin/sh -c`, just as the hook would -- so the status line survives.
+    ///
+    ///     [ -x '<hook>' ] && exec '<hook>' statusline -- '<original>' || exec /bin/sh -c '<original>'
+    ///     [ -x '<hook>' ] && exec '<hook>' statusline || exit 0        (no original: prints nothing)
     public static func wrap(original: String?, hookPath: String) -> String {
-        let prefix = wrapPrefix(hookPath)
-        guard let original else { return prefix }
-        return "\(prefix) -- \(shellQuote(original))"
+        let run = "[ -x \(shellQuote(hookPath)) ] && exec \(legacyPrefix(hookPath))"
+        guard let original else { return "\(run) || exit 0" }
+        let quoted = shellQuote(original)
+        return "\(run) -- \(quoted)\(fallbackJoin)\(quoted)"
     }
 
+    /// The original command inside a wrapper -- today's form or the one before it
+    /// (`'<hook>' statusline [-- '<original>']`, which had no fallback) -- or `notWrapped`.
+    /// Only exact `wrap` output counts, so a hand-edited command is never mistaken for one.
     public static func unwrap(_ command: String, hookPath: String) -> Unwrapped {
-        let prefix = wrapPrefix(hookPath)
-        if command == prefix { return .original(nil) }
-        let head = prefix + " -- '"
-        guard command.hasPrefix(head), command.hasSuffix("'"), command.count >= head.count + 1 else { return .notWrapped }
-        let inner = command.dropFirst(head.count).dropLast()
-        return .original(inner.replacingOccurrences(of: "'\\''", with: "'"))
+        if command == wrap(original: nil, hookPath: hookPath) || command == legacyPrefix(hookPath) { return .original(nil) }
+        let guarded = "[ -x \(shellQuote(hookPath)) ] && exec \(legacyPrefix(hookPath)) -- "
+        if command.hasPrefix(guarded) {
+            // `'<original>' || exec /bin/sh -c '<original>'`: the same quoted text twice.
+            let rest = Array(command.utf8.dropFirst(guarded.utf8.count))
+            let join = Array(fallbackJoin.utf8)
+            guard rest.count > join.count, (rest.count - join.count) % 2 == 0 else { return .notWrapped }
+            let half = (rest.count - join.count) / 2
+            let first = rest[..<half], second = rest[(half + join.count)...]
+            guard first.elementsEqual(second), rest[half..<(half + join.count)].elementsEqual(join),
+                  let original = shellUnquote(String(decoding: first, as: UTF8.self)) else { return .notWrapped }
+            return .original(original)
+        }
+        let legacy = legacyPrefix(hookPath) + " -- "
+        guard command.hasPrefix(legacy), let original = shellUnquote(String(command.dropFirst(legacy.count))) else { return .notWrapped }
+        return .original(original)
     }
 
-    private static func wrapPrefix(_ hookPath: String) -> String { "\(shellQuote(hookPath)) statusline" }
+    /// Whether `command` is a wrapper of the current form (`wrap`'s exact output).
+    static func isCurrentForm(_ command: String, hookPath: String) -> Bool {
+        guard case .original(let original) = unwrap(command, hookPath: hookPath) else { return false }
+        return command == wrap(original: original, hookPath: hookPath)
+    }
+
+    private static let fallbackJoin = " || exec /bin/sh -c "
+
+    /// `'<hookPath>' statusline`: the hook invocation, and on its own the first form's wrapper.
+    private static func legacyPrefix(_ hookPath: String) -> String { "\(shellQuote(hookPath)) statusline" }
 
     private static func shellQuote(_ s: String) -> String {
         "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'"
+    }
+
+    /// The string `quoted` stands for, if it is exactly what `shellQuote` makes of it.
+    private static func shellUnquote(_ quoted: String) -> String? {
+        guard quoted.count >= 2, quoted.hasPrefix("'"), quoted.hasSuffix("'") else { return nil }
+        let original = String(quoted.dropFirst().dropLast()).replacingOccurrences(of: "'\\''", with: "'")
+        return shellQuote(original) == quoted ? original : nil
     }
 
     // MARK: - install / uninstall / status
@@ -43,8 +78,14 @@ public enum StatusLineInstaller {
             return doc.insertingStatusLine(command: wrap(original: nil, hookPath: hookPath))
         }
         let command = try doc.commandMember(of: member)
-        if unwrap(command.value, hookPath: hookPath) != .notWrapped { return settings }
-        return doc.replacing(command.range, with: encode(wrap(original: command.value, hookPath: hookPath)))
+        switch unwrap(command.value, hookPath: hookPath) {
+        case .notWrapped:
+            return doc.replacing(command.range, with: encode(wrap(original: command.value, hookPath: hookPath)))
+        case .original(let original):
+            // Already wrapped; one of the older form is brought up to date.
+            if isCurrentForm(command.value, hookPath: hookPath) { return settings }
+            return doc.replacing(command.range, with: encode(wrap(original: original, hookPath: hookPath)))
+        }
     }
 
     public static func uninstall(settings: String, hookPath: String) throws -> String {

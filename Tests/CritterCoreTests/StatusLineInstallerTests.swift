@@ -10,15 +10,52 @@ private func literal(_ s: String) -> String {
     return String(data: try! encoder.encode(s), encoding: .utf8)!
 }
 
+/// The wrapper before the self-guarding one: `'<hook>' statusline [-- '<original>']`.
+private func legacyWrap(_ original: String?, hookPath: String = hook) -> String {
+    let quote = { (s: String) in "'" + s.replacingOccurrences(of: "'", with: "'\\''") + "'" }
+    return original.map { "\(quote(hookPath)) statusline -- \(quote($0))" } ?? "\(quote(hookPath)) statusline"
+}
+
+private let trickyCommands = [
+    "bash /Users/apple/.claude/statusline-command.sh",
+    #"bash -c 'echo "hi"' | cat"#,
+    "echo $HOME && printf '%s' x",
+    "/Users/u/路径 带空格/脚本.sh",
+    "it's",
+    "",
+    "a || exec /bin/sh -c b",
+]
+
 @Test func wrapUnwrapRoundTripsTrickyCommands() {
-    for original in ["bash /Users/apple/.claude/statusline-command.sh",
-                     #"bash -c 'echo "hi"' | cat"#,
-                     "echo $HOME && printf '%s' x",
-                     "/Users/u/路径 带空格/脚本.sh"] {
+    for original in trickyCommands {
         #expect(StatusLineInstaller.unwrap(StatusLineInstaller.wrap(original: original, hookPath: hook), hookPath: hook) == .original(original))
     }
     #expect(StatusLineInstaller.unwrap(StatusLineInstaller.wrap(original: nil, hookPath: hook), hookPath: hook) == .original(nil))
     #expect(StatusLineInstaller.unwrap("bash x.sh", hookPath: hook) == .notWrapped)
+}
+
+/// Installs made before the self-guarding form still unwrap (and so uninstall) correctly.
+@Test func unwrapUnderstandsTheLegacyForm() {
+    for original in trickyCommands {
+        #expect(StatusLineInstaller.unwrap(legacyWrap(original), hookPath: hook) == .original(original))
+    }
+    #expect(StatusLineInstaller.unwrap(legacyWrap(nil), hookPath: hook) == .original(nil))
+}
+
+/// Only exact wrapper output counts: a hand-edited command is left alone.
+@Test func unwrapRejectsHandEditedWrappers() {
+    let q = "'\(hook)'"
+    for edited in [
+        "\(q) statusline -- 'x' && 'y'",                                         // legacy, two quoted words
+        "\(q) statusline -- 'x",                                                 // legacy, unterminated
+        "[ -x \(q) ] && exec \(q) statusline -- 'x' || exec /bin/sh -c 'y'",     // the two copies differ
+        "[ -x \(q) ] && exec \(q) statusline -- 'x' || /bin/sh -c 'x'",          // not our fallback
+        "[ -x \(q) ] && exec \(q) statusline -- 'x' && 'y' || exec /bin/sh -c 'x' && 'y'",
+        "[ -x \(q) ] && exec \(q) statusline",                                  // no fallback at all
+        "[ -x '/other/critter-hook' ] && exec \(q) statusline || exit 0",
+    ] {
+        #expect(StatusLineInstaller.unwrap(edited, hookPath: hook) == .notWrapped, Comment(rawValue: edited))
+    }
 }
 
 @Test func wrappedCommandRunsTheOriginalThroughTheShell() throws {
@@ -32,6 +69,43 @@ private func literal(_ s: String) -> String {
     let wrapped = StatusLineInstaller.wrap(original: original, hookPath: script.path)
     let r = SystemShell().run(command: wrapped, stdin: Data())
     #expect(String(decoding: r.stdout, as: UTF8.self) == original)
+}
+
+/// With the hook binary gone the wrapper still runs the original -- with the same stdin --
+/// and the no-original wrapper still prints nothing and succeeds.
+@Test func wrapperWithoutTheHookRunsTheOriginal() throws {
+    let missing = FileManager.default.temporaryDirectory.appendingPathComponent("critter-gone-\(UUID().uuidString)/critter-hook").path
+    let echo = SystemShell().run(command: StatusLineInstaller.wrap(original: #"echo 'a b' "c""#, hookPath: missing), stdin: Data())
+    #expect(String(decoding: echo.stdout, as: UTF8.self) == "a b c\n")
+    #expect(echo.exitCode == 0)
+
+    let cat = SystemShell().run(command: StatusLineInstaller.wrap(original: "cat; exit 3", hookPath: missing), stdin: Data("{\"x\":1}".utf8))
+    #expect(String(decoding: cat.stdout, as: UTF8.self) == "{\"x\":1}")
+    #expect(cat.exitCode == 3)
+
+    let none = SystemShell().run(command: StatusLineInstaller.wrap(original: nil, hookPath: missing), stdin: Data("{}".utf8))
+    #expect(none.stdout.isEmpty)
+    #expect(none.exitCode == 0)
+}
+
+/// An install of the legacy form is upgraded in place, once; uninstall still restores it.
+@Test func installUpgradesTheLegacyForm() throws {
+    for original in ["bash /x.sh", "it's"] as [String?] + [nil] {
+        let legacy = "{\n  \"model\": \"opus\",\n  \"statusLine\": {\"type\": \"command\", \"command\": \(literal(legacyWrap(original)))}\n}\n"
+        #expect(StatusLineInstaller.status(settings: legacy, hookPath: hook) == .installed)
+        let upgraded = try StatusLineInstaller.install(settings: legacy, hookPath: hook)
+        let expected = legacy.replacingOccurrences(of: literal(legacyWrap(original)), with: literal(StatusLineInstaller.wrap(original: original, hookPath: hook)))
+        #expect(upgraded == expected)
+        #expect(try StatusLineInstaller.install(settings: upgraded, hookPath: hook) == upgraded)
+        #expect(StatusLineInstaller.status(settings: upgraded, hookPath: hook) == .installed)
+        let back = try StatusLineInstaller.uninstall(settings: legacy, hookPath: hook)
+        #expect(back == (try StatusLineInstaller.uninstall(settings: upgraded, hookPath: hook)))
+        if let original {
+            #expect(back == legacy.replacingOccurrences(of: literal(legacyWrap(original)), with: literal(original)))
+        } else {
+            #expect(back == "{\n  \"model\": \"opus\"\n}\n")
+        }
+    }
 }
 
 @Test func installReplacesOnlyTheCommandString() {

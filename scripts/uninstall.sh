@@ -10,6 +10,35 @@ CLAUDE_CONFIG_DIR="${CLAUDE_CONFIG_DIR:-$HOME/.claude}"
 LSREGISTER="/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
 PET_MARKER="<!-- critter-pet -->"
 
+# First, before anything is removed (spec 6.7): put the status line back. If it can't be put
+# back, stop here -- deleting ~/.critter would take the hook (and the backups) with it, and an
+# older-form wrapper would then leave the user without a status line.
+echo "==> Restoring the status line setting"
+HOOK="$CRITTER_HOME/bin/critter-hook"
+SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
+# Both wrapper forms contain "'<hook>' statusline"; slashes may be JSON-escaped, so match the name.
+still_wrapped() { [ -f "$SETTINGS" ] && grep -qF "critter-hook' statusline" "$SETTINGS"; }
+if [ -x "$HOOK" ]; then
+  "$HOOK" statusline-uninstall || true
+fi
+if still_wrapped; then
+  CURRENT="$(plutil -extract statusLine.command raw -o - "$SETTINGS" 2>/dev/null || echo '(读不出来：settings.json 可能不是合法的 JSON)')"
+  FIRST_BACKUP="$(ls "$CRITTER_HOME/backup" 2>/dev/null | grep '^settings\.json\.' | sort | head -n 1)"
+  {
+    echo
+    echo "error: 没能还原 ${SETTINGS} 里的状态栏设置。卸载停在这里，还没有删除任何东西。"
+    echo "现在的 statusLine.command 是："
+    echo "    $CURRENT"
+    echo "请手动还原，然后重新运行 make uninstall："
+    echo "  - 带 \"statusline -- \" 的：把 command 改回它后面第一段单引号里的原命令（里面的 '\\'' 代表一个单引号 '）。"
+    echo "  - 不带 \"--\" 的：说明接入前没有状态栏，把整个 \"statusLine\" 项删掉。"
+    if [ -n "$FIRST_BACKUP" ]; then
+      echo "  - Critter 改动前的 settings.json 备份在 ${CRITTER_HOME}/backup/，最早的一份是 ${FIRST_BACKUP}。"
+    fi
+  } >&2
+  exit 1
+fi
+
 echo "==> Uninstalling the critter plugin"
 claude plugin uninstall critter@critter-pet || true
 
@@ -35,9 +64,6 @@ if [ -f "$PET_CMD" ] && grep -qF "$PET_MARKER" "$PET_CMD"; then
   echo "==> Removing the /pet command"
   rm -f "$PET_CMD"
 fi
-
-echo "==> Restoring the status line setting"
-"$HOME/.critter/bin/critter-hook" statusline-uninstall || true
 
 echo "==> Removing $CRITTER_HOME"
 rm -rf "$CRITTER_HOME"
