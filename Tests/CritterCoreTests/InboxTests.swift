@@ -103,6 +103,45 @@ private func permissions(_ url: URL) -> Int? {
     #expect(user["message"]?["content"] == .string("你好"))
 }
 
+/// A session that accepts the connection but never reads: once the socket's buffer is full the
+/// send must give up (within about `InboxSender.timeout`), not block the bridge's queue.
+@Test func senderGivesUpOnAPeerThatNeverReads() throws {
+    let dir = "/tmp/cc-socks-9\(Int.random(in: 100_000...999_999))"
+    try FileManager.default.createDirectory(atPath: dir, withIntermediateDirectories: true)
+    defer { try? FileManager.default.removeItem(atPath: dir) }
+    let path = dir + "/stuck.sock"
+
+    let server = socket(AF_UNIX, SOCK_STREAM, 0)
+    #expect(server >= 0)
+    defer { close(server) }
+    var addr = sockaddr_un()
+    addr.sun_family = sa_family_t(AF_UNIX)
+    withUnsafeMutableBytes(of: &addr.sun_path) { buffer in
+        for (i, byte) in path.utf8.enumerated() { buffer[i] = byte }
+    }
+    let bound = withUnsafePointer(to: &addr) {
+        $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(server, $0, socklen_t(MemoryLayout<sockaddr_un>.size)) }
+    }
+    #expect(bound == 0)
+    #expect(listen(server, 1) == 0)
+    // Accepts, then holds the connection open without reading until the test is done.
+    let release = DispatchSemaphore(value: 0)
+    Thread.detachNewThread {
+        let client = accept(server, nil, nil)
+        _ = release.wait(timeout: .now() + 10)
+        close(client)
+    }
+    defer { release.signal() }
+
+    let text = String(repeating: "x", count: 256 * 1024)
+    let started = Date()
+    #expect(throws: InboxSender.Failure.writeFailed) {
+        try InboxSender.send(text: text, to: InboxRecord(sessionId: "s1", socketPath: path, token: "t"))
+    }
+    let elapsed = Date().timeIntervalSince(started)
+    #expect(elapsed >= 1.5 && elapsed < 3, "gave up after \(elapsed) s")
+}
+
 @Test func senderRejectsPathOutsideCcSocks() {
     for path in ["/tmp/evil.sock", "/tmp/cc-socks/../evil.sock", "/var/tmp/cc-socks/a.sock", "/tmp/cc-socks/a.txt"] {
         #expect(throws: InboxSender.Failure.notAllowedPath) {
