@@ -1,4 +1,5 @@
 import java.util.Properties
+import javax.inject.Inject
 
 plugins {
     alias(libs.plugins.android.application)
@@ -44,6 +45,13 @@ android {
 
     buildFeatures { compose = true }
 
+    // The board's sounds are opened as file descriptors by SoundPool, which needs them stored uncompressed.
+    androidResources { noCompress += "wav" }
+
+    testOptions {
+        unitTests.all { it.useJUnitPlatform() }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -52,6 +60,45 @@ android {
 
 kotlin {
     jvmToolchain(21)
+}
+
+// The bundled skins and sounds have one source of truth, the repo root: copied into the
+// generated assets as skins/<name>/manifest.json and sounds/<theme>/<state>.wav.
+abstract class CopyCritterAssets : DefaultTask() {
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val skinsDir: DirectoryProperty
+
+    @get:InputDirectory
+    @get:PathSensitive(PathSensitivity.RELATIVE)
+    abstract val soundsDir: DirectoryProperty
+
+    @get:OutputDirectory
+    abstract val outputDir: DirectoryProperty
+
+    @get:Inject
+    abstract val files: FileSystemOperations
+
+    @TaskAction
+    fun copy() {
+        files.sync {
+            from(skinsDir) {
+                include("*/manifest.json")
+                into("skins")
+            }
+            from(soundsDir) { into("sounds") }
+            into(outputDir)
+        }
+    }
+}
+
+androidComponents.onVariants { variant ->
+    val copyAssets = tasks.register<CopyCritterAssets>("copy${variant.name.replaceFirstChar { it.uppercase() }}CritterAssets") {
+        skinsDir.set(rootProject.layout.projectDirectory.dir("../Skins"))
+        soundsDir.set(rootProject.layout.projectDirectory.dir("../Sounds"))
+        outputDir.set(layout.buildDirectory.dir("generated/critterAssets/${variant.name}"))
+    }
+    variant.sources.assets?.addGeneratedSourceDirectory(copyAssets, CopyCritterAssets::outputDir)
 }
 
 dependencies {
@@ -68,4 +115,8 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }

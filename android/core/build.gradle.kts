@@ -20,6 +20,13 @@ dependencies {
     testImplementation(libs.mockwebserver3)
 }
 
+// The repo-root skins double as test resources (`<name>/manifest.json`): there is one source of truth.
+sourceSets {
+    test {
+        resources.srcDir("../../Skins")
+    }
+}
+
 tasks.test {
     useJUnitPlatform()
     testLogging {

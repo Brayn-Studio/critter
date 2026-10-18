@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
+    <application>
+        <receiver
+            android:name=".DebugPairReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver" />
+
+        <receiver
+            android:name=".DebugSnapshotReceiver"
+            android:exported="true"
+            tools:ignore="ExportedReceiver" />
+
+        <!-- Debug builds only: `am start` needs these reachable from the shell. -->
+        <activity
+            android:name=".ui.board.BoardActivity"
+            android:exported="true"
+            tools:replace="android:exported"
+            tools:ignore="ExportedActivity" />
+        <activity
+            android:name=".ui.detail.DetailActivity"
+            android:exported="true"
+            tools:replace="android:exported"
+            tools:ignore="ExportedActivity" />
+
+        <activity
+            android:name=".SkinGalleryActivity"
+            android:exported="true"
+            tools:ignore="ExportedActivity" />
+    </application>
+</manifest>
