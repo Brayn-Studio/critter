@@ -40,7 +40,11 @@
 
         <activity
             android:name=".ui.answer.AnswerActivity"
-            android:exported="false" />
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.Critter.Sheet" />
 
         <activity
             android:name=".ui.board.BoardActivity"
