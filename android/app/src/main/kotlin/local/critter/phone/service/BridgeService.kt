@@ -14,6 +14,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
 import local.critter.core.logic.AlertPrefs
 import local.critter.core.net.ConnState
@@ -65,9 +66,10 @@ class BridgeService : Service() {
         watchNetwork()
 
         scope.launch {
-            combine(repo.state, repo.live, repo.pairing) { state, live, pairing -> Triple(state, live, pairing) }
-                .collect { (state, live, pairing) ->
-                    val (title, text) = statusText(state, live, pairing?.macName)
+            // Only when the line itself changes, not on every snapshot.
+            combine(repo.state, repo.live, repo.pairing) { state, live, pairing -> statusText(state, live, pairing?.macName) }
+                .distinctUntilChanged()
+                .collect { (title, text) ->
                     // Without a POST_NOTIFICATIONS grant the system drops this quietly; the service still runs.
                     getSystemService(NotificationManager::class.java)
                         .notify(Alerts.STATUS_ID, Alerts.statusNotification(this@BridgeService, title, text))
@@ -123,15 +125,19 @@ class BridgeService : Service() {
 
     private fun watchNetwork() {
         val cm = getSystemService(ConnectivityManager::class.java)
-        var first = true
         val cb = object : ConnectivityManager.NetworkCallback() {
+            // The callback reports the current default network right after registration; that is not a change.
+            // With no network at registration, the first one to come up is.
+            private var current: Network? = cm.activeNetwork
+
             override fun onAvailable(network: Network) {
-                // The callback fires once on registration; that is not a change.
-                if (first) {
-                    first = false
-                    return
-                }
+                if (network == current) return
+                current = network
                 repo.reconnectNow()
+            }
+
+            override fun onLost(network: Network) {
+                if (network == current) current = null
             }
         }
         networkCallback = cb

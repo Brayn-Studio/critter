@@ -236,4 +236,23 @@ class BridgeClientTest {
         val uri = PairingUri(mac.host, mac.port, mac.fingerprint, "K7M2QX9P", "Test Mac")
         assertNull(withTimeout(10_000) { c.pair(uri, "Pixel 9") })
     }
+
+    /** Opening or closing the board changes the heartbeat for the next connection, without dropping this one. */
+    @Test fun pingIntervalChangeKeepsTheConnection() = runBlocking {
+        val mac = mac().apply { greetOnHello(); expectConnection(); expectConnection() }
+        val endpoint = CountingEndpoint { mac.address }
+        val c = client(endpoint, mac.fingerprint)
+        c.setPingInterval(180_000)
+        c.start()
+        c.state.await { it is ConnState.Connected }
+
+        c.setPingInterval(30_000)
+        assertEquals(30_000L, c.nextPingIntervalMs)
+        c.setPingInterval(180_000)
+        delay(500)
+        assertIs<ConnState.Connected>(c.state.value)
+        assertEquals(1, endpoint.resolves.get(), "a ping interval change must not reconnect")
+        assertEquals(180_000L, c.nextPingIntervalMs)
+        c.stop()
+    }
 }

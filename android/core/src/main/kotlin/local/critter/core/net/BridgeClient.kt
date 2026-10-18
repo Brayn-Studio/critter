@@ -75,7 +75,7 @@ class BridgeClient(
     private val _pairing = MutableSharedFlow<ServerMessage.Paired>(extraBufferCapacity = 1)
     val pairing: SharedFlow<ServerMessage.Paired> = _pairing
 
-    private var pingIntervalMs = 30_000L
+    @Volatile private var pingIntervalMs = 30_000L
     @Volatile private var http = buildHttp(fingerprint)
     @Volatile private var job: Job? = null
     @Volatile private var socket: WebSocket? = null
@@ -111,13 +111,19 @@ class BridgeClient(
         socket?.cancel()
     }
 
-    /** 30 s while the board is open, 3 min otherwise. The client is rebuilt, so the connection is renewed. */
+    /**
+     * 30 s while the board is open, 3 min otherwise. OkHttp fixes a WebSocket's ping interval when it opens, so
+     * the new one applies from the next connection on: a live connection is never dropped just to change it. The
+     * rebuilt client shares the old one's connection pool and dispatcher.
+     */
     fun setPingInterval(ms: Long) {
         if (ms == pingIntervalMs) return
         pingIntervalMs = ms
-        http = buildHttp(fingerprint)
-        if (job?.isActive == true) reconnectNow()
+        http = http.newBuilder().pingInterval(ms, TimeUnit.MILLISECONDS).build()
     }
+
+    /** The ping interval the next connection will use. */
+    val nextPingIntervalMs: Long get() = http.pingIntervalMillis.toLong()
 
     /** Sends [msg] with a fresh correlation id and waits for the Mac's `result`. */
     suspend fun request(msg: ClientMessage.Command): ServerMessage.Result {

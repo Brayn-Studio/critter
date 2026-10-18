@@ -89,6 +89,10 @@ class BridgeRepository(private val app: Application) {
     private var clientJob: Job? = null
     @Volatile private var boardVisible = false
 
+    /** The newest snapshot not yet written to [cache], and when the cache was last written (see [onSnapshot]). */
+    private var unsaved: Pair<SnapshotBody, Long>? = null
+    private var cacheSavedAt = 0L
+
     init {
         // The phone's own skin and the reduce-motion switch follow the settings, from the first frame on.
         val first = settingsStore.settings.value
@@ -125,6 +129,7 @@ class BridgeRepository(private val app: Application) {
                     if (s !is ConnState.Connected) {
                         _live.value = null
                         skinsAsked.clear()
+                        flushCache()
                     }
                 }
             }
@@ -137,6 +142,7 @@ class BridgeRepository(private val app: Application) {
 
     @Synchronized
     fun stopClient() {
+        flushCache()
         clientJob?.cancel()
         clientJob = null
         client?.stop()
@@ -225,7 +231,22 @@ class BridgeRepository(private val app: Application) {
         _snapshot.value = body
         _lastUpdated.value = now
         _live.value = body
-        cache.save(body, now)
+        // The cache is only read while offline: a write at most every 30 s, and the newest one when the
+        // connection ends, rather than a file write on every snapshot.
+        synchronized(cache) {
+            unsaved = body to now
+            if (now - cacheSavedAt < CACHE_EVERY_MS) return
+        }
+        flushCache()
+    }
+
+    private fun flushCache() {
+        synchronized(cache) {
+            val (body, at) = unsaved ?: return
+            unsaved = null
+            cacheSavedAt = at
+            cache.save(body, at)
+        }
     }
 
     /** Debug builds only (DebugSnapshotReceiver): shows [body] as if the Mac had sent it. */
@@ -330,6 +351,7 @@ class BridgeRepository(private val app: Application) {
         stopClient()
         Alerts.withdrawAll(app, results = true)
         pairingStore.clear()
+        synchronized(cache) { unsaved = null }
         cache.clear()
         _pairing.value = null
         _snapshot.value = null
@@ -373,5 +395,8 @@ class BridgeRepository(private val app: Application) {
     companion object {
         /** How long a notification button or a sheet waits for the connection to come back. */
         const val LIVE_WAIT_MS = 8_000L
+
+        /** The snapshot cache is written at most this often while connected. */
+        private const val CACHE_EVERY_MS = 30_000L
     }
 }
