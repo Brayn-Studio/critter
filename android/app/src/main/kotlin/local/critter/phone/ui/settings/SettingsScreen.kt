@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
@@ -61,6 +62,7 @@ fun SettingsScreen(
     val state by repo.state.collectAsState()
     val pairing by repo.pairing.collectAsState()
     var ignoring by remember { mutableStateOf(isIgnoringBatteryOptimizations(context)) }
+    var confirmUnpair by remember { mutableStateOf(false) }
     var canOverlay by remember { mutableStateOf(Settings.canDrawOverlays(context)) }
     LifecycleEventEffect(Lifecycle.Event.ON_RESUME) {
         ignoring = isIgnoringBatteryOptimizations(context)
@@ -87,10 +89,22 @@ fun SettingsScreen(
         }
         Row(Modifier.padding(horizontal = 12.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             OutlinedButton(onClick = onRepair) { Text("重新配对") }
-            OutlinedButton(onClick = {
-                repo.unpair()
-                onUnpaired()
-            }) { Text("取消配对") }
+            OutlinedButton(onClick = { confirmUnpair = true }) { Text("取消配对") }
+        }
+        if (confirmUnpair) {
+            AlertDialog(
+                onDismissRequest = { confirmUnpair = false },
+                title = { Text("取消和 ${pairing?.macName?.ifEmpty { "Mac" } ?: "Mac"} 的配对？") },
+                text = { Text("手机会断开，不再收到提醒。之后要用，得在 Mac 上重新「添加手机」再扫码。") },
+                confirmButton = {
+                    TextButton(onClick = {
+                        confirmUnpair = false
+                        repo.unpair()
+                        onUnpaired()
+                    }) { Text("取消配对", color = MaterialTheme.colorScheme.error) }
+                },
+                dismissButton = { OutlinedButton(onClick = { confirmUnpair = false }) { Text("保留") } },
+            )
         }
 
         Section("提醒")
@@ -227,7 +241,8 @@ private fun SkinChoice(repo: BridgeRepository, title: String, subtitle: String, 
             .padding(horizontal = 20.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        RadioButton(selected = selected, onClick = { repo.settingsStore.update { it.copy(skinOverride = name) } })
+        // The row takes the click; a second handler on the button would fire for the same tap.
+        RadioButton(selected = selected, onClick = null)
         Column(Modifier.weight(1f).padding(start = 4.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
             if (name == null) {

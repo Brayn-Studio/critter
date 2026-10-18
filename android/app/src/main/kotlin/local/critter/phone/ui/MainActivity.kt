@@ -44,6 +44,7 @@ import local.critter.phone.onboarding.OnboardingActivity
 import local.critter.phone.repository
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.board.BoardActivity
+import local.critter.phone.ui.detail.DetailActivity
 import local.critter.phone.ui.home.HomeScreen
 import local.critter.phone.ui.pairing.PairingScreen
 import local.critter.phone.ui.settings.SettingsScreen
@@ -178,6 +179,8 @@ class MainActivity : ComponentActivity() {
                 onOpenSettings = { settingsOpen = true },
                 onOpenBoard = { startActivity(BoardActivity.intent(this)) },
                 onOpenRequest = { startActivity(AnswerActivity.intent(this, it)) },
+                onOpenDetail = { startActivity(DetailActivity.intent(this, it)) },
+                onRepair = { repairing = true },
             )
         }
     }

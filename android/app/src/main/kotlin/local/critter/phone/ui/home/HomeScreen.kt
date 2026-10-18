@@ -19,6 +19,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.LinearProgressIndicator
@@ -62,6 +63,8 @@ fun HomeScreen(
     onOpenSettings: () -> Unit,
     onOpenBoard: () -> Unit,
     onOpenRequest: (requestId: String) -> Unit,
+    onOpenDetail: (sessionId: String) -> Unit,
+    onRepair: () -> Unit,
 ) {
     val state by repo.state.collectAsState()
     val snapshot by repo.snapshot.collectAsState()
@@ -97,6 +100,11 @@ fun HomeScreen(
             TextButton(onClick = onOpenSettings) { Text("设置") }
         }
 
+        // Retrying cannot help (wrong certificate, revoked on the Mac): the way out is right here, not in the settings.
+        if (state is ConnState.NeedsRepair) {
+            Button(onClick = onRepair, modifier = Modifier.padding(start = 20.dp, top = 8.dp)) { Text("重新配对") }
+        }
+
         LimitsRow(body?.limits, now, Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
 
         if (sessions.isEmpty()) {
@@ -114,10 +122,14 @@ fun HomeScreen(
             ) {
                 items(sessions, key = { it.id }) { session ->
                     val request = oldestRequest[session.id]
+                    // Like a tap on a Critter (SessionTap): a request opens its card; anything else the details,
+                    // and a finished session is marked seen on the way.
                     SessionRow(session, request) {
-                        when {
-                            request != null -> onOpenRequest(request.requestId)
-                            session.state == PetState.done -> scope.launch { repo.seen(session.id) }
+                        if (request != null) {
+                            onOpenRequest(request.requestId)
+                        } else {
+                            if (session.state == PetState.done) scope.launch { repo.seen(session.id) }
+                            onOpenDetail(session.id)
                         }
                     }
                 }
