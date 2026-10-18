@@ -2,7 +2,7 @@ import Foundation
 
 /// An arbitrary JSON value, used to hold hook payload fields (like `tool_input`) whose
 /// shape depends on which tool fired, without committing to a concrete Swift type.
-public enum JSONValue: Decodable, Sendable, Equatable {
+public enum JSONValue: Codable, Sendable, Equatable {
     case string(String)
     case number(Double)
     case bool(Bool)
@@ -29,6 +29,36 @@ public enum JSONValue: Decodable, Sendable, Equatable {
                 in: container,
                 debugDescription: "Unsupported JSON value"
             )
+        }
+    }
+
+    public func encode(to encoder: Encoder) throws {
+        var container = encoder.singleValueContainer()
+        switch self {
+        case .string(let value): try container.encode(value)
+        case .number(let value): try container.encode(value)
+        case .bool(let value): try container.encode(value)
+        case .object(let value): try container.encode(value)
+        case .array(let value): try container.encode(value)
+        case .null: try container.encodeNil()
+        }
+    }
+
+    /// Converts a `JSONSerialization` product (`NSNumber`, `NSString`, `NSArray`, ...) into a
+    /// `JSONValue`. An `NSNumber` that holds a boolean becomes `.bool`, not `.number`; anything
+    /// that is not valid JSON becomes `.null`.
+    public init(any value: Any?) {
+        switch value {
+        case let number as NSNumber:
+            self = CFGetTypeID(number) == CFBooleanGetTypeID() ? .bool(number.boolValue) : .number(number.doubleValue)
+        case let string as String:
+            self = .string(string)
+        case let array as [Any]:
+            self = .array(array.map { JSONValue(any: $0) })
+        case let dict as [String: Any]:
+            self = .object(dict.mapValues { JSONValue(any: $0) })
+        default:
+            self = .null
         }
     }
 
