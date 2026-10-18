@@ -61,7 +61,9 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        pairingUriOf(intent)?.let { openLink(it) }
+        // A pairing link counts once: not again when the activity is recreated, or reopened from Recents with the
+        // intent that first started it.
+        if (savedInstanceState == null) pairingUriOf(intent)?.let { openLink(it) }
         val repo = repository
         // First run: the onboarding walks through pairing and the permissions. A pairing link opened first is
         // handled by the pairing screen below, and the onboarding follows once it succeeds.
@@ -108,7 +110,10 @@ class MainActivity : ComponentActivity() {
         BridgeService.sync(this, repository)
     }
 
-    private fun pairingUriOf(intent: Intent?): PairingUri? = intent?.dataString?.let(PairingUri::parse)
+    private fun pairingUriOf(intent: Intent?): PairingUri? {
+        if (intent == null || intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY != 0) return null
+        return intent.dataString?.let(PairingUri::parse)
+    }
 
     @Composable
     private fun App(repo: BridgeRepository) {

@@ -24,6 +24,13 @@ data class PairingUri(
         const val SCHEME = "critter-pair"
         private val FINGERPRINT = Regex("[0-9a-f]{64}")
 
+        /**
+         * The first 16 hex characters of a fingerprint in groups of four, `"0123 4567 89ab cdef"`: the Mac's
+         * "添加手机" sheet shows exactly this (Swift `PairingURI.fingerprintPrefix`), and the phone asks the user
+         * to compare it before trusting a certificate it found on its own.
+         */
+        fun fingerprintPrefix(fingerprint: String): String = fingerprint.take(16).chunked(4).joinToString(" ")
+
         // URLEncoder is form-encoding: it turns a space into '+' and leaves '*' alone. Fix both up.
         private fun escape(s: String) =
             URLEncoder.encode(s, "UTF-8").replace("+", "%20").replace("*", "%2A")

@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import local.critter.core.net.PrivateNetwork
 import local.critter.core.protocol.PairingUri
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.bridge.CertProbe
@@ -59,7 +60,9 @@ private const val CODE_LENGTH = 8
 
 /**
  * Pairing: scan the QR code the Mac shows (or open its `critter-pair://` link), or pick the Mac from the
- * network and type the code. [deepLink] pairs straight away; [onCancel] is null when there is nothing to go back to.
+ * network and type the code. [deepLink] (a link any web page can open) is shown in a confirmation first, with
+ * the Mac's name, address and fingerprint; [onCancel] is null when there is nothing to go back to. Only Macs on
+ * the local network are paired with ([PrivateNetwork], the ranges the Mac itself serves).
  */
 @Composable
 fun PairingScreen(
@@ -75,9 +78,15 @@ fun PairingScreen(
     var busy by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val pairState by repo.pairState.collectAsState()
+    val existing by repo.pairing.collectAsState()
+    var linkToConfirm by remember { mutableStateOf<PairingUri?>(null) }
 
     fun pair(uri: PairingUri) {
         if (busy) return
+        if (!PrivateNetwork.isAllowed(uri.host)) {
+            error = "地址 ${uri.host} 不在局域网里。Critter 只和同一个局域网里的 Mac 配对。"
+            return
+        }
         busy = true
         error = null
         scope.launch {
@@ -90,8 +99,56 @@ fun PairingScreen(
     LaunchedEffect(deepLink) {
         if (deepLink != null) {
             onDeepLinkConsumed()
-            pair(deepLink)
+            if (PrivateNetwork.isAllowed(deepLink.host)) {
+                linkToConfirm = deepLink
+            } else {
+                error = "这个配对链接指向 ${deepLink.host}，不在局域网里，已忽略。"
+            }
         }
+    }
+
+    linkToConfirm?.let { uri ->
+        val cancel = {
+            linkToConfirm = null
+            onCancel?.invoke()
+            Unit
+        }
+        AlertDialog(
+            onDismissRequest = cancel,
+            title = { Text("和这台 Mac 配对？") },
+            text = {
+                Column {
+                    Text("一个链接要让这台手机和「${uri.name.ifEmpty { "Mac" }}」配对。只在你刚在 Mac 上点了「添加手机」时才继续。")
+                    Spacer(Modifier.height(8.dp))
+                    Text("地址  ${hostAndPort(uri.host, uri.port)}", style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        "证书指纹  ${PairingUri.fingerprintPrefix(uri.fingerprint)}",
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.bodyMedium,
+                    )
+                    Text(
+                        "和 Mac 上「添加手机」里码下面的指纹一致时才配对。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    existing?.let { p ->
+                        Spacer(Modifier.height(8.dp))
+                        Text(
+                            "这会替换现在和「${p.macName.ifEmpty { "Mac" }}」的配对。",
+                            color = MaterialTheme.colorScheme.error,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    linkToConfirm = null
+                    pair(uri)
+                }) { Text("配对") }
+            },
+            dismissButton = { OutlinedButton(onClick = cancel) { Text("取消") } },
+        )
     }
 
     Column(modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
@@ -254,9 +311,13 @@ private fun ManualPane(
             title = { Text("信任这台 Mac？") },
             text = {
                 Column {
-                    Text("第一次连接「${mac.name}」。只有它的证书指纹和电脑上显示的一致时才继续：")
+                    Text("第一次连接「${mac.name}」。只有下面的证书指纹和 Mac 上「添加手机」里码下面显示的一致时才继续：")
                     Spacer(Modifier.height(8.dp))
-                    Text(fp.chunked(8).joinToString(" "), fontFamily = FontFamily.Monospace, style = MaterialTheme.typography.bodySmall)
+                    Text(
+                        PairingUri.fingerprintPrefix(fp),
+                        fontFamily = FontFamily.Monospace,
+                        style = MaterialTheme.typography.titleMedium,
+                    )
                 }
             },
             confirmButton = {
@@ -269,3 +330,5 @@ private fun ManualPane(
         )
     }
 }
+
+private fun hostAndPort(host: String, port: Int) = if (':' in host) "[$host]:$port" else "$host:$port"

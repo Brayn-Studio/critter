@@ -386,6 +386,11 @@ private struct PairingSheet: View {
             Text(offer.spacedCode)
                 .font(.system(.title2, design: .monospaced).weight(.semibold))
                 .textSelection(.enabled)
+            // A phone that pairs by typing the code shows the same prefix and asks the user to compare.
+            Text("证书指纹 \(offer.uri.fingerprintPrefix)")
+                .font(.system(.caption, design: .monospaced))
+                .foregroundStyle(.secondary)
+                .textSelection(.enabled)
             Text("用手机上的 Critter 扫描，或输入这个码；还剩 \(secondsLeft / 60):\(String(format: "%02d", secondsLeft % 60))")
                 .font(.caption)
                 .foregroundStyle(.secondary)

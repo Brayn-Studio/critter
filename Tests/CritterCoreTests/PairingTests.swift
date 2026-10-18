@@ -20,6 +20,13 @@ import Testing
     #expect(PairingURI(string: "critter-pair://1.2.3.4:5?fp=zz&code=A&name=n") == nil)
 }
 
+/// The same text as the phone's manual-pairing dialog (Kotlin `fingerprintPrefixIsFourGroupsOfFour`).
+@Test func pairingFingerprintPrefixIsFourGroupsOfFour() {
+    #expect(PairingURI.fingerprintPrefix("0123456789abcdef" + String(repeating: "0", count: 48)) == "0123 4567 89ab cdef")
+    let uri = PairingURI(host: "192.168.1.5", port: 1, fingerprint: String(repeating: "ab12", count: 16), code: "A", name: "n")
+    #expect(uri.fingerprintPrefix == "ab12 ab12 ab12 ab12")
+}
+
 @Test func registryAddVerifyRevoke() throws {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("reg-\(UUID().uuidString)")
     defer { try? FileManager.default.removeItem(at: dir) }

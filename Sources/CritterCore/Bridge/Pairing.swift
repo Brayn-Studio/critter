@@ -41,6 +41,18 @@ public struct PairingURI: Equatable, Sendable {
 
     private static let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-._~")
 
+    /// The first 16 hex characters of the fingerprint in groups of four ("0123 4567 89ab cdef"),
+    /// shown under the code in the "添加手机" sheet. A phone pairing without the QR code shows the
+    /// same text (Kotlin `PairingUri.fingerprintPrefix`) and asks the user to compare the two.
+    public var fingerprintPrefix: String { Self.fingerprintPrefix(fingerprint) }
+
+    public static func fingerprintPrefix(_ fingerprint: String) -> String {
+        let head = Array(fingerprint.prefix(16))
+        return stride(from: 0, to: head.count, by: 4)
+            .map { String(head[$0..<min($0 + 4, head.count)]) }
+            .joined(separator: " ")
+    }
+
     public var string: String {
         let h = host.contains(":") ? "[\(host)]" : host
         let escaped = { (s: String) in s.addingPercentEncoding(withAllowedCharacters: Self.unreserved) ?? s }

@@ -20,6 +20,7 @@ import local.critter.core.net.BridgeClient
 import local.critter.core.net.ConnState
 import local.critter.core.net.Credentials
 import local.critter.core.net.Endpoint
+import local.critter.core.net.PrivateNetwork
 import local.critter.core.protocol.AnswerPayload
 import local.critter.core.protocol.ClientMessage
 import local.critter.core.protocol.PairingUri
@@ -218,8 +219,12 @@ class BridgeRepository(private val app: Application) {
 
     // --- pairing --------------------------------------------------------------------------------
 
-    /** Pairs with the Mac in [uri]; true once approved on the Mac and stored. Progress is in [pairState]. */
+    /**
+     * Pairs with the Mac in [uri]; true once approved on the Mac and stored. Progress is in [pairState]. A host
+     * outside the local network is refused before anything is sent (the screen says why).
+     */
     suspend fun pair(uri: PairingUri): Boolean {
+        if (!PrivateNetwork.isAllowed(uri.host)) return false
         stopClient()
         val temp = BridgeClient(scope, object : Endpoint {
             override suspend fun resolve(): Pair<String, Int>? = null
@@ -240,7 +245,8 @@ class BridgeRepository(private val app: Application) {
             _pairing.value = p
             BridgeService.sync(app, this)
             // A running service only re-delivers onStartCommand; the client must be restarted here (idempotent).
-            startClient()
+            // Not with "保持后台连接" off: then there is no service, and no connection without it.
+            if (BridgeService.shouldRun(this)) startClient()
             success = true
             return true
         } finally {

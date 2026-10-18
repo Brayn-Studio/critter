@@ -41,4 +41,10 @@ class PairingUriTest {
         assertNull(PairingUri.parse("critter-pair://1.2.3.4?fp=$fp&code=A&name=n"))
         assertNull(PairingUri.parse(""))
     }
+
+    /** The same text as the Mac's sheet shows (Swift `pairingFingerprintPrefixIsFourGroupsOfFour`). */
+    @Test fun fingerprintPrefixIsFourGroupsOfFour() {
+        assertEquals("0123 4567 89ab cdef", PairingUri.fingerprintPrefix("0123456789abcdef" + "0".repeat(48)))
+        assertEquals("ab12 ab12 ab12 ab12", PairingUri.fingerprintPrefix("ab12".repeat(16)))
+    }
 }
