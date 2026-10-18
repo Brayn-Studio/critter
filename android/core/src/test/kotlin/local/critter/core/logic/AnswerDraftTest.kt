@@ -1,5 +1,8 @@
 package local.critter.core.logic
 
+import kotlinx.serialization.json.buildJsonArray
+import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
 import local.critter.core.pending
 import local.critter.core.protocol.AnswerPayload
 import local.critter.core.protocol.PendingKind
@@ -74,6 +77,27 @@ class AnswerDraftTest {
         d.toggle("Q", "A")
         d.toggle("Q", "C")
         assertNull(d.payload())
+    }
+
+    /** Picks are sent in the question's option order, not the order they were tapped in. */
+    @Test fun answerDraftMultiSelectFollowsTheOptionOrder() {
+        val input = buildJsonObject {
+            put("questions", buildJsonArray {
+                add(buildJsonObject {
+                    put("question", "Q")
+                    put("multiSelect", true)
+                    put("options", buildJsonArray {
+                        for (label in listOf("A", "B", "C")) add(buildJsonObject { put("label", label) })
+                    })
+                })
+            })
+        }
+        val d = AnswerDraft(pending("r", "s", PendingKind.question, input = input))
+        d.toggle("Q", "C")
+        d.toggle("Q", "A")
+        assertEquals(mapOf("Q" to "A, C"), d.payload()?.answers)
+        d.toggle("Q", "B")
+        assertEquals(mapOf("Q" to "A, B, C"), d.payload()?.answers)
     }
 
     @Test fun joinMultiSelectUsesCommaSpace() {

@@ -50,13 +50,14 @@ internal fun parseMarkdownLite(text: String): List<MdBlock> {
         }
         val line = raw.trim()
         if (line.isEmpty()) continue
-        val numbered = NUMBERED.matchEntire(line)
+        // A number too long for an Int ("12345678901. …") is just a paragraph, not a crash.
+        val numbered = NUMBERED.matchEntire(line)?.takeIf { it.groupValues[1].toIntOrNull() != null }
         blocks += when {
             line.startsWith("### ") -> MdBlock.Heading(3, parseInline(line.drop(4)))
             line.startsWith("## ") -> MdBlock.Heading(2, parseInline(line.drop(3)))
             line.startsWith("# ") -> MdBlock.Heading(1, parseInline(line.drop(2)))
             line.startsWith("- ") -> MdBlock.Bullet(parseInline(line.drop(2)))
-            numbered != null -> MdBlock.Numbered(numbered.groupValues[1].toInt(), parseInline(numbered.groupValues[2]))
+            numbered != null -> MdBlock.Numbered(numbered.groupValues[1].toIntOrNull() ?: 0, parseInline(numbered.groupValues[2]))
             else -> MdBlock.Paragraph(parseInline(line))
         }
     }

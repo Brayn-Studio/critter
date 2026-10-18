@@ -82,4 +82,11 @@ class AnswerInputTest {
     fun unclosedCodeFenceStillShowsItsText() {
         assertEquals(listOf(MdBlock.CodeBlock("x\ny")), parseMarkdownLite("```\nx\ny"))
     }
+
+    @Test
+    fun aNumberTooLongForAnIntIsAParagraph() {
+        val line = "12345678901234567890. 很长的序号"
+        assertEquals(listOf(MdBlock.Paragraph(listOf(Span(line)))), parseMarkdownLite(line))
+        assertEquals(listOf(MdBlock.Numbered(3, listOf(Span("ok")))), parseMarkdownLite("3. ok"))
+    }
 }

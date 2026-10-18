@@ -11,9 +11,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 private const val MAX_ANSWER_LENGTH = 4000
 
 /**
- * How several selected options of a multi-select question are sent as one answer string.
- * Provisional until the end-to-end test confirms what Claude Code expects (docs/critter-bridge-protocol.md,
- * "AskUserQuestion answers"); every call site goes through here so it changes in one place.
+ * How several selected options of a multi-select question are sent as one answer string: the labels joined with
+ * ", " (confirmed end to end, spec §13.1; docs/critter-bridge-protocol.md, "AskUserQuestion answers").
  */
 fun joinMultiSelect(labels: List<String>): String = labels.joinToString(", ")
 
@@ -33,9 +32,18 @@ class AnswerDraft(val request: BridgePending) {
     private val picks = LinkedHashMap<String, Pick>()
     private val submitted = AtomicBoolean(false)
 
-    private val questionTexts: List<String> =
-        ((request.input?.get("questions") as? JsonArray) ?: JsonArray(emptyList()))
-            .mapNotNull { ((it as? JsonObject)?.get("question") as? JsonPrimitive)?.takeIf { p -> p.isString }?.content }
+    private val questionObjects: List<JsonObject> =
+        ((request.input?.get("questions") as? JsonArray) ?: JsonArray(emptyList())).mapNotNull { it as? JsonObject }
+
+    private val questionTexts: List<String> = questionObjects.mapNotNull { it.text("question") }
+
+    /** Each question's option labels in the order the question lists them. */
+    private val optionOrder: Map<String, List<String>> = questionObjects.mapNotNull { q ->
+        val text = q.text("question") ?: return@mapNotNull null
+        text to ((q["options"] as? JsonArray) ?: JsonArray(emptyList())).mapNotNull { (it as? JsonObject)?.text("label") }
+    }.toMap()
+
+    private fun JsonObject.text(key: String): String? = (get(key) as? JsonPrimitive)?.takeIf { it.isString }?.content
 
     fun allow() { decision = "allow"; message = null }
 
@@ -86,7 +94,7 @@ class AnswerDraft(val request: BridgePending) {
         for (q in questionTexts) {
             val text = when (val pick = picks[q]) {
                 is Pick.One -> pick.label
-                is Pick.Many -> joinMultiSelect(pick.labels.toList())
+                is Pick.Many -> joinMultiSelect(inOptionOrder(q, pick.labels))
                 is Pick.Text -> pick.text
                 null -> return null
             }
@@ -94,6 +102,12 @@ class AnswerDraft(val request: BridgePending) {
             answers[q] = text
         }
         return AnswerPayload(answers = answers)
+    }
+
+    /** [labels] in the order the question lists its options, whatever order they were tapped in; unknown ones last. */
+    private fun inOptionOrder(question: String, labels: Collection<String>): List<String> {
+        val order = optionOrder[question].orEmpty()
+        return labels.sortedBy { order.indexOf(it).let { i -> if (i < 0) Int.MAX_VALUE else i } }
     }
 
     /** True only for the first call, so a notification button and a card cannot both answer. */
