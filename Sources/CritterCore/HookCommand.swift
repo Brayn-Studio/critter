@@ -112,7 +112,8 @@ public enum HookCommand {
 
     // MARK: - statusline-install / statusline-uninstall
 
-    private static func runStatusLineAdmin(install: Bool, paths: CritterPaths, now: Int64) -> HookResult {
+    /// Also what the settings window's "状态栏数据" button runs.
+    public static func runStatusLineAdmin(install: Bool, paths: CritterPaths, now: Int64) -> HookResult {
         let hookPath = paths.binDir.appendingPathComponent("critter-hook").path
         // Edit the real file when settings.json is a symlink (dotfiles setups), not the link itself.
         let settingsFile = paths.claudeSettingsFile.resolvingSymlinksInPath()

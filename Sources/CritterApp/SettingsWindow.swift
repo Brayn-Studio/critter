@@ -10,6 +10,7 @@ final class SettingsWindowController {
     private let store: SettingsStore
     private let recorder: HotKeyRecorder
     private let skinPicker = SkinPicker()
+    let phone: PhoneSettingsModel
     private let skinSearchDirs: [URL]
     /// Counts `reloadSkins` requests, so a listing that finishes late can't replace a newer one.
     private var skinListRequest = 0
@@ -19,9 +20,10 @@ final class SettingsWindowController {
     private let onResetPosition: () -> Void
     private var window: NSWindow?
 
-    init(store: SettingsStore, skinSearchDirs: [URL], onSkinsListed: @escaping ([SkinChoice]) -> Void,
+    init(store: SettingsStore, phone: PhoneSettingsModel, skinSearchDirs: [URL], onSkinsListed: @escaping ([SkinChoice]) -> Void,
          onPreviewSound: @escaping (PetState) -> Void, onResetPosition: @escaping () -> Void) {
         self.store = store
+        self.phone = phone
         self.skinSearchDirs = skinSearchDirs
         self.onSkinsListed = onSkinsListed
         self.onPreviewSound = onPreviewSound
@@ -62,7 +64,7 @@ final class SettingsWindowController {
 
     private func makeWindow() -> NSWindow {
         let view = SettingsView(
-            store: store, skinPicker: skinPicker, recorder: recorder,
+            store: store, phone: phone, skinPicker: skinPicker, recorder: recorder,
             onPreviewSound: onPreviewSound, onResetPosition: onResetPosition
         )
         let hosting = NSHostingController(rootView: view)
@@ -170,6 +172,7 @@ struct SkinTile: Identifiable {
 /// The settings form, in the order of spec §8, with "形象" first.
 struct SettingsView: View {
     @Bindable var store: SettingsStore
+    let phone: PhoneSettingsModel
     let skinPicker: SkinPicker
     let recorder: HotKeyRecorder
     let onPreviewSound: (PetState) -> Void
@@ -262,6 +265,8 @@ struct SettingsView: View {
                         .foregroundStyle(.red)
                 }
             }
+
+            PhoneSettingsSection(store: store, phone: phone)
 
             Section {
                 Toggle("登录时自动启动", isOn: $store.launchAtLogin)

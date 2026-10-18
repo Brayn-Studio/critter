@@ -26,8 +26,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let soundPlayer = ThemedSoundPlayer()
     private let hotKey = HotKey()
     private let loginItemQueue = DispatchQueue(label: "local.critter.pet.login-item", qos: .utility)
+    private lazy var phoneSettings = PhoneSettingsModel(bridge: bridge, paths: paths)
     private lazy var settingsWindow = SettingsWindowController(
         store: settings,
+        phone: phoneSettings,
         skinSearchDirs: skinSearchDirs,
         // The same list the "形象" tiles show is what "随机宠物" deals from.
         onSkinsListed: { [weak self] choices in
@@ -77,6 +79,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         petController.onOpenSettings = { [weak self] in
             self?.openSettings()
+        }
+        // A phone that used a pairing code waits for "允许" / "拒绝" in the settings window --
+        // brought up if it isn't, and never a modal alert (the pet must stay draggable).
+        bridge.onPairRequest = { [weak self] deviceName, answer in
+            guard let self else { return answer(false) }
+            phoneSettings.receivePairRequest(deviceName: deviceName, answer: answer)
+            settingsWindow.show()
         }
         settings.onChange = { [weak self] change in
             self?.settingsChanged(change)
