@@ -15,13 +15,22 @@ public struct AppStatus: Codable, Sendable, Equatable {
     /// later process that reused `pid` can be told apart. Absent in files written before
     /// it existed, which still decode.
     public var startTime: Int64?
+    /// Whether the user has the phone bridge switched on. Absent in files from older apps.
+    public var bridgeEnabled: Bool?
+    /// Epoch milliseconds of the last time a paired phone talked to the bridge.
+    public var lastClientSeen: Int64?
 
-    public init(pid: Int32, visible: Bool, heartbeat: Int64, version: String, startTime: Int64? = nil) {
+    public init(
+        pid: Int32, visible: Bool, heartbeat: Int64, version: String, startTime: Int64? = nil,
+        bridgeEnabled: Bool? = nil, lastClientSeen: Int64? = nil
+    ) {
         self.pid = pid
         self.visible = visible
         self.heartbeat = heartbeat
         self.version = version
         self.startTime = startTime
+        self.bridgeEnabled = bridgeEnabled
+        self.lastClientSeen = lastClientSeen
     }
 }
 

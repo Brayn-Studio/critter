@@ -107,6 +107,11 @@ public struct PendingStore: Sendable {
         if let file = paths.sessionScopedFile(in: paths.pendingDir, sessionId: requestId) {
             try? FileManager.default.removeItem(at: file)
         }
+        removeAnswer(requestId: requestId)
+    }
+
+    /// Removes only the answer, leaving the request waiting.
+    public func removeAnswer(requestId: String) {
         if let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId) {
             try? FileManager.default.removeItem(at: file)
         }

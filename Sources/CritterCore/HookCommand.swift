@@ -92,6 +92,9 @@ public enum HookCommand {
             )
             return HookResult(stdout: message + "\n", exitCode: 0)
 
+        case "ask":
+            return AskCommand.run(stdin: stdin, paths: paths, env: .live)
+
         case "statusline":
             return StatusLineCommand.run(arguments: arguments, stdin: stdin, paths: paths, now: now, shell: shell)
 

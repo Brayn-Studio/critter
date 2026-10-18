@@ -9,7 +9,7 @@
       "name": "critter",
       "source": "./plugin",
       "description": "Critter 桌面宠物：上报 Claude Code 会话状态",
-      "version": "0.2.0"
+      "version": "0.3.0"
     }
   ]
 }

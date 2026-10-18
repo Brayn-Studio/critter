@@ -77,3 +77,35 @@ private func critterHookBinaryURL() throws -> URL {
     let record = try JSONDecoder().decode(SessionRecord.self, from: data)
     #expect(record.state == .done)
 }
+
+/// With no app running the gate is closed: `ask` must give up at once and print nothing, so
+/// Claude Code falls back to its normal terminal prompt.
+@Test func binaryAskWithoutAppExitsFast() throws {
+    let binary = try critterHookBinaryURL()
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("critter-hook-ask-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: base.appendingPathComponent(".critter"), withIntermediateDirectories: true)
+
+    let process = Process()
+    process.executableURL = binary
+    process.arguments = ["ask"]
+    process.environment = [
+        "CRITTER_HOME": base.appendingPathComponent(".critter").path,
+        "CLAUDE_CONFIG_DIR": base.appendingPathComponent(".claude").path,
+        "HOME": base.path,
+    ]
+    let stdinPipe = Pipe()
+    let stdoutPipe = Pipe()
+    process.standardInput = stdinPipe
+    process.standardOutput = stdoutPipe
+
+    let started = Date()
+    try process.run()
+    let payload = #"{"session_id":"t1","cwd":"/x","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"}}"#
+    stdinPipe.fileHandleForWriting.write(Data(payload.utf8))
+    try stdinPipe.fileHandleForWriting.close()
+    process.waitUntilExit()
+
+    #expect(Date().timeIntervalSince(started) < 1.0)
+    #expect(process.terminationStatus == 0)
+    #expect(stdoutPipe.fileHandleForReading.readDataToEndOfFile().isEmpty)
+}
