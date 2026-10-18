@@ -7,6 +7,7 @@ import android.widget.Toast
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import local.critter.core.logic.AnswerDraft
 import local.critter.core.protocol.PendingKind
 import local.critter.core.protocol.ResultReason
@@ -42,7 +43,9 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         Alerts.showHandled(app, requestId)
                     }
                     // Anything else (offline, timeout): keep the notification so it can be tried again.
-                    else -> Toast.makeText(app, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+                    else -> withContext(Dispatchers.Main) {
+                        Toast.makeText(app, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+                    }
                 }
             } finally {
                 pending.finish()

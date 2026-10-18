@@ -229,10 +229,10 @@ private fun PlanBody(request: BridgePending, draft: AnswerDraft, enabled: Boolea
 private fun QuestionBody(request: BridgePending, draft: AnswerDraft, enabled: Boolean, onSubmit: () -> Unit) {
     val questions = remember(request.requestId) { parseQuestions(request.input) }
     val instant = submitsOnPick(questions)
-    val picked = remember { mutableStateMapOf<String, Set<String>>() }
-    val typing = remember { mutableStateMapOf<String, Boolean>() }
-    val typed = remember { mutableStateMapOf<String, String>() }
-    var changes by remember { mutableIntStateOf(0) }
+    val picked = remember(draft) { mutableStateMapOf<String, Set<String>>() }
+    val typing = remember(draft) { mutableStateMapOf<String, Boolean>() }
+    val typed = remember(draft) { mutableStateMapOf<String, String>() }
+    var changes by remember(draft) { mutableIntStateOf(0) }
     val ready = changes >= 0 && draft.payload() != null
 
     Column(
