@@ -25,6 +25,7 @@ import local.critter.core.protocol.PairingUri
 import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
 import local.critter.core.protocol.SnapshotBody
+import local.critter.phone.critter.SkinStore
 import local.critter.phone.data.Pairing
 import local.critter.phone.data.PairingStore
 import local.critter.phone.data.SettingsStore
@@ -45,6 +46,7 @@ class BridgeRepository(private val app: Application) {
     val pairingStore = PairingStore(app)
     val settingsStore = SettingsStore(app)
     val nsd = NsdLocator(app)
+    val skins = SkinStore(app)
     private val cache = SnapshotCache(app)
 
     private val _pairing = MutableStateFlow(pairingStore.load())
@@ -71,6 +73,7 @@ class BridgeRepository(private val app: Application) {
     val live: StateFlow<SnapshotBody?> = _live.asStateFlow()
 
     private val answering = ConcurrentHashMap.newKeySet<String>()
+    private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
     private var client: BridgeClient? = null
     private var clientJob: Job? = null
     @Volatile private var boardVisible = false
@@ -95,7 +98,10 @@ class BridgeRepository(private val app: Application) {
             launch {
                 c.state.collect { s ->
                     _state.value = s
-                    if (s !is ConnState.Connected) _live.value = null
+                    if (s !is ConnState.Connected) {
+                        _live.value = null
+                        skinsAsked.clear()
+                    }
                 }
             }
             launch {
@@ -129,6 +135,7 @@ class BridgeRepository(private val app: Application) {
 
     private fun onSnapshot(body: SnapshotBody) {
         val now = System.currentTimeMillis()
+        body.sessions.mapTo(HashSet()) { it.skin }.forEach { name -> scope.launch { skinManifest(name) } }
         _snapshot.value = body
         _lastUpdated.value = now
         _live.value = body
@@ -149,6 +156,25 @@ class BridgeRepository(private val app: Application) {
         } finally {
             answering.remove(requestId)
         }
+    }
+
+    /**
+     * The manifest JSON for skin [name]: a bundled skin straight from assets; otherwise the one the Mac sent
+     * before, or else asked for now with a `skin` request, remembered in memory and in the app's private
+     * `skins/<name>.json` (this is what feeds [SkinStore.library]). Null if the Mac has no such skin or is out
+     * of reach; the app then draws clawd. A name is only asked for once per connection.
+     */
+    suspend fun skinManifest(name: String): String? {
+        skins.bundled(name)?.let { return it }
+        skins.pushed(name)?.let { return it }
+        val c = client ?: return null
+        if (!skinsAsked.add(name)) return null
+        val manifest = c.requestSkin(name)?.manifest?.toString()
+        if (manifest == null || !skins.put(name, manifest)) {
+            // Asked again after the next reconnect, not on every snapshot.
+            return null
+        }
+        return manifest
     }
 
     suspend fun seen(sessionId: String) {

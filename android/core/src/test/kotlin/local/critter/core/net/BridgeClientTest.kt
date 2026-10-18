@@ -105,6 +105,29 @@ class BridgeClientTest {
         assertEquals(sentId, result.id)
     }
 
+    @Test fun requestSkinReturnsTheManifestOrNull() = runBlocking {
+        val mac = mac().apply { expectConnection() }
+        mac.onFrame = { ws, text ->
+            when (type(text)) {
+                "hello" -> FakeMac.greet(ws)
+                "skin" -> {
+                    val obj = BridgeJson.parseToJsonElement(text).jsonObject
+                    val id = obj["id"]!!.jsonPrimitive.content
+                    val name = obj["name"]!!.jsonPrimitive.content
+                    val manifest = if (name == "custom") ""","manifest":{"name":"custom"}""" else ""
+                    ws.send("""{"id":"$id"$manifest,"name":"$name","type":"skin"}""")
+                }
+            }
+        }
+        val c = client(CountingEndpoint { mac.address }, mac.fingerprint)
+        c.start()
+        c.state.await { it is ConnState.Connected }
+
+        val found = c.requestSkin("custom")
+        assertEquals("custom", found?.manifest?.get("name")?.jsonPrimitive?.content)
+        assertNull(c.requestSkin("nope")?.manifest)
+    }
+
     @Test fun requestTimesOut() = runBlocking {
         val mac = mac().apply { greetOnHello(); expectConnection() }
         val c = client(CountingEndpoint { mac.address }, mac.fingerprint, requestTimeoutMs = 300)

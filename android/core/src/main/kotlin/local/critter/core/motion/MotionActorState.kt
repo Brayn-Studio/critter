@@ -331,3 +331,14 @@ internal fun MotionRNG.pick(list: List<WeightedClip>): String? {
     }
     return list.firstOrNull()?.clip
 }
+
+/**
+ * Falls asleep at once, without the doze-off clip: for a Critter that is only shown dozing (the
+ * offline pile). Does nothing outside idle, or for a skin that cannot sleep.
+ */
+fun MotionActor.sleepNow() {
+    val sleep = skin.state(state).sleep ?: return
+    if (state != PetState.idle || asleep) return
+    asleep = true
+    setLoop(sleep.loop)
+}

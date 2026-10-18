@@ -82,6 +82,7 @@ class BridgeClient(
     @Volatile private var offlineSince: Long? = null
     private val wake = Channel<Unit>(Channel.CONFLATED)
     private val inFlight = ConcurrentHashMap<String, CompletableDeferred<ServerMessage.Result>>()
+    private val skinsInFlight = ConcurrentHashMap<String, CompletableDeferred<ServerMessage.Skin?>>()
     private val nextId = AtomicLong()
 
     private fun buildHttp(pin: String): OkHttpClient = PinnedTls.client(
@@ -129,6 +130,23 @@ class BridgeClient(
             return withTimeoutOrNull(requestTimeoutMs) { reply.await() } ?: failure(id, "超时")
         } finally {
             inFlight.remove(id)
+        }
+    }
+
+    /**
+     * Asks the Mac for a skin's manifest. Null if the Mac has no such skin, the connection is down or it
+     * does not answer in time.
+     */
+    suspend fun requestSkin(name: String): ServerMessage.Skin? {
+        val id = "a${nextId.incrementAndGet()}"
+        val ws = socket ?: return null
+        val reply = CompletableDeferred<ServerMessage.Skin?>()
+        skinsInFlight[id] = reply
+        try {
+            if (!ws.send(encode(ClientMessage.SkinRequest(id, name)))) return null
+            return withTimeoutOrNull(requestTimeoutMs) { reply.await() }
+        } finally {
+            skinsInFlight.remove(id)
         }
     }
 
@@ -212,7 +230,10 @@ class BridgeClient(
                 is ServerMessage.Snapshot -> _snapshot.value = msg
                 is ServerMessage.Result -> msg.id?.let { inFlight[it] }?.complete(msg)
                 // A skin reply carries no `result`; it still settles the request that asked for it.
-                is ServerMessage.Skin -> msg.id?.let { inFlight[it] }?.complete(ServerMessage.Result(msg.id, true))
+                is ServerMessage.Skin -> {
+                    msg.id?.let { inFlight[it] }?.complete(ServerMessage.Result(msg.id, true))
+                    msg.id?.let { skinsInFlight[it] }?.complete(msg)
+                }
                 else -> Unit
             }
         }
@@ -224,6 +245,7 @@ class BridgeClient(
             socket = null
             val gone = failure(null, "未连接")
             inFlight.values.forEach { it.complete(gone) }
+            skinsInFlight.values.forEach { it.complete(null) }
         }
     }
 
