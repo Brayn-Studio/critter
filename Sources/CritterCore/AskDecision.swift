@@ -34,11 +34,14 @@ public enum AskDecision {
         case .permission:
             return answer.decision == "allow" || answer.decision == "deny"
         case .question:
+            // Exactly the request's questions, every one of them: Claude Code takes the answers
+            // as the user's whole reply, so a partial one would leave a question unanswered.
             guard let answers = answer.answers, !answers.isEmpty else { return false }
             let questions = ((toolInput["questions"] as? [[String: Any]]) ?? []).compactMap { $0["question"] as? String }
-            return answers.allSatisfy { key, value in
+            guard Set(answers.keys) == Set(questions) else { return false }
+            return answers.values.allSatisfy { value in
                 let trimmed = value.trimmingCharacters(in: .whitespacesAndNewlines)
-                return questions.contains(key) && !trimmed.isEmpty && trimmed.count <= maxAnswerLength
+                return !trimmed.isEmpty && trimmed.count <= maxAnswerLength
             }
         case .plan:
             switch answer.decision {

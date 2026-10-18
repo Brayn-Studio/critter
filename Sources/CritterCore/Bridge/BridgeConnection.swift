@@ -2,6 +2,10 @@ import Foundation
 
 public enum SayOutcome: Equatable, Sendable { case sent, unavailable, failed }
 
+/// What became of an answer handed to `BridgeServices.submitAnswer`. `alreadyAnswered`: the
+/// request had an answer already (another phone was first), so this one was dropped.
+public enum AnswerOutcome: Equatable, Sendable { case accepted, alreadyAnswered, failed }
+
 /// What a bridge connection needs from the app. `BridgeController` implements it.
 public protocol BridgeServices: AnyObject {
     var macName: String { get }
@@ -11,7 +15,8 @@ public protocol BridgeServices: AnyObject {
     func pendingRequest(_ requestId: String) -> PendingRequest?
     /// For validation: the request's original tool input, with the full question text.
     func originalToolInput(_ requestId: String) -> [String: Any]?
-    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> Bool
+    /// Writes the answer file, unless the request already has one.
+    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome
     func markSeen(sessionId: String)
     func say(text: String, sessionId: String) -> SayOutcome
     func skinManifest(name: String) -> JSONValue?
@@ -116,10 +121,11 @@ public final class BridgeConnection {
             guard AskDecision.validate(payload, kind: request.kind, toolInput: input) else {
                 return result(id, .invalid, "答案无效")
             }
-            guard services.submitAnswer(payload, requestId: requestId) else {
-                return result(id, .failed, "提交失败")
+            switch services.submitAnswer(payload, requestId: requestId) {
+            case .accepted: return result(id, nil)
+            case .alreadyAnswered: return result(id, .resolved, "已经有人回答过了")
+            case .failed: return result(id, .failed, "提交失败")
             }
-            return result(id, nil)
         case .seen(let id, let sessionId):
             services.markSeen(sessionId: sessionId)
             return result(id, nil)

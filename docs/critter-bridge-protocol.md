@@ -87,7 +87,7 @@ Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
 
 ### AskUserQuestion answers
 
-`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. Every key must be one of the original questions and every value must be non-empty and at most 4000 characters.
+`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. The keys must be exactly the request's questions -- **every question answered**, none added -- and every value must be non-empty and at most 4000 characters (after trimming whitespace). A partial answer gets `invalid`.
 
 - Single-select: the value is the **option label** that was chosen.
 - Free text ("Other"): the value is the **text itself**.
@@ -230,4 +230,4 @@ Failure:
 {"id":"c1","message":"已在电脑上处理","ok":false,"reason":"resolved","type":"result"}
 ```
 
-`reason` (present when `ok` is false): `resolved` (the request is already handled / gone), `invalid` (the answer or text is not acceptable), `expired`, `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.
+`reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired`, `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.

@@ -40,6 +40,22 @@ private func permissions(_ url: URL) -> Int? {
     #expect(store.readAnswer(requestId: "r1") == nil)
 }
 
+/// The first answer stays: a second one is refused (and reported), not written over it.
+@Test func secondAnswerIsRefused() throws {
+    let paths = tmpPaths()
+    let store = PendingStore(paths: paths)
+    try store.write(request("r1"))
+    #expect(try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "r1"))
+    #expect(try !store.writeAnswer(AnswerPayload(decision: "deny"), requestId: "r1"))
+    #expect(store.readAnswer(requestId: "r1") == AnswerPayload(decision: "allow"))
+    // No temp files are left behind, and once the answer is gone a new one can go in.
+    let leftovers = try FileManager.default.contentsOfDirectory(atPath: paths.answersDir.path)
+    #expect(leftovers == ["r1.json"])
+    store.removeAnswer(requestId: "r1")
+    #expect(try store.writeAnswer(AnswerPayload(decision: "deny"), requestId: "r1"))
+    #expect(store.readAnswer(requestId: "r1") == AnswerPayload(decision: "deny"))
+}
+
 @Test func storeRejectsBadRequestId() {
     let store = PendingStore(paths: tmpPaths())
     #expect(throws: (any Error).self) { try store.write(request("../evil")) }

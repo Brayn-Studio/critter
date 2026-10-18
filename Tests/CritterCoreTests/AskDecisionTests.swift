@@ -59,6 +59,27 @@ nonisolated(unsafe) private let multiInput: [String: Any] = try! JSONSerializati
     #expect(AskDecision.output(kind: .question, toolInput: questionInput, answer: answer) == nil)
 }
 
+nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"""
+{"questions":[{"question":"Pick a number","header":"Number","options":[{"label":"One","description":"1"},{"label":"Two","description":"2"}],"multiSelect":false},{"question":"Pick a color","header":"Color","options":[{"label":"Red","description":"r"},{"label":"Blue","description":"b"}],"multiSelect":false}]}
+"""#.utf8)) as! [String: Any]
+
+/// Every question of the request needs an answer; none may be left out or added.
+@Test func questionAnswerMustCoverEveryQuestion() {
+    let partial = AnswerPayload(answers: ["Pick a number": "One"])
+    #expect(!AskDecision.validate(partial, kind: .question, toolInput: twoQuestionInput))
+    #expect(AskDecision.output(kind: .question, toolInput: twoQuestionInput, answer: partial) == nil)
+
+    let full = AnswerPayload(answers: ["Pick a number": "One", "Pick a color": "Blue"])
+    #expect(AskDecision.validate(full, kind: .question, toolInput: twoQuestionInput))
+    let out = AskDecision.output(kind: .question, toolInput: twoQuestionInput, answer: full)!
+    #expect(decision(out)["updatedInput"]?["answers"] == .object(["Pick a number": .string("One"), "Pick a color": .string("Blue")]))
+
+    let extra = AnswerPayload(answers: ["Pick a number": "One", "Pick a color": "Blue", "Other?": "x"])
+    #expect(!AskDecision.validate(extra, kind: .question, toolInput: twoQuestionInput))
+    let blank = AnswerPayload(answers: ["Pick a number": "One", "Pick a color": "  "])
+    #expect(!AskDecision.validate(blank, kind: .question, toolInput: twoQuestionInput))
+}
+
 @Test func planApproveEchoesInput() {
     let out = AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "approve"))!
     #expect(decision(out)["behavior"] == .string("allow"))

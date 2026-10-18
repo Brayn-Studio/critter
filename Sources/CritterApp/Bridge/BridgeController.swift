@@ -444,8 +444,12 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
-    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> Bool {
-        (try? pendingStore.writeAnswer(payload, requestId: requestId)) != nil
+    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome {
+        do {
+            return try pendingStore.writeAnswer(payload, requestId: requestId) ? .accepted : .alreadyAnswered
+        } catch {
+            return .failed
+        }
     }
 
     func markSeen(sessionId: String) {

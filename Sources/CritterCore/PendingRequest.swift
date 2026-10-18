@@ -130,12 +130,27 @@ public struct PendingStore: Sendable {
         }
     }
 
-    public func writeAnswer(_ answer: AnswerPayload, requestId: String) throws {
+    /// Publishes the answer unless the request already has one, and returns whether it did.
+    /// Only the first answer counts -- it is the one the hook acts on -- so a second one (from
+    /// another phone, or a double tap) must not be taken as accepted. The file appears whole and
+    /// at most once: it is written aside, then hard-linked into place, which fails if it exists.
+    @discardableResult
+    public func writeAnswer(_ answer: AnswerPayload, requestId: String) throws -> Bool {
         guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
         try createPrivateDirectory(paths.answersDir)
-        try atomicWrite(JSONEncoder().encode(answer), to: file, permissions: 0o600)
+        let temp = paths.answersDir.appendingPathComponent(".\(file.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
+        guard FileManager.default.createFile(
+            atPath: temp.path, contents: try JSONEncoder().encode(answer), attributes: [.posixPermissions: 0o600]
+        ) else { throw CocoaError(.fileWriteUnknown) }
+        defer { unlink(temp.path) }
+        guard link(temp.path, file.path) == 0 else {
+            let code = errno
+            if code == EEXIST { return false }
+            throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+        }
+        return true
     }
 
     public func readAnswer(requestId: String) -> AnswerPayload? {

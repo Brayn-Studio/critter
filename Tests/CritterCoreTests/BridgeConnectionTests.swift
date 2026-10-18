@@ -9,7 +9,7 @@ private final class FakeServices: BridgeServices {
     var goodCode = "CODE2345"
     var requests: [String: PendingRequest] = [:]
     var toolInputs: [String: [String: Any]] = [:]
-    var submitResult = true
+    var submitResult = AnswerOutcome.accepted
     var sayResult = SayOutcome.sent
     var submitted: [(AnswerPayload, String)] = []
     var seen: [String] = []
@@ -21,7 +21,7 @@ private final class FakeServices: BridgeServices {
     func consumePairingCode(_ code: String) -> Bool { code == goodCode }
     func pendingRequest(_ requestId: String) -> PendingRequest? { requests[requestId] }
     func originalToolInput(_ requestId: String) -> [String: Any]? { toolInputs[requestId] }
-    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> Bool { submitted.append((payload, requestId)); return submitResult }
+    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome { submitted.append((payload, requestId)); return submitResult }
     func markSeen(sessionId: String) { seen.append(sessionId) }
     func say(text: String, sessionId: String) -> SayOutcome { said.append((text, sessionId)); return sayResult }
     func skinManifest(name: String) -> JSONValue? { name == "clawd" ? .object(["name": .string(name)]) : nil }
@@ -127,9 +127,32 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
     let frame = ClientMessage.answer(id: "1", requestId: "r", payload: AnswerPayload(decision: "allow")).encode()
     #expect(c.receive(frame) == [.send(.result(id: "1", ok: true, reason: nil, message: nil))])
     #expect(s.submitted.count == 1 && s.submitted[0].1 == "r")
-    s.submitResult = false
+    s.submitResult = .failed
     guard case .send(.result(_, let ok, let reason, _))? = c.receive(frame).first else { Issue.record("no result"); return }
     #expect(!ok && reason == .failed)
+}
+
+/// Two phones answering the same request: only the first is told it got in.
+@Test func answerAfterAnotherAnswerRepliesResolved() {
+    let s = FakeServices()
+    s.requests["r"] = request("r", kind: .permission)
+    s.submitResult = .alreadyAnswered
+    let c = readyConnection(s)
+    let frame = ClientMessage.answer(id: "2", requestId: "r", payload: AnswerPayload(decision: "deny")).encode()
+    guard case .send(.result(let id, let ok, let reason, _))? = c.receive(frame).first else { Issue.record("no result"); return }
+    #expect(id == "2" && !ok && reason == .resolved)
+}
+
+/// A question request must be answered in full: answering one of two questions is invalid.
+@Test func partialQuestionAnswerIsInvalid() {
+    let s = FakeServices()
+    s.requests["r"] = request("r", kind: .question)
+    s.toolInputs["r"] = ["questions": [["question": "Which?"], ["question": "When?"]]]
+    let c = readyConnection(s)
+    let out = c.receive(ClientMessage.answer(id: "1", requestId: "r", payload: AnswerPayload(answers: ["Which?": "x"])).encode())
+    guard case .send(.result(_, let ok, let reason, _))? = out.first else { Issue.record("no result"); return }
+    #expect(!ok && reason == .invalid)
+    #expect(s.submitted.isEmpty)
 }
 
 @Test func sayValidatesLengthAndMapsOutcome() {
