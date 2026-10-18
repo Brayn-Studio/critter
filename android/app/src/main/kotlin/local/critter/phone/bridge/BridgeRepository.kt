@@ -172,6 +172,7 @@ class BridgeRepository(private val app: Application) {
             override suspend fun resolve(): Pair<String, Int>? = null
         }, uri.fingerprint, { null })
         val progress = scope.launch { temp.state.collect { _pairState.value = it } }
+        var success = false
         try {
             val paired = temp.pair(uri, Build.MODEL ?: "Android") ?: return false
             val p = Pairing(
@@ -185,10 +186,13 @@ class BridgeRepository(private val app: Application) {
             pairingStore.save(p)
             _pairing.value = p
             BridgeService.sync(app, this)
+            success = true
             return true
         } finally {
             progress.cancel()
             _pairState.value = ConnState.Idle
+            // A failed re-pairing leaves the old pairing in place: bring its connection back.
+            if (!success && BridgeService.shouldRun(this)) startClient()
         }
     }
 
