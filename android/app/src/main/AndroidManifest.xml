@@ -53,6 +53,7 @@
             android:exported="false"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Critter.Sheet" />
 
         <activity
