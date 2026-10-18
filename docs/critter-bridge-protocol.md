@@ -7,7 +7,8 @@ The wire format between Critter (macOS) and its Android companion app. This docu
 - WebSocket over TLS (`wss://<host>:<port>/`). The Mac listens on the first free port in `47823...47832` (default `47823`) and advertises Bonjour service type `_critter._tcp`.
 - The Mac uses a self-signed certificate. The phone does not validate a CA chain; it pins the certificate: the **TLS fingerprint is the SHA-256 of the certificate DER, as 64 lowercase hex characters**. The fingerprint comes from the pairing URI and is stored with the pairing.
 - Only peers on private networks are served (10/8, 172.16/12, 192.168/16, 169.254/16, 100.64/10, 127/8, ::1, fe80::/10, fc00::/7).
-- Every frame is one WebSocket **text** message holding one JSON object with a `type` string. Frames larger than `1_048_576` bytes make the Mac close the connection.
+- Every frame is one WebSocket **text** message holding one JSON object with a `type` string. A phone -> Mac frame larger than `1_048_576` bytes makes the Mac close the connection.
+- **Mac -> phone frames are not capped.** A `snapshot` carries `command` and `plan` texts in full (see `pending`), so it can be larger than 1 MB: the phone must accept bigger frames.
 - **Heartbeat = WebSocket ping/pong** (control frames). There is no application-level ping message.
 - **All times are milliseconds since the Unix epoch** (`Int64`/`Long`).
 - Unknown fields must be ignored. A frame the Mac cannot decode is ignored once the connection is ready.
@@ -19,9 +20,24 @@ The wire format between Critter (macOS) and its Android companion app. This docu
    - `pair` (first time; needs a pairing code).
 2. The Mac replies:
    - to `hello`: `welcome`, then a `snapshot`; or `denied` and closes.
-   - to `pair`: nothing until the user approves on the Mac, then `paired`, `welcome`, `snapshot`; or `denied` (`badCode`, `rejected`) and closes.
+   - to `pair`: nothing until the user approves on the Mac, then `paired`, `welcome`, `snapshot`; or `denied` (`badCode`, `rejected`) and closes; or, if nobody answers on the Mac within 300 s, a plain close without `denied` (see *Timeouts and limits*).
 3. From then on the Mac pushes a new `snapshot` whenever anything changes (`seq` increases by one per connection) and answers each phone command with a `result` (or `skin`).
 4. Any first frame that is not a valid `hello`/`pair`, or a `hello` with `protocol` other than `1`, gets `denied` with reason `"protocol"` and a close.
+
+### Timeouts and limits
+
+All of these close the connection with a plain WebSocket close (or, before the handshake, a cancelled connection) -- **no `denied` is sent**. Values are `BridgeAdmission.standard` in the Swift code.
+
+| What | Limit | Then |
+|---|---|---|
+| First frame (`hello`/`pair`) after the connection is accepted | 20 s; nothing extends it (pings don't count) | close |
+| Waiting for the user to approve a `pair` on the Mac | 300 s (as long as a pairing code lives) | close, without `denied`: treat it as "not approved", the phone may try again with a new code |
+| A paired (ready) connection without any frame from the phone | 600 s; **every** frame starts it over, WebSocket pings and pongs included, so the phone's heartbeat keeps it open | close |
+| Connections not (yet) paired and ready -- waiting for the first frame or for approval, or closing | 8 at a time | a new connection is cancelled before the TLS/WebSocket handshake |
+| Connections of any kind | 32 at a time | the same |
+| Peers outside the private networks above | -- | the same |
+
+A connection cancelled before the handshake shows up on the phone as a failed connect, not as a `denied`: back off and retry.
 
 Pairing: the Mac shows a QR code with a pairing URI. A code is 8 characters from `ABCDEFGHJKMNPQRSTUVWXYZ23456789`, valid 300 000 ms, single use. The device `token` returned by `paired` is 32 random bytes, base64url without padding; store it securely, it is never sent again by the Mac. The Mac stores only its SHA-256.
 
@@ -47,13 +63,15 @@ critter-pair://192.168.1.20:47823?fp=0123456789abcdef0123456789abcdef0123456789a
 {"app":"critter-android/1.0","deviceId":"6F1C2A4E-8B7D-4C3A-9E2F-1A5B7C9D0E11","protocol":1,"token":"dG9rZW4tZXhhbXBsZS1iYXNlNjR1cmw","type":"hello"}
 ```
 
-`protocol` is the protocol version (the Swift name is `protocolVersion`, the wire key is `protocol`). `app` is free-form.
+`protocol` is the protocol version (the Swift name is `protocolVersion`, the wire key is `protocol`). `app` is free-form. **All four fields are required**: a `hello` without one of them is not a valid first frame and gets `denied` `protocol`.
 
 ### pair
 
 ```json
 {"code":"K7M2QX9P","deviceName":"Pixel 9","type":"pair"}
 ```
+
+Both fields are required. The Mac shows and keeps `deviceName` as one line of at most 64 characters (control characters become spaces).
 
 ### answer
 
@@ -180,7 +198,7 @@ The complete current state; replace everything you had.
       "summary": "swift test",
       "input": { "command": "swift test" },
       "createdAt": 1760000000000,
-      "expiresAt": 1760000600000
+      "expiresAt": 1760000590000
     }
   ],
   "prefs": { "skin": "clawd", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
@@ -203,7 +221,17 @@ Field notes (optional = key omitted when absent):
 - `context` (optional): absent means unknown. `usedPercent` is 0...100. `estimated` is true when it was estimated from the transcript rather than reported by Claude Code.
 - `tracked`: false means Critter has not received any event from the session yet; `state` is then `idle` and not meaningful.
 - `limits` (optional): absent means no rate-limit data has been seen. Each of `fiveHour`/`sevenDay` is itself optional. `usedPercentage` is 0...100; `resetsAt` and `updatedAt` are milliseconds.
-- `pending` is sorted by `createdAt`, oldest first, and only holds requests of sessions listed in `sessions`. `input` is the tool input for display (long strings truncated, with the fields `command`, `plan`, `question`, `file_path`, `notebook_path`, `url` in full). A request is gone from `pending` once it is answered or the prompt is dismissed on the Mac.
+- `pending` is sorted by `createdAt`, oldest first, and only holds requests of sessions listed in `sessions`. `expiresAt` is `createdAt + 590000` (the hook waits at most 590 s).
+- `pending[].input` is the tool input for display. Every string longer than 4096 characters (Swift `Character`s, i.e. grapheme clusters) is cut to its first 4096 followed by `…` (U+2026) -- except the values of `command`, `plan`, `question`, `file_path`, `notebook_path` and `url`, which are always in full.
+- A request leaves `pending` when:
+  - an answer reached the hook waiting on it (the hook prints the decision and removes the request, within about 200 ms of the `result`);
+  - the tool call finished: `PostToolUse`, `PostToolUseFailure` or `PermissionDenied` for that tool and input in that session. This is how an "allow" in the terminal shows -- only once the tool has finished running, so a long command's request stays listed while it runs;
+  - the session moved on or ended (`UserPromptSubmit`, `Stop`, `StopFailure`, `SessionEnd`: all of that session's requests);
+  - the Mac saw the session interrupted (Esc in the terminal fires no hook; Critter spots it in the transcript within a second or two) or cleaned the session up: all of its requests;
+  - the hook gave up: at `expiresAt`, when the Mac app's heartbeat is more than 10 s old, or when the bridge is switched off;
+  - the hook process is gone, or the request expired: the Mac sweeps those at launch and whenever it builds a snapshot.
+
+  So a request the terminal has already settled can still be listed for a while; answering it then is harmless (see `result`).
 - `prefs.idleDim` is 0...1.
 
 ### skin
@@ -217,6 +245,8 @@ Reply to a phone `skin` request. `manifest` is the skin's manifest JSON object; 
 ### result
 
 The reply to `answer`, `seen`, `say`. `id` echoes the command's `id` (absent if it had none).
+
+For `answer`, **`ok: true` means "delivered to the waiting hook"** -- the answer was valid and was handed to the `critter-hook ask` waiting on that request -- **not "Claude acted on it"**. If the prompt was already settled in the terminal but the request not yet withdrawn (an "allow" while the tool is still running, or just after an Esc), the hook still takes the answer and prints it; Claude Code, having moved on, is expected to ignore it (scenario `late-answer` in `scripts/dev/e2e-phone.sh`; not yet run against a live session, spec section 13.2). Only the first answer to a request is taken; any later one gets `resolved`.
 
 Success:
 
