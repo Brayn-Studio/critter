@@ -51,6 +51,7 @@ import local.critter.phone.ui.settings.SettingsScreen
 import local.critter.phone.ui.theme.CritterTheme
 
 private const val LOCAL_NETWORK_PERMISSION = "android.permission.ACCESS_LOCAL_NETWORK"
+private const val STATE_ONBOARDING = "onboardingRunning"
 
 class MainActivity : ComponentActivity() {
     private var deepLink by mutableStateOf<PairingUri?>(null)
@@ -58,35 +59,60 @@ class MainActivity : ComponentActivity() {
     /** True while the pairing screen is wanted even though a pairing exists (re-pairing, or a link was opened). */
     private var repairing by mutableStateOf(false)
 
+    /**
+     * The onboarding started from here is on top. It owns the permission prompts meanwhile (camera, local network,
+     * notifications), so this screen asks for none of them and shows nothing that would.
+     */
+    private var onboardingRunning by mutableStateOf(false)
+
+    private val onboarding = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        onboardingRunning = false
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        // A pairing link counts once: not again when the activity is recreated, or reopened from Recents with the
-        // intent that first started it.
-        if (savedInstanceState == null) pairingUriOf(intent)?.let { openLink(it) }
+        onboardingRunning = savedInstanceState?.getBoolean(STATE_ONBOARDING) ?: false
         val repo = repository
-        // First run: the onboarding walks through pairing and the permissions. A pairing link opened first is
-        // handled by the pairing screen below, and the onboarding follows once it succeeds.
-        if (!repo.settingsStore.settings.value.onboardingDone && deepLink == null) {
-            startActivity(OnboardingActivity.intent(this))
+        // A pairing link, the first-run onboarding and the debug extras each count once: not again when the
+        // activity is recreated (the onboarding may well still be on top), or reopened from Recents with the
+        // intent that first started it.
+        if (savedInstanceState == null) {
+            pairingUriOf(intent)?.let { openLink(it) }
+            // First run: the onboarding walks through pairing and the permissions. A pairing link opened first is
+            // handled by the pairing screen below, and the onboarding follows once it succeeds.
+            if (!repo.settingsStore.settings.value.onboardingDone && deepLink == null) startOnboarding()
+            startDebugOnboarding(intent)
         }
-        startDebugOnboarding(intent)
         setContent {
             CritterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
-                    LocalNetworkGate {
-                        App(repo)
+                    // Behind a running onboarding: nothing (its own steps ask for every permission, one at a time).
+                    if (!onboardingRunning) {
+                        LocalNetworkGate {
+                            App(repo)
+                        }
                     }
                 }
             }
         }
     }
 
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        outState.putBoolean(STATE_ONBOARDING, onboardingRunning)
+    }
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
         pairingUriOf(intent)?.let { openLink(it) }
-        startDebugOnboarding(intent)
+        if (intent.flags and Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY == 0) startDebugOnboarding(intent)
+    }
+
+    private fun startOnboarding(onlyKeepAlive: Boolean = false) {
+        onboardingRunning = true
+        onboarding.launch(OnboardingActivity.intent(this, onlyKeepAlive))
     }
 
     /**
@@ -95,8 +121,8 @@ class MainActivity : ComponentActivity() {
      */
     private fun startDebugOnboarding(intent: Intent) {
         if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
-        if (intent.getBooleanExtra("onboarding", false)) startActivity(OnboardingActivity.intent(this))
-        if (intent.getBooleanExtra("keepalive", false)) startActivity(OnboardingActivity.intent(this, onlyKeepAlive = true))
+        if (intent.getBooleanExtra("onboarding", false)) startOnboarding()
+        if (intent.getBooleanExtra("keepalive", false)) startOnboarding(onlyKeepAlive = true)
     }
 
     private fun openLink(uri: PairingUri) {
@@ -130,10 +156,11 @@ class MainActivity : ComponentActivity() {
                 onPaired = {
                     repairing = false
                     settingsOpen = false
+                    // Before the first onboarding is done, its notification step asks instead.
                     if (repo.settingsStore.settings.value.onboardingDone) {
                         askNotifications()
                     } else {
-                        startActivity(OnboardingActivity.intent(this@MainActivity))
+                        startOnboarding()
                     }
                 },
                 onCancel = if (pairing != null) ({ repairing = false }) else null,
