@@ -91,7 +91,7 @@ Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
 
 - Single-select: the value is the **option label** that was chosen.
 - Free text ("Other"): the value is the **text itself**.
-- Multi-select: format **to be confirmed by the end-to-end test (Task 10)**; do not rely on it yet.
+- Multi-select (`multiSelect: true`): the value is the chosen **option labels joined with `", "`** (comma and one space), in the options' order, e.g. `"A, B"`. Verified against a real Claude Code 2.1.302 session on 2026-10-19: Claude reported receiving exactly `A, B`. The Mac passes the string through unchanged.
 
 ### seen
 

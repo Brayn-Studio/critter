@@ -6,6 +6,10 @@ public enum AskDecision {
     public static let defaultDenyMessage = "用户在手机上拒绝了"
     /// Keys whose strings are shown in full; everything else is cut at `displayLimit`.
     public static let untruncatedKeys: Set<String> = ["command", "plan", "question", "file_path", "notebook_path", "url"]
+    /// How a multi-select question's chosen option labels are joined into its one answer
+    /// string: "A, B". Verified against Claude Code 2.1.302 (spec section 13): Claude received
+    /// both labels. The Mac passes the string through unchanged; phones build it.
+    public static let multiSelectSeparator = ", "
     static let displayLimit = 4096
     static let maxAnswerLength = 4000
 

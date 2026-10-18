@@ -36,6 +36,23 @@ private func decision(_ data: Data) -> JSONValue { json(data)["hookSpecificOutpu
     #expect(AskDecision.validate(answer, kind: .question, toolInput: questionInput))
 }
 
+nonisolated(unsafe) private let multiInput: [String: Any] = try! JSONSerialization.jsonObject(with: Data(#"""
+{"questions":[{"question":"Pick letters","header":"Letters","options":[{"label":"A","description":"Option A"},{"label":"B","description":"Option B"},{"label":"C","description":"Option C"}],"multiSelect":true}]}
+"""#.utf8)) as! [String: Any]
+
+/// Spec section 13 item 1, measured in a real session: a multi-select answer is the chosen
+/// labels joined with ", " in one string, and it reaches Claude as exactly that.
+@Test func questionMultiSelectFormat() {
+    #expect(AskDecision.multiSelectSeparator == ", ")
+    let value = ["A", "B"].joined(separator: AskDecision.multiSelectSeparator)
+    #expect(value == "A, B")
+    let answer = AnswerPayload(answers: ["Pick letters": value])
+    #expect(AskDecision.validate(answer, kind: .question, toolInput: multiInput))
+    let out = AskDecision.output(kind: .question, toolInput: multiInput, answer: answer)!
+    #expect(decision(out)["updatedInput"]?["answers"] == .object(["Pick letters": .string("A, B")]))
+    #expect(decision(out)["updatedInput"]?["questions"] == JSONValue(any: multiInput["questions"]))
+}
+
 @Test func answerWithUnknownQuestionIsRejected() {
     let answer = AnswerPayload(answers: ["Other?": "x"])
     #expect(!AskDecision.validate(answer, kind: .question, toolInput: questionInput))

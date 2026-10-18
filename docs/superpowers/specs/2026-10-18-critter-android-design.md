@@ -616,13 +616,20 @@
 - **模拟器**：API 37 镜像，通过代理下载。只用来测 Android 17 才有的行为，主要是 `ACCESS_LOCAL_NETWORK` 的申请和拒绝。
 
 ## 13. 待实测 / 风险（实现早期先验证）
-1. AskUserQuestion **多选题**和**自由文本**的 `answers` 格式：多选是不是用逗号连接 label？自由文本是不是直接把文字当值？
-2. 电脑上先答之后，等待中的 hook 如果又输出了决策，Claude Code 会不会忽略它？
-3. VS Code 和 Desktop 里的会话：`PermissionRequest` hook 是不是也和它们的界面并行等待？如果不是，`ask` 只能对 CLI 会话开启，需要按 `entrypoint` 判断。
-4. 子代理触发的权限请求：输入的形状是什么样，`session_id` 是不是父会话的。
-5. 状态栏命令输出为空时，终端的样子是否和没有状态栏一样（§6.1）。
+实测日期 2026-10-19，Claude Code 2.1.302，`--model haiku`，`scripts/dev/e2e-phone.sh` 十个场景全部通过。
+1. 【已实测】AskUserQuestion 的 `answers` 格式：
+   - 多选：把选中的 label 用 `", "`（逗号加一个空格）连成一个字符串。回答 `A, B` 后，终端显示 `· Pick letters → A, B`，Claude 复述收到的是 `A, B`，两个选项都拿到了，所以不需要试 `,` 连接或 JSON 数组。已写进协议文档和 `AskDecision.multiSelectSeparator`，单元测试 `questionMultiSelectFormat`；安卓端的 `joinMultiSelect` 本来就是 `", "`，不用改。
+   - 自由文本：直接把文字当值。回答 `Mango` 后 Claude 复述 `FRUIT=Mango`。
+2. 【按本方案基本不会触发，不做测试】电脑上先答之后，本方案会删除 pending 文件，等待中的 hook 看到自己的 pending 文件没了就不输出、exit 0，所以不会出现"先答之后 hook 又输出决策"。要在手工里验证的话，需要绕过撤销逻辑手写 answers 文件，意义不大。
+3. 【需手工检查】VS Code 或 Antigravity 里的会话：在里面触发一次需要确认的命令，看手机上是否收到请求、界面上的确认框是否和 hook 并行等待；不是的话，`ask` 只能对 CLI 会话开启，需要按 `entrypoint` 判断。
+4. 【已实测】子代理触发的权限请求：形状和主会话一样，`toolName` 是 `Bash`，`input` 是 `{"command":"touch e2e-sub.txt","description":"…"}`；快照里该请求的 `sessionId` **就是父会话的 id**（没有单独的子代理会话），手机上按父会话显示即可。
+5. 【需手工检查】状态栏命令输出为空时（原来没有状态栏、接成不带 `--` 的形式），终端底部的样子是否和没有状态栏一样：在没有 `statusLine` 的 settings 里接入后开一个会话，对比底部。
 6. 开发用的 vivo 手机上，从后台打开看板会不会被拦，以及需要打开哪些开关。`ACCESS_LOCAL_NETWORK` 的实际弹窗表现，在模拟器上验证。
-7. 收件箱 socket 是没有文档的接口，Claude Code 升级后要重新验证。
+7. 收件箱 socket 是没有文档的接口，Claude Code 升级后要重新验证。2026-10-19 在 2.1.302 上，"发一句"（场景 `say`）仍然有效：空闲会话立即开始新的一轮并照做。
+
+其它在端到端测试里一并确认的：
+- 在电脑上按 Enter 允许后，工具一结束请求就从快照里消失（2 秒内），`critter-hook ask` 进程也退出了；按 Esc 拒绝后 2 秒内请求消失。
+- 计划：退回修改意见后 Claude 重新提交了计划，批准后退出计划模式，回到进入计划模式之前的权限模式（实测是"接受编辑"）。
 
 ## 14. 建议的实现顺序（交给实现计划细化）
 1. **Mac 数据层**：状态栏采集、分支、上下文兜底，用 `PetSession` 加上补充信息组成快照模型。
