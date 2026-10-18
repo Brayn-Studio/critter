@@ -12,6 +12,20 @@ data class PhoneSettings(
     val notifyDone: Boolean = false,
     val notifyError: Boolean = false,
     val boardBrightness: Float = 0.3f,
+    /** Which board is shown: the enlarged critters or the pro dashboard (remembered). */
+    val boardCritterMode: Boolean = true,
+    /** Sounds on the board when a session just needs you, finished or failed (spec §8.7). Off by default. */
+    val boardSounds: Boolean = false,
+    val overlayEnabled: Boolean = false,
+    /** 1 small, 2 medium, 3 large. */
+    val overlaySize: Int = 2,
+    /** The idle dimming strength 0..1 for the floating pile; null follows the Mac's setting. */
+    val overlayIdleDim: Float? = null,
+    val overlayAutoHide: Boolean = false,
+    val overlayHideInFullscreen: Boolean = false,
+    /** Where the pile sits: on the right edge or the left, and its top as a fraction of the screen height. */
+    val overlayOnRight: Boolean = true,
+    val overlayY: Float = 0.4f,
 )
 
 class SettingsStore(context: Context) {
@@ -34,6 +48,15 @@ class SettingsStore(context: Context) {
             notifyDone = prefs.getBoolean("notifyDone", d.notifyDone),
             notifyError = prefs.getBoolean("notifyError", d.notifyError),
             boardBrightness = prefs.getFloat("boardBrightness", d.boardBrightness).coerceIn(0.1f, 1f),
+            boardCritterMode = prefs.getBoolean("boardCritterMode", d.boardCritterMode),
+            boardSounds = prefs.getBoolean("boardSounds", d.boardSounds),
+            overlayEnabled = prefs.getBoolean("overlayEnabled", d.overlayEnabled),
+            overlaySize = prefs.getInt("overlaySize", d.overlaySize).coerceIn(1, 3),
+            overlayIdleDim = if (prefs.contains("overlayIdleDim")) prefs.getFloat("overlayIdleDim", 1f).coerceIn(0f, 1f) else null,
+            overlayAutoHide = prefs.getBoolean("overlayAutoHide", d.overlayAutoHide),
+            overlayHideInFullscreen = prefs.getBoolean("overlayHideInFullscreen", d.overlayHideInFullscreen),
+            overlayOnRight = prefs.getBoolean("overlayOnRight", d.overlayOnRight),
+            overlayY = prefs.getFloat("overlayY", d.overlayY).coerceIn(0f, 1f),
         )
     }
 
@@ -43,5 +66,15 @@ class SettingsStore(context: Context) {
         putBoolean("notifyDone", s.notifyDone)
         putBoolean("notifyError", s.notifyError)
         putFloat("boardBrightness", s.boardBrightness)
+        putBoolean("boardCritterMode", s.boardCritterMode)
+        putBoolean("boardSounds", s.boardSounds)
+        putBoolean("overlayEnabled", s.overlayEnabled)
+        putInt("overlaySize", s.overlaySize)
+        val dim = s.overlayIdleDim
+        if (dim == null) remove("overlayIdleDim") else putFloat("overlayIdleDim", dim)
+        putBoolean("overlayAutoHide", s.overlayAutoHide)
+        putBoolean("overlayHideInFullscreen", s.overlayHideInFullscreen)
+        putBoolean("overlayOnRight", s.overlayOnRight)
+        putFloat("overlayY", s.overlayY)
     }
 }

@@ -47,6 +47,14 @@
             android:theme="@style/Theme.Critter.Sheet" />
 
         <activity
+            android:name=".ui.detail.DetailActivity"
+            android:excludeFromRecents="true"
+            android:exported="false"
+            android:launchMode="singleTop"
+            android:showWhenLocked="true"
+            android:theme="@style/Theme.Critter.Sheet" />
+
+        <activity
             android:name=".ui.board.BoardActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
             android:exported="false"

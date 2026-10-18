@@ -45,6 +45,9 @@ android {
 
     buildFeatures { compose = true }
 
+    // The board's sounds are opened as file descriptors by SoundPool, which needs them stored uncompressed.
+    androidResources { noCompress += "wav" }
+
     testOptions {
         unitTests.all { it.useJUnitPlatform() }
     }

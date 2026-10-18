@@ -96,6 +96,10 @@ fun SettingsScreen(
             )
         }
 
+        SwitchRow("看板提示音", "只在看板打开时响；勿扰模式下不响", settings.boardSounds) { on ->
+            repo.settingsStore.update { it.copy(boardSounds = on) }
+        }
+
         Section("省电")
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(

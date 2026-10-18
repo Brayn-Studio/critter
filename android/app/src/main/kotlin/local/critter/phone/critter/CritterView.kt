@@ -182,6 +182,7 @@ class CritterView(context: Context) : View(context) {
     /** A pile member behind the lead: hops onto its row, then stays there dimmed and quiet. */
     private fun seat(actor: MotionActor, row: Int) {
         actor.brainEnabled = false
+        actor.noAccessory = true
         actor.travel(fromDx = 0, fromDy = 0, delay = 0, seat = PileSeating.seat(row))
     }
 

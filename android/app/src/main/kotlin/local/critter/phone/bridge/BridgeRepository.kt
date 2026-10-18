@@ -142,6 +142,12 @@ class BridgeRepository(private val app: Application) {
         cache.save(body, now)
     }
 
+    /** Debug builds only (DebugSnapshotReceiver): shows [body] as if the Mac had sent it. */
+    fun injectSnapshotForDebug(body: SnapshotBody) {
+        onSnapshot(body)
+        _live.value = body
+    }
+
     // --- commands -----------------------------------------------------------------------------
 
     /**
@@ -175,6 +181,11 @@ class BridgeRepository(private val app: Application) {
             return null
         }
         return manifest
+    }
+
+    /** Tells the Mac a finished session was looked at, without waiting for the reply. */
+    fun markSeen(sessionId: String) {
+        scope.launch { seen(sessionId) }
     }
 
     suspend fun seen(sessionId: String) {
