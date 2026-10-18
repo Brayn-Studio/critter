@@ -619,11 +619,13 @@
 - **模拟器**：API 37 镜像，通过代理下载。只用来测 Android 17 才有的行为，主要是 `ACCESS_LOCAL_NETWORK` 的申请和拒绝。
 
 ## 13. 待实测 / 风险（实现早期先验证）
-实测日期 2026-10-19，Claude Code 2.1.302，`--model haiku`，`scripts/dev/e2e-phone.sh` 十个场景全部通过。
+实测日期 2026-10-19，Claude Code 2.1.302，`--model haiku`，`scripts/dev/e2e-phone.sh` 十个场景全部通过（之后新增的 `late-answer` 还没跑过，见第 2 条）。
 1. 【已实测】AskUserQuestion 的 `answers` 格式：
    - 多选：把选中的 label 用 `", "`（逗号加一个空格）连成一个字符串。回答 `A, B` 后，终端显示 `· Pick letters → A, B`，Claude 复述收到的是 `A, B`，两个选项都拿到了，所以不需要试 `,` 连接或 JSON 数组。已写进协议文档和 `AskDecision.multiSelectSeparator`，单元测试 `questionMultiSelectFormat`；安卓端的 `joinMultiSelect` 本来就是 `", "`，不用改。
    - 自由文本：直接把文字当值。回答 `Mango` 后 Claude 复述 `FRUIT=Mango`。
-2. 【按本方案基本不会触发，不做测试】电脑上先答之后，本方案会删除 pending 文件，等待中的 hook 看到自己的 pending 文件没了就不输出、exit 0，所以不会出现"先答之后 hook 又输出决策"。要在手工里验证的话，需要绕过撤销逻辑手写 answers 文件，意义不大。
+2. 【待实测：场景 `late-answer` 已写好，还没在真实会话里跑过】电脑上先答之后，手机的回答晚到。
+   - 撤销要等事件：在电脑上按 Enter 允许后，pending 文件要到工具结束（`PostToolUse`）才删；按 Esc 拒绝后，要等 Critter 从会话记录里认出中断（约 1–2 秒）。这段时间里手机还能答，Mac 回 `ok:true`，等待中的 hook 也会输出决策。`ok:true` 只表示"交给了等待中的 hook"，不表示 Claude 照做了（协议文档已写明）。
+   - 要确认的是：这时 Claude Code 会忽略这个晚到的决策。`scripts/dev/e2e-phone.sh late-answer` 测两种情况：(a) 终端里允许了一条要跑 15 秒的命令，命令还在跑时手机回"拒绝"并附一句标记，期望命令照常跑完、标记不出现在屏幕上；(b) 终端里按 Esc 拒绝，紧接着手机回"允许"，期望命令不会执行、屏幕上没有 "Allowed by PermissionRequest hook"。两边手机收到的回执记在 `INFO` 行里。
 3. 【需手工检查；在那之前 `ask` 只对 CLI 开启】VS Code 或 Antigravity、Desktop 里的会话：在里面触发一次需要确认的命令，看界面上的确认框是否和 hook 并行等待、手机上答了以后是否自动关闭。
    - 2026-10-19 起，`ask` 只在 `CLAUDE_CODE_ENTRYPOINT == "cli"` 时等待，其它入口（`claude-vscode`、`claude-desktop`、`sdk-*`）和变量缺失时立刻退出（单元测试 `askExitsImmediatelyOutsideTheCli`）。原因：没验证过的入口里，如果确认框要等 hook 返回才出现，一个等待中的 `ask` 会把那里的提示卡住最多 590 秒。
    - 这些会话照样出现在手机上，只是它们的确认只能在电脑上答。验证通过后，把对应的入口加进 `AskCommand` 的允许列表。

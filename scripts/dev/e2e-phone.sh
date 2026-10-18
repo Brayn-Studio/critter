@@ -2,13 +2,18 @@
 # End-to-end check of phone answering against a REAL interactive Claude Code session
 # (`claude --model haiku`, driven through tmux), with `critter-bridge-client` standing in
 # for the phone. Prints one `PASS <name>` / `FAIL <name>: <reason>` line per scenario, plus
-# `INFO` lines for what the two exploratory scenarios (question-multi, subagent-permission)
-# observed.
+# `INFO` lines for what the exploratory scenarios (question-multi, subagent-permission,
+# late-answer) observed.
 #
 # Prerequisites: `make install` has run (plugin 0.3.0 with the `ask` hook), Critter is
 # running, `defaults write local.critter.pet debugEnabled -bool true`, `claude` and `tmux`
 # are on PATH. It turns the bridge on for the run and puts it back afterwards. The Claude
 # session also shows up on claude.ai while it runs (the user's Remote Control setting).
+#
+# Other Claude Code sessions may be open meanwhile: while the client is connected their
+# prompts are published too (as they would be for a real phone), so the script only ever
+# looks at -- and answers -- requests of its own session. It pairs a fresh client device
+# for the run (state in the scratch directory) and unpairs it again at the end.
 #
 #   scripts/dev/e2e-phone.sh [scenario ...]      # default: all, in order
 set -uo pipefail
@@ -17,17 +22,24 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CLIENT="${CRITTER_BRIDGE_CLIENT:-$REPO/.build/debug/critter-bridge-client}"
 SOCK="critter-e2e-$$"
 SESS="critter-e2e"
-WORK="$(mktemp -d "${TMPDIR:-/tmp}/critter-e2e.XXXXXX")"
+# The user's own temp directory: Critter only writes the pairing file under it (or ~/.critter).
+TMPROOT="$(getconf DARWIN_USER_TEMP_DIR 2>/dev/null || echo "${TMPDIR:-/tmp}/")"
+WORK="$(mktemp -d "${TMPROOT%/}/critter-e2e.XXXXXX")"
 DIR="$WORK/proj"
 FEED="$WORK/watch.jsonl"
-OUT="${E2E_SCREENS:-$WORK/out}"
+# The client's pairing for this run only (it holds a device token).
+STATE="$WORK/client.json"
+# Screens of failed scenarios; outside $WORK, so cleanup doesn't delete the evidence.
+if [ -n "${E2E_SCREENS:-}" ]; then OUT="$E2E_SCREENS"; OUT_MADE=0
+else OUT="$(mktemp -d "${TMPROOT%/}/critter-e2e-screens.XXXXXX")"; OUT_MADE=1; fi
 mkdir -p "$DIR" "$OUT"
 DOMAIN=local.critter.pet
-BASE_PLANS="$(ls ~/.claude/plans 2>/dev/null | sort)"
 WATCH_PID=""
 PREV_BRIDGE="$(defaults read "$DOMAIN" bridgeEnabled 2>/dev/null || echo 0)"
 FAILED=0
 PARENT=""
+# planFilePath of every plan request of PARENT: the only plan files cleanup may delete.
+PLAN_FILES=""
 
 T() { tmux -L "$SOCK" "$@"; }
 
@@ -39,18 +51,23 @@ cleanup() {
   fi
   T kill-server 2>/dev/null
   [ -n "$WATCH_PID" ] && kill "$WATCH_PID" 2>/dev/null
+  # Unpair this run's client device, so it can't keep `ask`'s "a phone was seen" gate open
+  # later (Critter only lets the debug URL revoke a critter-bridge-client device).
+  local device; device="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["deviceId"])' "$STATE" 2>/dev/null)"
+  [ -n "$device" ] && open -g "critter://debug-bridge-revoke?deviceId=$device"
   # This run's transcript directory (named after the real path of the scratch dir).
   local real; real="$(cd "$DIR" 2>/dev/null && pwd -P)"
   if [ -n "$real" ]; then
     local enc; enc="$(printf '%s' "$real" | sed 's/[^A-Za-z0-9]/-/g')"
     rm -rf "$HOME/.claude/projects/$enc"
   fi
-  # Plan files the session created.
+  # Plan files of this run's own session, and nothing else in ~/.claude/plans.
   local f
-  for f in $(ls ~/.claude/plans 2>/dev/null | sort); do
-    printf '%s\n' "$BASE_PLANS" | grep -qxF "$f" || rm -f "$HOME/.claude/plans/$f"
-  done
+  while IFS= read -r f; do
+    case "$f" in "$HOME/.claude/plans/"*.md) [ -f "$f" ] && rm -f "$f" ;; esac
+  done <<< "$PLAN_FILES"
   rm -rf "$WORK"
+  if [ "$OUT_MADE" = 1 ] && rmdir "$OUT" 2>/dev/null; then :; else echo "screens: $OUT"; fi
   if [ "$PREV_BRIDGE" != 1 ]; then open -g "critter://debug-set?bridgeEnabled=0"; fi
 }
 trap cleanup EXIT
@@ -75,20 +92,29 @@ not_in_plan_mode() { ! has_screen 'plan mode on'; }
 
 type_prompt() { T send-keys -t "$SESS" -l "$1"; sleep 0.4; T send-keys -t "$SESS" Enter; }
 
+# client <timeout s> <command...>: critter-bridge-client with this run's pairing, killed if
+# it hasn't finished in time (perl's alarm: macOS has no `timeout`).
+client() {
+  local limit=$1; shift
+  perl -e 'alarm shift; exec @ARGV' "$limit" "$CLIENT" "$@" --state "$STATE"
+}
+
 # The newest snapshot line the client saw.
 last_snapshot() { grep '"type":"snapshot"' "$FEED" 2>/dev/null | tail -n 1; }
-# pending_json [kind]: JSON array of the pending requests (of that kind).
+# pending_json [kind]: JSON array of the pending requests (of that kind) of PARENT, this run's
+# own session -- never another session's (subagent requests carry the parent's id, spec 13.4).
 pending_json() {
   last_snapshot | python3 -I -c '
 import json, sys
-kind = sys.argv[1]
+kind, parent = sys.argv[1], sys.argv[2]
 line = sys.stdin.read().strip()
 out = []
-if line:
+if line and parent:
     for p in json.loads(line).get("pending", []):
+        if p.get("sessionId") != parent: continue
         if kind and p["kind"] != kind: continue
         out.append(p)
-print(json.dumps(out))' "${1:-}"
+print(json.dumps(out))' "${1:-}" "$PARENT"
 }
 pending_ids() { pending_json "${1:-}" | python3 -I -c 'import json,sys; print(" ".join(p["requestId"] for p in json.load(sys.stdin)))'; }
 has_pending() { [ -n "$(pending_ids "${1:-}")" ]; }
@@ -112,7 +138,19 @@ new_pending() { # <kind> <known ids...>
   return 1
 }
 
-answer() { "$CLIENT" answer "$@" >/dev/null; }
+answer() { client 30 answer "$@" >/dev/null; }
+
+# The pid of the `critter-hook ask` waiting on one of PARENT's requests (from its pending file).
+hook_pid() {
+  python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["hookPid"])' "$HOME/.critter/pending/$1.json" 2>/dev/null
+}
+ask_running() { pgrep -f 'critter-hook ask' | grep -qx "$1"; }
+ask_gone() { ! ask_running "$1"; }
+# Remembers a plan request's planFilePath, for cleanup.
+note_plan() {
+  local path; path="$(request_field "$1" 'p["input"].get("planFilePath","")')"
+  [ -n "$path" ] && PLAN_FILES="$PLAN_FILES$path"$'\n'
+}
 
 # Waits for a pending request and prints its id.
 await_request() { # <kind> <timeout>
@@ -163,15 +201,15 @@ pgrep -x Critter >/dev/null || { echo "Critter is not running"; exit 2; }
 
 open -g "critter://debug-set?bridgeEnabled=1"
 sleep 2
-if ! "$CLIENT" watch --count 1 >/dev/null 2>&1; then
-  rm -f "$WORK/pair.json"
-  open -g "critter://debug-bridge-pair?out=$WORK/pair.json"
-  wait_for 20 test -s "$WORK/pair.json" || { echo "could not get a pairing URI"; exit 2; }
-  URI="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["uri"])' "$WORK/pair.json")"
-  "$CLIENT" pair "$URI" >/dev/null || { echo "pairing failed"; exit 2; }
-fi
+# A fresh device for this run (the pairing code is approved without asking).
+open -g "critter://debug-bridge-pair?out=$WORK/pair.json"
+wait_for 20 test -s "$WORK/pair.json" || { echo "could not get a pairing URI"; exit 2; }
+URI="$(python3 -I -c 'import json,sys; print(json.load(open(sys.argv[1]))["uri"])' "$WORK/pair.json")"
+rm -f "$WORK/pair.json"
+client 30 pair "$URI" >/dev/null || { echo "pairing failed"; exit 2; }
 
-"$CLIENT" watch > "$FEED" 2>/dev/null &
+# Runs for the whole run; cleanup kills it.
+"$CLIENT" watch --state "$STATE" > "$FEED" 2>/dev/null &
 WATCH_PID=$!
 wait_for 15 test -s "$FEED" || { echo "the client got no snapshot"; exit 2; }
 
@@ -275,6 +313,7 @@ s_plan_revise_then_approve() {
   has_screen 'plan mode' || { fail plan-revise-then-approve "could not enter plan mode"; return; }
   type_prompt 'Plan how to create a file e2e-plan.txt containing the word hello, then call ExitPlanMode with the plan. Keep the plan to three lines.'
   local id; id="$(await_request plan 120)" || { fail plan-revise-then-approve "no plan request"; return; }
+  note_plan "$id"
   answer "$id" --decision revise --message 'Also make the file contain a second line: world'
   local id2="" n=0
   while [ $n -lt 150 ]; do
@@ -282,6 +321,7 @@ s_plan_revise_then_approve() {
     id2=""; sleep 1; n=$((n + 1))
   done
   [ -n "$id2" ] || { fail plan-revise-then-approve "plan was not resubmitted"; return; }
+  note_plan "$id2"
   request_field "$id2" 'p["input"].get("plan","")' | grep -qi world || info "plan-revise: resubmitted plan does not mention world"
   answer "$id2" --decision approve
   wait_for 150 not_in_plan_mode || { fail plan-revise-then-approve "still in plan mode after approve"; return; }
@@ -289,25 +329,18 @@ s_plan_revise_then_approve() {
   pass plan-revise-then-approve
 }
 
-ask_pids() { pgrep -f 'critter-hook ask' | sort | tr '\n' ' '; }
-new_ask_pids() { # <before>
-  local pid out=""
-  for pid in $(ask_pids); do case " $1 " in *" $pid "*) ;; *) out="$out $pid" ;; esac; done
-  echo "$out"
-}
-
 s_terminal_first() {
   clean_slate
-  local before; before="$(ask_pids)"
   type_prompt 'Run this exact bash command and nothing else: touch e2e-7.txt'
   local id; id="$(await_request permission 90)" || { fail terminal-first "no permission request"; return; }
+  # The ask process waiting on this very request (other sessions may have their own).
+  local pid; pid="$(hook_pid "$id")"
+  [ -n "$pid" ] && ask_running "$pid" || { fail terminal-first "no waiting ask process for $id"; return; }
   sleep 1
   T send-keys -t "$SESS" Enter
   wait_for 30 test -f "$DIR/e2e-7.txt" || { fail terminal-first "file not created after Enter in the terminal"; return; }
   wait_for 2 req_gone "$id" || { fail terminal-first "request still pending 2 s after the tool finished"; return; }
-  local extra; extra="$(new_ask_pids "$before")"
-  [ -n "$extra" ] && { sleep 2; extra="$(new_ask_pids "$before")"; }
-  [ -z "$extra" ] && pass terminal-first || fail terminal-first "ask process(es) still running:$extra"
+  wait_for 4 ask_gone "$pid" && pass terminal-first || fail terminal-first "ask process $pid still running"
 }
 
 s_escape_clears() {
@@ -317,6 +350,38 @@ s_escape_clears() {
   sleep 1
   T send-keys -t "$SESS" Escape
   wait_for 2 req_gone "$id" && pass escape-clears || fail escape-clears "request still pending 2 s after Esc"
+}
+
+# An answer from the phone that arrives after the terminal already settled the prompt must
+# change nothing: Claude Code has moved on, and `result ok:true` only means the waiting hook
+# got it. (a) allowed in the terminal, the command still running, the phone says deny;
+# (b) rejected with Esc in the terminal, the phone says allow straight after.
+s_late_answer() {
+  clean_slate
+  type_prompt 'Run this exact bash command and nothing else: sleep 15 && touch e2e-late.txt'
+  local id; id="$(await_request permission 90)" || { fail late-answer "no permission request (a)"; return; }
+  sleep 1
+  T send-keys -t "$SESS" Enter
+  sleep 3
+  local reply; reply="$(client 30 answer "$id" --decision deny --message 'LATE-DENY-MARKER')"
+  info "late-answer (a) phone deny while the allowed command runs -> $reply"
+  wait_for 40 test -f "$DIR/e2e-late.txt" || { fail late-answer "(a) the allowed command did not finish"; return; }
+  sleep 2
+  has_screen 'LATE-DENY-MARKER' && { fail late-answer "(a) the late deny reached Claude"; return; }
+  wait_for 5 req_gone "$id" || { fail late-answer "(a) request still pending after the tool finished"; return; }
+
+  clean_slate
+  type_prompt 'Run this exact bash command and nothing else: touch e2e-late-esc.txt'
+  id="$(await_request permission 90)" || { fail late-answer "no permission request (b)"; return; }
+  sleep 1
+  T send-keys -t "$SESS" Escape
+  reply="$(client 30 answer "$id" --decision allow)"
+  info "late-answer (b) phone allow right after Esc -> $reply"
+  sleep 10
+  [ -f "$DIR/e2e-late-esc.txt" ] && { fail late-answer "(b) the late allow ran the rejected command"; return; }
+  has_screen 'Allowed by PermissionRequest hook' && { fail late-answer "(b) the late allow was applied"; return; }
+  wait_for 5 req_gone "$id" || { fail late-answer "(b) request still pending after Esc"; return; }
+  pass late-answer
 }
 
 s_subagent_permission() {
@@ -336,12 +401,12 @@ s_subagent_permission() {
 
 s_say() {
   clean_slate
-  "$CLIENT" say "$PARENT" 'Reply with only the single word you get by joining PINE and APPLE, in capital letters.' >/dev/null \
+  client 30 say "$PARENT" 'Reply with only the single word you get by joining PINE and APPLE, in capital letters.' >/dev/null \
     || { fail say "client say failed"; return; }
   wait_screen 60 'PINEAPPLE' && pass say || fail say "no PINEAPPLE on screen"
 }
 
-ALL="permission_allow permission_deny_message question_single question_multi question_free_text plan_revise_then_approve terminal_first escape_clears subagent_permission say"
+ALL="permission_allow permission_deny_message question_single question_multi question_free_text plan_revise_then_approve terminal_first escape_clears late_answer subagent_permission say"
 for name in ${*:-$ALL}; do "s_${name//-/_}"; done
 
 echo "scenarios failed: $FAILED"
