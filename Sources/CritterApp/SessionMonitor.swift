@@ -85,6 +85,8 @@ private final class MonitorEngine: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.critter.pet.monitor", qos: .utility)
     private let paths: CritterPaths
     private let store: StateStore
+    /// Requests waiting for the phone's answer: an interrupted or ended session's are void.
+    private let pendingStore: PendingStore
     private let log = DiagnosticLog.shared
 
     private var publish: (@Sendable (MonitorSnapshot) -> Void)?
@@ -102,6 +104,7 @@ private final class MonitorEngine: @unchecked Sendable {
     init(paths: CritterPaths) {
         self.paths = paths
         store = StateStore(paths: paths)
+        pendingStore = PendingStore(paths: paths)
     }
 
     func start(publish: @escaping @Sendable (MonitorSnapshot) -> Void) {
@@ -244,7 +247,8 @@ private final class MonitorEngine: @unchecked Sendable {
     }
 
     /// Carries out a `SessionReaper` removal under the session's lock, only if the record is
-    /// still the one that was judged. Returns whether it was deleted.
+    /// still the one that was judged, along with the session's pending requests. Returns
+    /// whether it was deleted.
     private func remove(_ removal: SessionReaper.Removal) -> Bool {
         var deleted = false
         try? store.update(sessionId: removal.sessionId) { current in
@@ -252,6 +256,7 @@ private final class MonitorEngine: @unchecked Sendable {
             deleted = action == .delete
             return action
         }
+        if deleted { pendingStore.removeAll(sessionId: removal.sessionId) }
         return deleted
     }
 
@@ -307,6 +312,8 @@ private final class MonitorEngine: @unchecked Sendable {
         }
         if flipped {
             log.log("event interrupted \(sessionId)")
+            // Esc also dismissed any prompt the phone could still have answered.
+            pendingStore.removeAll(sessionId: sessionId)
             scheduleRebuild()
         }
     }

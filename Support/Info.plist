@@ -28,6 +28,12 @@
 	<true/>
 	<key>NSAppleEventsUsageDescription</key>
 	<string>Critter 需要控制终端，才能在你点击时跳回对应的会话标签页。</string>
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>打开“允许手机连接”后，Critter 需要在局域网里让你的手机找到并连上这台 Mac。</string>
+	<key>NSBonjourServices</key>
+	<array>
+		<string>_critter._tcp</string>
+	</array>
 	<key>CFBundleURLTypes</key>
 	<array>
 		<dict>

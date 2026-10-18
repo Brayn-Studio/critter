@@ -148,6 +148,12 @@ final class PetController {
         setVisible(visible, animated: false)
     }
 
+    /// The skin id `sessionId`'s Critter wears: the one it was dealt under "随机宠物", or else
+    /// the chosen one.
+    func skinName(for sessionId: String) -> String {
+        dealtSkins[sessionId] ?? settings.skin
+    }
+
     func show(sessions: [PetSession]) {
         self.sessions = sessions
         // Newcomers are dealt a skin before the flock view casts them.

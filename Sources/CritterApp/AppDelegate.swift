@@ -8,8 +8,9 @@ import os
 /// `critter-hook toggle` can tell the app is alive (and restart it if the heartbeat has gone
 /// stale -- see `ToggleDecision`). It assembles the controllers: `SessionMonitor` (the data
 /// layer) feeds `PetController` (the always-on-top pet panel and its visibility), whose
-/// clicks go to `JumpBackService` (bringing the session's window forward). `SettingsStore`
-/// changes are routed here to the pet, the global `HotKey` and the login item.
+/// clicks go to `JumpBackService` (bringing the session's window forward). The same sessions
+/// go to `BridgeController` (the phone bridge) while it is switched on. `SettingsStore`
+/// changes are routed here to the pet, the global `HotKey`, the login item and the bridge.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
     private static let heartbeatInterval: TimeInterval = 2.0
@@ -21,6 +22,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let petController: PetController
     private let jumpBackService: JumpBackService
     private let settings: SettingsStore
+    private let bridge: BridgeController
     private let soundPlayer = ThemedSoundPlayer()
     private let hotKey = HotKey()
     private let loginItemQueue = DispatchQueue(label: "local.critter.pet.login-item", qos: .utility)
@@ -28,7 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         store: settings,
         skinSearchDirs: skinSearchDirs,
         // The same list the "形象" tiles show is what "随机宠物" deals from.
-        onSkinsListed: { [weak self] choices in self?.petController.setSkinPool(choices) },
+        onSkinsListed: { [weak self] choices in
+            guard let self else { return }
+            petController.setSkinPool(choices)
+            updateBridge()
+        },
         onPreviewSound: { [weak self] state in self?.previewSound(state) },
         onResetPosition: { [weak self] in self?.petController.resetPosition() }
     )
@@ -50,6 +56,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = SettingsStore()
         petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: soundPlayer)
         jumpBackService = JumpBackService(paths: paths)
+        bridge = BridgeController(paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor)
         super.init()
 
         // Visibility lives in `PetController`; the menu title follows it immediately, even
@@ -62,6 +69,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
         sessionMonitor.onSnapshot = { [weak self] sessions in
             self?.petController.show(sessions: sessions)
+            self?.updateBridge(sessions)
         }
         // Clicking a Critter (or its menu's "跳回会话") brings that session's window forward.
         petController.onJump = { [jumpBackService] session in
@@ -106,6 +114,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         startHeartbeat()
         sessionMonitor.start()
+        if settings.bridgeEnabled { bridge.setEnabled(true) }
         refreshHotKey()
         applyLaunchAtLogin()
         loadSkin()
@@ -192,6 +201,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// it can be nil outside a real .app bundle, so it's folded in only when present rather
     /// than force-unwrapped.
     private var skinSearchDirs: [URL] {
+        Self.skinSearchDirs(paths)
+    }
+
+    private static func skinSearchDirs(_ paths: CritterPaths) -> [URL] {
         Bundle.main.resourceURL.map { [paths.skinsDir, $0.appending(path: "Skins")] } ?? [paths.skinsDir]
     }
 
@@ -240,6 +253,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         } else {
             petController.install(skin: skin)
         }
+        // Skins are dealt anew for it under "随机宠物".
+        updateBridge()
     }
 
     // MARK: - Settings
@@ -276,7 +291,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             refreshHotKey()
         case .launchAtLogin:
             applyLaunchAtLogin()
+        case .bridge:
+            DiagnosticLog.shared.log("event bridge \(settings.bridgeEnabled ? "on" : "off")")
+            bridge.setEnabled(settings.bridgeEnabled)
+            writeHeartbeat()
         }
+        // What the phone mirrors: the skins and these settings.
+        switch change {
+        case .skin, .randomSkins, .idleDim, .mergeThreshold, .sounds, .bridge:
+            updateBridge()
+        case .petScale, .hotKey, .launchAtLogin:
+            break
+        }
+    }
+
+    // MARK: - Phone bridge
+
+    /// Hands the bridge the sessions (the monitor's latest by default), the skin each one's
+    /// Critter wears and the settings the phone mirrors -- only while it's switched on, so
+    /// that off, nothing extra runs.
+    private func updateBridge(_ sessions: [PetSession]? = nil) {
+        guard settings.bridgeEnabled else { return }
+        let sessions = sessions ?? sessionMonitor.sessions
+        let skins = Dictionary(sessions.map { ($0.id, petController.skinName(for: $0.id)) }) { first, _ in first }
+        let prefs = BridgePrefs(
+            skin: settings.skin, randomSkins: settings.randomSkins, idleDim: settings.idleDim,
+            mergeThreshold: settings.mergeThreshold, soundTheme: settings.soundTheme.rawValue
+        )
+        bridge.update(sessions: sessions, skins: skins, prefs: prefs)
     }
 
     /// (Re-)registers the global hot key from the settings -- or keeps it unregistered
@@ -409,6 +451,27 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 let ok = settings.applyDebugValue(item.value ?? "", forKey: item.name)
                 DiagnosticLog.shared.log("debug-set \(item.name)=\(item.value ?? "") ok=\(ok)")
             }
+        case "debug-bridge-pair":
+            // `critter://debug-bridge-pair?out=<absolute path>`: issues a pairing code that is
+            // approved without asking and writes `{"uri": "<pairing URI>"}` to `out`, for
+            // pairing `critter-bridge-client` without a display. Waits for the bridge to finish
+            // starting if it was only just switched on.
+            guard UserDefaults.standard.bool(forKey: "debugEnabled") else { break }
+            let query = URLComponents(url: url, resolvingAgainstBaseURL: false)?.queryItems ?? []
+            guard let out = query.first(where: { $0.name == "out" })?.value, out.hasPrefix("/") else {
+                DiagnosticLog.shared.log("debug-bridge-pair needs an absolute out path")
+                break
+            }
+            bridge.beginPairing(autoApprove: true) { uri in
+                // On the bridge queue, so the file write stays off the main thread.
+                guard let uri else {
+                    DiagnosticLog.shared.log("debug-bridge-pair: bridge not listening")
+                    return
+                }
+                let json = try? JSONSerialization.data(withJSONObject: ["uri": uri.string], options: [.withoutEscapingSlashes])
+                let written = (try? json?.write(to: URL(fileURLWithPath: out), options: .atomic)) != nil
+                DiagnosticLog.shared.log("debug-bridge-pair wrote=\(written)")
+            }
         default:
             break
         }
@@ -435,6 +498,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func writeHeartbeat() {
         guard !isTerminating else { return }
         let visible = petController.visible
+        // Read by `critter-hook ask` to decide whether a phone could answer.
+        let bridgeEnabled = settings.bridgeEnabled
+        let lastClientSeen = bridge.lastClientSeen
         let heartbeat = Int64(Date().timeIntervalSince1970 * 1000)
         let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
         let store = appStatusStore
@@ -443,7 +509,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // pid (see `ToggleDecision.isCritter`).
             let status = AppStatus(
                 pid: OwnProcess.pid, visible: visible, heartbeat: heartbeat, version: version,
-                startTime: OwnProcess.startTime
+                startTime: OwnProcess.startTime, bridgeEnabled: bridgeEnabled, lastClientSeen: lastClientSeen
             )
             try? store.write(status)
         }

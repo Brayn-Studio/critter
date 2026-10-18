@@ -36,6 +36,20 @@ private func write(_ text: String, to url: URL) {
     #expect(GitBranch.read(cwd: home.appendingPathComponent("repo-wt").path, stopAt: home.path) == "wt")
 }
 
+@Test func headFileIsTheOneReadFollows() {
+    let home = tmpDir()
+    write("ref: refs/heads/main\n", to: home.appendingPathComponent("main/.git/HEAD"))
+    write("ref: refs/heads/wt\n", to: home.appendingPathComponent("main/.git/worktrees/wt/HEAD"))
+    write("gitdir: ../main/.git/worktrees/wt\n", to: home.appendingPathComponent("repo-wt/.git"))
+    try! FileManager.default.createDirectory(at: home.appendingPathComponent("main/src"), withIntermediateDirectories: true)
+    let resolved = { (url: URL?) in url?.resolvingSymlinksInPath().path }
+    #expect(resolved(GitBranch.headFile(cwd: home.appendingPathComponent("main/src").path, stopAt: home.path))
+        == resolved(home.appendingPathComponent("main/.git/HEAD")))
+    #expect(resolved(GitBranch.headFile(cwd: home.appendingPathComponent("repo-wt").path, stopAt: home.path))
+        == resolved(home.appendingPathComponent("main/.git/worktrees/wt/HEAD")))
+    #expect(GitBranch.headFile(cwd: home.path, stopAt: home.path) == nil)
+}
+
 @Test func branchNilOutsideRepo() {
     let home = tmpDir()
     try! FileManager.default.createDirectory(at: home.appendingPathComponent("plain"), withIntermediateDirectories: true)

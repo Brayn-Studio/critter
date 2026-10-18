@@ -10,7 +10,7 @@ import Observation
 @Observable
 final class SettingsStore {
     enum Change {
-        case skin, randomSkins, petScale, idleDim, sounds, mergeThreshold, hotKey, launchAtLogin
+        case skin, randomSkins, petScale, idleDim, sounds, mergeThreshold, hotKey, launchAtLogin, bridge
     }
 
     static let scaleRange: ClosedRange<Double> = 0.5...2.0
@@ -35,6 +35,7 @@ final class SettingsStore {
         static let mergeThreshold = "mergeThreshold"
         static let hotKey = "hotKey"
         static let launchAtLogin = "launchAtLogin"
+        static let bridgeEnabled = "bridgeEnabled"
     }
 
     /// The skin the pet wears ("形象"): a skin directory name (`SkinChoice.name`), the
@@ -99,6 +100,10 @@ final class SettingsStore {
     var launchAtLogin: Bool {
         didSet { save(launchAtLogin, Key.launchAtLogin, changed: launchAtLogin != oldValue, .launchAtLogin) }
     }
+    /// "允许手机连接": the LAN bridge to the phone app listens. Off by default.
+    var bridgeEnabled: Bool {
+        didSet { save(bridgeEnabled, Key.bridgeEnabled, changed: bridgeEnabled != oldValue, .bridge) }
+    }
 
     /// Not persisted: registering `hotKey` failed (another app holds that combination).
     var hotKeyUnavailable = false
@@ -130,6 +135,7 @@ final class SettingsStore {
         mergeThreshold = Self.clampThreshold(defaults.object(forKey: Key.mergeThreshold) == nil ? 4 : defaults.integer(forKey: Key.mergeThreshold))
         hotKey = defaults.string(forKey: Key.hotKey).flatMap(Self.decode) ?? .default
         launchAtLogin = defaults.bool(forKey: Key.launchAtLogin)
+        bridgeEnabled = defaults.bool(forKey: Key.bridgeEnabled)
     }
 
     /// Whether entering `state` should make a sound: the master switch and that state's
@@ -181,6 +187,9 @@ final class SettingsStore {
             let parts = value.split(separator: ",").map { String($0).trimmingCharacters(in: .whitespaces) }
             guard parts.count == 2, let code = UInt32(parts[0]), let mask = Self.parseMask(parts[1]) else { return false }
             hotKey = HotKeySpec(keyCode: code, modifiers: mask)
+        case Key.bridgeEnabled:
+            guard let on = flag() else { return false }
+            bridgeEnabled = on
         default:
             return false
         }
