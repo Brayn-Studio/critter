@@ -98,6 +98,14 @@ private func critterHookBinaryURL() throws -> URL {
     process.standardInput = stdinPipe
     process.standardOutput = stdoutPipe
 
+    // The first exec of a freshly linked binary can take over a second in macOS's code-signature
+    // check; warm it up so the timing below measures `ask`, not the OS.
+    let warmUp = Process()
+    warmUp.executableURL = binary
+    warmUp.arguments = ["bogus"]
+    try warmUp.run()
+    warmUp.waitUntilExit()
+
     let started = Date()
     try process.run()
     let payload = #"{"session_id":"t1","cwd":"/x","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"ls"}}"#

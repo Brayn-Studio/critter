@@ -180,6 +180,25 @@ public enum HookCommand {
         }
 
         logIfEnabled(paths: paths, sessionId: input.sessionId, event: input.hookEventName, suffix: describe(taken), now: now)
+
+        // Phone-companion bookkeeping. Best effort: nothing here may disturb the state write above.
+        let toolInput = (try? JSONSerialization.jsonObject(with: stdin)).flatMap { ($0 as? [String: Any])?["tool_input"] }
+        PendingResolution.apply(
+            event: input.hookEventName, sessionId: input.sessionId, toolName: input.toolName,
+            toolInput: toolInput, store: PendingStore(paths: paths)
+        )
+        switch input.hookEventName {
+        case "SessionStart":
+            if let socket = environment["CLAUDE_CODE_MESSAGING_SOCKET"], !socket.isEmpty,
+               let token = environment["CLAUDE_CODE_MESSAGING_TOKEN"], !token.isEmpty {
+                try? InboxStore(paths: paths).write(InboxRecord(sessionId: input.sessionId, socketPath: socket, token: token))
+            }
+        case "SessionEnd":
+            InboxStore(paths: paths).delete(sessionId: input.sessionId)
+            StatusLineStore(paths: paths).delete(sessionId: input.sessionId)
+        default:
+            break
+        }
     }
 
     private static func describe(_ action: ReducerAction) -> String {
