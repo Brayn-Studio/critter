@@ -46,6 +46,7 @@ import local.critter.core.protocol.PendingKind
 import local.critter.core.protocol.RateWindow
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.ui.agoText
+import local.critter.phone.ui.answer.permissionBody
 import local.critter.phone.ui.branchAndFolder
 import local.critter.phone.ui.contextFraction
 import local.critter.phone.ui.contextPercentText
@@ -73,6 +74,31 @@ data class BoardData(
     val now: Long,
 )
 
+/**
+ * What a session card says about its requests: the oldest one ([request]), what it wants and its command or path,
+ * and how many more wait behind it. Only a lone permission request is answered right on the card; with more than
+ * one, or for a question or plan, the card opens the answer sheet, so a button never acts on a request the card
+ * does not show.
+ */
+data class CardRequest(val request: BridgePending, val what: String, val detail: String?, val more: Int) {
+    val inline: Boolean get() = more == 0 && request.kind == PendingKind.permission
+}
+
+/** Every session's [CardRequest], by session id. */
+fun cardRequests(body: SnapshotBody?): Map<String, CardRequest> =
+    body?.pending.orEmpty().groupBy { it.sessionId }.mapValues { (_, requests) ->
+        val oldest = requests.minBy { it.createdAt }
+        val summary = oldest.summary?.takeIf { it.isNotBlank() } ?: oldest.toolName?.takeIf { it.isNotBlank() }
+        val what = when (oldest.kind) {
+            PendingKind.permission -> summary?.let { "想 $it" } ?: "想执行一个操作"
+            PendingKind.question -> summary?.let { "问：$it" } ?: "有问题要问你"
+            PendingKind.plan -> "计划等你批准"
+            PendingKind.unknown -> "需要你"
+        }
+        val detail = if (oldest.kind == PendingKind.permission) permissionBody(oldest.input) else null
+        CardRequest(oldest, what, detail, requests.size - 1)
+    }
+
 /** The landscape pro dashboard (mockup "专业看板"): clock and limits on the left, session cards on the right. */
 @Composable
 fun ProBoard(
@@ -84,7 +110,7 @@ fun ProBoard(
 ) {
     val body = data.snapshot
     val sessions = body?.let { SessionOrder.forBoard(it) }.orEmpty()
-    val oldestRequest = body?.pending.orEmpty().groupBy { it.sessionId }.mapValues { (_, r) -> r.minBy { it.createdAt } }
+    val requests = cardRequests(body)
     val (dx, dy) = shift.value
 
     Row(
@@ -124,7 +150,7 @@ fun ProBoard(
                 verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
                 items(sessions, key = { it.id }) { session ->
-                    SessionCard(session, oldestRequest[session.id], data.connected, onAllow, onDeny, onOpen)
+                    SessionCard(session, requests[session.id], data.connected, onAllow, onDeny, onOpen)
                 }
             }
         }
@@ -170,12 +196,13 @@ private fun Gauge(title: String, window: RateWindow?, now: Long) {
 @Composable
 private fun SessionCard(
     session: BridgeSession,
-    request: BridgePending?,
+    card: CardRequest?,
     online: Boolean,
     onAllow: (BridgePending) -> Unit,
     onDeny: (BridgePending) -> Unit,
     onOpen: (BridgePending) -> Unit,
 ) {
+    val request = card?.request
     val shape = RoundedCornerShape(14.dp)
     Row(
         Modifier
@@ -236,9 +263,37 @@ private fun SessionCard(
                     Text("  ${contextPercentText(c)}", color = Dim, fontSize = 10.sp)
                 }
             }
-            if (request != null) {
+            if (card != null && request != null) {
+                // The request the buttons act on, in full: what it wants and the command or path.
+                Text(
+                    card.what,
+                    color = Bright,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.padding(top = 7.dp),
+                )
+                card.detail?.let {
+                    Text(
+                        it,
+                        color = Color(0xFFC7C7CC),
+                        fontSize = 10.sp,
+                        fontFamily = FontFamily.Monospace,
+                        maxLines = 3,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .fillMaxWidth()
+                            .background(Track, RoundedCornerShape(6.dp))
+                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                    )
+                }
+                if (card.more > 0) {
+                    Text("还有 ${card.more} 个", color = WaitingOrange, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
+                }
                 Row(Modifier.padding(top = 7.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (request.kind == PendingKind.permission) {
+                    if (card.inline) {
                         CardButton("拒绝", false, online) { onDeny(request) }
                         CardButton("允许", true, online) { onAllow(request) }
                     } else {
