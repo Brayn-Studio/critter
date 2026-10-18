@@ -101,6 +101,7 @@ class BridgeService : Service() {
                 .collect { (body, state, settings) ->
                     overlay.update(body, state is ConnState.Connected, settings)
                     syncOverlay()
+                    boardTrigger.settingsChanged()
                 }
         }
 

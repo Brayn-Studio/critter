@@ -145,7 +145,7 @@ class MainActivity : ComponentActivity() {
             HomeScreen(
                 repo = repo,
                 onOpenSettings = { settingsOpen = true },
-                onOpenBoard = { startActivity(Intent(this, BoardActivity::class.java)) },
+                onOpenBoard = { startActivity(BoardActivity.intent(this)) },
                 onOpenRequest = { startActivity(AnswerActivity.intent(this, it)) },
             )
         }

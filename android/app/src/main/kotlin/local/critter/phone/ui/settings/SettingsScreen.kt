@@ -160,8 +160,18 @@ fun SettingsScreen(
             )
         }
 
-        SwitchRow("充电横放时自动打开", "充电、横放、静止 3 秒后打开；拔电 10 秒后或竖起来 3 秒后退出", settings.boardAutoOpen) { on ->
+        SwitchRow("充电横放时自动打开", "充电、横放、静止 3 秒后打开；拔电 10 秒后或竖起来 3 秒后退出，平放不退出", settings.boardAutoOpen) { on ->
             repo.settingsStore.update { it.copy(boardAutoOpen = on) }
+        }
+        if (settings.boardAutoOpen) {
+            Text(
+                (if (canOverlay) "" else "还没有「显示在其他应用上层」权限，看板打不开。") +
+                    "自动打开需要「显示在其他应用上层」权限；vivo、小米等手机还要在应用权限里打开「后台弹出界面」。" +
+                    "系统拦下时，这次充电不再尝试，下次插电再试。",
+                style = MaterialTheme.typography.bodySmall,
+                color = if (canOverlay) MaterialTheme.colorScheme.onSurfaceVariant else MaterialTheme.colorScheme.error,
+                modifier = Modifier.padding(horizontal = 20.dp),
+            )
         }
         SwitchRow("看板提示音", "只在看板打开时响；勿扰模式下不响", settings.boardSounds) { on ->
             repo.settingsStore.update { it.copy(boardSounds = on) }

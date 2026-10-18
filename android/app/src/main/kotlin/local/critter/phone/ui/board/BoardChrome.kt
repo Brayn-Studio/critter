@@ -45,16 +45,27 @@ fun rememberBurnInShift(): State<Pair<Dp, Dp>> = produceState(0.dp to 0.dp) {
     }
 }
 
-/** Keep the screen on, go full screen, and ask for the slowest refresh rate: a static board gains nothing from 120 Hz. */
+/**
+ * Go full screen and ask for the slowest refresh rate: a static board gains nothing from 120 Hz. Staying on is
+ * [keepScreenOn]'s, and only while charging.
+ */
 fun setUpBoardWindow(activity: Activity) {
     val window = activity.window
-    window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     WindowCompat.setDecorFitsSystemWindows(window, false)
     WindowInsetsControllerCompat(window, window.decorView).apply {
         hide(WindowInsetsCompat.Type.systemBars())
         systemBarsBehavior = WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
     }
     requestLowRefreshRate(activity, window)
+}
+
+/** FLAG_KEEP_SCREEN_ON while [on] (charging), so a board on battery times out like any screen (spec §9). */
+fun keepScreenOn(window: Window, on: Boolean) {
+    if (on) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    } else {
+        window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 }
 
 fun applyBrightness(window: Window, brightness: Float) {

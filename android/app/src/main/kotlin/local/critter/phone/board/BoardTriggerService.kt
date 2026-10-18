@@ -11,7 +11,9 @@ import android.hardware.SensorManager
 import android.os.BatteryManager
 import android.os.Handler
 import android.os.Looper
+import android.os.PowerManager
 import android.os.SystemClock
+import android.provider.Settings
 import android.util.Log
 import androidx.core.content.ContextCompat
 import local.critter.core.board.BoardTrigger
@@ -20,8 +22,9 @@ import local.critter.phone.ui.board.BoardActivity
 
 /**
  * Owned by the bridge service: opens [BoardActivity] when the phone charges lying in landscape and closes it
- * again (spec §8.6). The decisions are [BoardTrigger]'s; this class only feeds it the charger and the gravity
- * sensor, which is registered only while charging, and carries out what it says. Everything runs on the main thread.
+ * again (spec §8.6). The decisions are [BoardTrigger]'s; this class only feeds it the charger, the screen and
+ * the gravity sensor, which is registered only while charging with the screen on, and carries out what it says.
+ * Everything runs on the main thread.
  */
 class BoardTriggerService(private val context: Context, private val enabled: () -> Boolean) {
     private val trigger = BoardTrigger()
@@ -35,12 +38,19 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     private val tick = Runnable {
         scheduledAt = null
         perform(trigger.onTick(now()))
-        reschedule()
+        update()
     }
 
-    private val powerReceiver = object : BroadcastReceiver() {
+    private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            onPower(intent.action == Intent.ACTION_POWER_CONNECTED)
+            when (intent.action) {
+                Intent.ACTION_POWER_CONNECTED -> perform(trigger.onPower(true, now()))
+                Intent.ACTION_POWER_DISCONNECTED -> perform(trigger.onPower(false, now()))
+                // No readings arrive with the screen off, and the board must never light a dark screen.
+                Intent.ACTION_SCREEN_ON -> perform(trigger.onScreen(true, now()))
+                Intent.ACTION_SCREEN_OFF -> perform(trigger.onScreen(false, now()))
+            }
+            update()
         }
     }
 
@@ -49,10 +59,8 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
             val (x, y, z) = event.values
             val t = now()
             val isStill = still.add(t, x, y, z)
-            val landscape = BoardTrigger.isLandscape(x, y, z)
-            // Automatic opening can be switched off in the settings; the board closing logic still runs.
-            perform(trigger.onOrientation(landscape, isStill, t), allowOpen = enabled())
-            reschedule()
+            perform(trigger.onOrientation(BoardTrigger.poseOf(x, y, z), isStill, t))
+            update()
         }
 
         override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) = Unit
@@ -62,64 +70,84 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         if (started) return
         started = true
         current = this
-        // Dynamic registration: ACTION_POWER_* cannot be declared in the manifest. The sticky battery broadcast
-        // gives the state right now.
+        trigger.autoOpen = enabled()
+        trigger.onBoardShown(liveBoards > 0)
+        // Dynamic registration: ACTION_POWER_* and ACTION_SCREEN_* cannot be declared in the manifest. The sticky
+        // battery broadcast and the power manager give the state right now.
         ContextCompat.registerReceiver(
-            context, powerReceiver,
+            context, receiver,
             IntentFilter().apply {
                 addAction(Intent.ACTION_POWER_CONNECTED)
                 addAction(Intent.ACTION_POWER_DISCONNECTED)
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
             },
             ContextCompat.RECEIVER_NOT_EXPORTED,
         )
-        val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
-        onPower((battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0)
+        val t = now()
+        trigger.onScreen(context.getSystemService(PowerManager::class.java).isInteractive, t)
+        perform(trigger.onPower(isCharging(context), t))
+        update()
     }
 
     fun stop() {
         if (!started) return
         started = false
         if (current === this) current = null
-        context.unregisterReceiver(powerReceiver)
+        context.unregisterReceiver(receiver)
         handler.removeCallbacks(tick)
         scheduledAt = null
         unlisten()
     }
 
-    private fun onPower(charging: Boolean) {
-        perform(trigger.onPower(charging, now()))
-        syncSensor()
-        reschedule()
+    /** The "open by itself" setting may have changed. */
+    fun settingsChanged() {
+        if (!started) return
+        trigger.autoOpen = enabled()
+        update()
     }
 
     private fun boardShown(shown: Boolean) {
         trigger.onBoardShown(shown)
-        reschedule()
+        update()
     }
 
     private fun manualExit() {
         trigger.onManualExit(now())
-        reschedule()
+        update()
     }
 
-    private fun perform(action: Action, allowOpen: Boolean = true) {
+    private fun perform(action: Action) {
         when (action) {
-            Action.Open -> if (allowOpen && enabled()) {
-                try {
-                    context.startActivity(
-                        Intent(context, BoardActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                } catch (e: RuntimeException) {
-                    Log.w(TAG, "could not open the board", e)
-                }
-            }
+            Action.Open -> open()
             Action.Close -> context.sendBroadcast(Intent(ACTION_CLOSE_BOARD).setPackage(context.packageName))
             Action.None -> Unit
         }
     }
 
-    private fun syncSensor() {
+    /**
+     * Starting an activity from the background needs "display over other apps"; vivo and Xiaomi also need their
+     * "background pop-up" switch, and without it the start fails silently. Either way the trigger stops asking for
+     * this charge: a missing permission up front, a silent refusal when the board is not up 2 s later.
+     */
+    private fun open() {
+        if (!Settings.canDrawOverlays(context)) {
+            trigger.onOpenFailed()
+            return
+        }
+        try {
+            context.startActivity(BoardActivity.intent(context, auto = true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        } catch (e: RuntimeException) {
+            Log.w(TAG, "could not open the board", e)
+            trigger.onOpenFailed()
+        }
+    }
+
+    /** Sensor on or off, and the timer re-aimed, after anything the trigger was told. */
+    private fun update() {
+        if (!started) return
         if (trigger.sensorWanted) listen() else unlisten()
+        reschedule()
     }
 
     private fun listen() {
@@ -154,9 +182,22 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
 
         @Volatile private var current: BoardTriggerService? = null
 
-        /** The board came up or went away (called from [BoardActivity] on the main thread). */
+        /** Boards alive right now, created and not yet destroyed (main thread only). */
+        private var liveBoards = 0
+
+        /** Whether the charger is plugged in, from the sticky battery broadcast. */
+        fun isCharging(context: Context): Boolean {
+            val battery = context.registerReceiver(null, IntentFilter(Intent.ACTION_BATTERY_CHANGED))
+            return (battery?.getIntExtra(BatteryManager.EXTRA_PLUGGED, 0) ?: 0) != 0
+        }
+
+        /**
+         * A board was created ([shown] true) or destroyed (called from [BoardActivity] on the main thread). Only
+         * its destruction counts as gone: a board whose screen went off is still there.
+         */
         fun boardShown(shown: Boolean) {
-            current?.boardShown(shown)
+            liveBoards = (liveBoards + if (shown) 1 else -1).coerceAtLeast(0)
+            current?.boardShown(liveBoards > 0)
         }
 
         /** The user left the board by hand: it stays away until the charger is plugged in again. */

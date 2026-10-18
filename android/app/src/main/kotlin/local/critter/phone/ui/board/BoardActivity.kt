@@ -52,54 +52,82 @@ import local.critter.phone.repository
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.rememberMinuteClock
 
-/** The landscape pro dashboard. Always on while visible; the content only changes when the Mac sends something. */
+/**
+ * The landscape pro dashboard. Kept on while charging; the content only changes when the Mac sends something.
+ * Opened by hand from the app, or by [BoardTriggerService] ([intent] with `auto`) when the phone charges in landscape.
+ */
 class BoardActivity : ComponentActivity() {
     private var lastActivityAt by mutableLongStateOf(System.currentTimeMillis())
     private val sounds by lazy { BoardSounds(this) }
 
+    /** Opened by the trigger rather than by hand: it has no business on screen once the charger is gone. */
+    private val auto by lazy { intent.getBooleanExtra(EXTRA_AUTO, false) }
+
     /** True when the trigger asked the board to go (unplugged, or the phone stood up); that is not a manual exit. */
     private var closedByTrigger = false
 
-    private val closeReceiver = object : BroadcastReceiver() {
+    private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
-            closedByTrigger = true
-            finish()
+            when (intent.action) {
+                BoardTriggerService.ACTION_CLOSE_BOARD -> {
+                    closedByTrigger = true
+                    finish()
+                }
+                // Unplugged: the screen may time out again right away, not only when the board closes 10 s later.
+                Intent.ACTION_POWER_DISCONNECTED -> keepScreenOn(window, false)
+                Intent.ACTION_POWER_CONNECTED -> keepScreenOn(window, true)
+            }
         }
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // The board may open by itself on a locked, dark screen. Answering from it needs the keyguard gone
-        // first: AnswerActivity (reached from every card) asks for that itself.
+        // The board may open by itself over the lock screen (never on a dark screen: BoardTrigger waits for the
+        // screen to be on, so it does not turn the screen on itself). Answering from it needs the keyguard gone
+        // first: every answer path asks for that.
         setShowWhenLocked(true)
-        setTurnScreenOn(true)
         ContextCompat.registerReceiver(
-            this, closeReceiver, IntentFilter(BoardTriggerService.ACTION_CLOSE_BOARD), ContextCompat.RECEIVER_NOT_EXPORTED,
+            this, receiver,
+            IntentFilter().apply {
+                addAction(BoardTriggerService.ACTION_CLOSE_BOARD)
+                addAction(Intent.ACTION_POWER_CONNECTED)
+                addAction(Intent.ACTION_POWER_DISCONNECTED)
+            },
+            ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         setUpBoardWindow(this)
+        // Shown from now until onDestroy: a board whose screen went off is still the board on top.
+        BoardTriggerService.boardShown(true)
         val repo = repository
         setContent { Board(repo) }
     }
 
     override fun onStart() {
         super.onStart()
+        val charging = BoardTriggerService.isCharging(this)
+        if (auto && !charging) {
+            // The charger went while it was coming up or while it was out of sight: nothing to show.
+            closedByTrigger = true
+            finish()
+            return
+        }
+        keepScreenOn(window, charging)
         repository.boardVisible(true)
-        BoardTriggerService.boardShown(true)
     }
 
     override fun onDestroy() {
-        unregisterReceiver(closeReceiver)
+        unregisterReceiver(receiver)
         sounds.release()
+        BoardTriggerService.boardShown(false)
         super.onDestroy()
     }
 
     override fun onStop() {
         repository.boardVisible(false)
-        BoardTriggerService.boardShown(false)
         // Leaving by hand (back, home) keeps the board from opening again on this charge. The screen going off
         // is not leaving.
         val byHand = isFinishing || getSystemService(PowerManager::class.java).isInteractive
-        if (!closedByTrigger && byHand) BoardTriggerService.manualExit()
+        if (!closedByTrigger && byHand && !isChangingConfigurations) BoardTriggerService.manualExit()
         super.onStop()
     }
 
@@ -207,5 +235,12 @@ class BoardActivity : ComponentActivity() {
                 Toast.makeText(this@BoardActivity, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
             }
         }
+    }
+
+    companion object {
+        private const val EXTRA_AUTO = "auto"
+
+        fun intent(context: Context, auto: Boolean = false): Intent =
+            Intent(context, BoardActivity::class.java).putExtra(EXTRA_AUTO, auto)
     }
 }
