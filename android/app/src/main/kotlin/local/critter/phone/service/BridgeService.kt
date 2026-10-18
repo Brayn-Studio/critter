@@ -20,6 +20,7 @@ import local.critter.core.logic.AlertPrefs
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.bridge.BridgeRepository
+import local.critter.phone.board.BoardTriggerService
 import local.critter.phone.overlay.OverlayController
 import local.critter.phone.repository
 
@@ -32,6 +33,7 @@ class BridgeService : Service() {
     private lateinit var repo: BridgeRepository
     private var networkCallback: ConnectivityManager.NetworkCallback? = null
     private lateinit var overlay: OverlayController
+    private lateinit var boardTrigger: BoardTriggerService
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -39,6 +41,7 @@ class BridgeService : Service() {
         super.onCreate()
         repo = repository
         overlay = OverlayController(this, repo)
+        boardTrigger = BoardTriggerService(this) { repo.settingsStore.settings.value.boardAutoOpen }
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -59,6 +62,7 @@ class BridgeService : Service() {
 
     private fun run() {
         repo.startClient()
+        boardTrigger.start()
         watchNetwork()
 
         scope.launch {
@@ -138,6 +142,7 @@ class BridgeService : Service() {
         networkCallback?.let { getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(it) }
         networkCallback = null
         scope.cancel()
+        boardTrigger.stop()
         overlay.hide()
         repo.stopClient()
         super.onDestroy()

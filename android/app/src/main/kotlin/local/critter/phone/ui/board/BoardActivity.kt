@@ -1,6 +1,14 @@
 package local.critter.phone.ui.board
 
+import android.app.KeyguardManager
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.Bundle
+import android.os.PowerManager
+import androidx.core.content.ContextCompat
+import local.critter.phone.board.BoardTriggerService
 import android.view.MotionEvent
 import android.widget.Toast
 import androidx.activity.ComponentActivity
@@ -49,8 +57,25 @@ class BoardActivity : ComponentActivity() {
     private var lastActivityAt by mutableLongStateOf(System.currentTimeMillis())
     private val sounds by lazy { BoardSounds(this) }
 
+    /** True when the trigger asked the board to go (unplugged, or the phone stood up); that is not a manual exit. */
+    private var closedByTrigger = false
+
+    private val closeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            closedByTrigger = true
+            finish()
+        }
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // The board may open by itself on a locked, dark screen. Answering from it needs the keyguard gone
+        // first: AnswerActivity (reached from every card) asks for that itself.
+        setShowWhenLocked(true)
+        setTurnScreenOn(true)
+        ContextCompat.registerReceiver(
+            this, closeReceiver, IntentFilter(BoardTriggerService.ACTION_CLOSE_BOARD), ContextCompat.RECEIVER_NOT_EXPORTED,
+        )
         setUpBoardWindow(this)
         val repo = repository
         setContent { Board(repo) }
@@ -59,15 +84,22 @@ class BoardActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         repository.boardVisible(true)
+        BoardTriggerService.boardShown(true)
     }
 
     override fun onDestroy() {
+        unregisterReceiver(closeReceiver)
         sounds.release()
         super.onDestroy()
     }
 
     override fun onStop() {
         repository.boardVisible(false)
+        BoardTriggerService.boardShown(false)
+        // Leaving by hand (back, home) keeps the board from opening again on this charge. The screen going off
+        // is not leaving.
+        val byHand = isFinishing || getSystemService(PowerManager::class.java).isInteractive
+        if (!closedByTrigger && byHand) BoardTriggerService.manualExit()
         super.onStop()
     }
 
@@ -152,7 +184,19 @@ class BoardActivity : ComponentActivity() {
         repo.settingsStore.update { it.copy(boardCritterMode = !it.boardCritterMode) }
     }
 
+    /** On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). */
     private fun answerPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
+        val keyguard = getSystemService(KeyguardManager::class.java)
+        if (!keyguard.isKeyguardLocked) {
+            sendPermission(repo, request, allow)
+            return
+        }
+        keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
+            override fun onDismissSucceeded() = sendPermission(repo, request, allow)
+        })
+    }
+
+    private fun sendPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
         val draft = AnswerDraft(request)
         if (allow) draft.allow() else draft.deny(null)
         val payload = draft.payload() ?: return

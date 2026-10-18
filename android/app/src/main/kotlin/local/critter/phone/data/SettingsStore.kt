@@ -16,6 +16,8 @@ data class PhoneSettings(
     val boardCritterMode: Boolean = true,
     /** Sounds on the board when a session just needs you, finished or failed (spec §8.7). Off by default. */
     val boardSounds: Boolean = false,
+    /** Open the board by itself while charging in landscape (spec §8.6). */
+    val boardAutoOpen: Boolean = true,
     val overlayEnabled: Boolean = false,
     /** 1 small, 2 medium, 3 large. */
     val overlaySize: Int = 2,
@@ -50,6 +52,7 @@ class SettingsStore(context: Context) {
             boardBrightness = prefs.getFloat("boardBrightness", d.boardBrightness).coerceIn(0.1f, 1f),
             boardCritterMode = prefs.getBoolean("boardCritterMode", d.boardCritterMode),
             boardSounds = prefs.getBoolean("boardSounds", d.boardSounds),
+            boardAutoOpen = prefs.getBoolean("boardAutoOpen", d.boardAutoOpen),
             overlayEnabled = prefs.getBoolean("overlayEnabled", d.overlayEnabled),
             overlaySize = prefs.getInt("overlaySize", d.overlaySize).coerceIn(1, 3),
             overlayIdleDim = if (prefs.contains("overlayIdleDim")) prefs.getFloat("overlayIdleDim", 1f).coerceIn(0f, 1f) else null,
@@ -68,6 +71,7 @@ class SettingsStore(context: Context) {
         putFloat("boardBrightness", s.boardBrightness)
         putBoolean("boardCritterMode", s.boardCritterMode)
         putBoolean("boardSounds", s.boardSounds)
+        putBoolean("boardAutoOpen", s.boardAutoOpen)
         putBoolean("overlayEnabled", s.overlayEnabled)
         putInt("overlaySize", s.overlaySize)
         val dim = s.overlayIdleDim

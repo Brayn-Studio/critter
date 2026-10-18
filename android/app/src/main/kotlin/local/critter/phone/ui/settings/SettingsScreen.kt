@@ -152,6 +152,9 @@ fun SettingsScreen(
             )
         }
 
+        SwitchRow("充电横放时自动打开", "充电、横放、静止 3 秒后打开；拔电 10 秒后或竖起来 3 秒后退出", settings.boardAutoOpen) { on ->
+            repo.settingsStore.update { it.copy(boardAutoOpen = on) }
+        }
         SwitchRow("看板提示音", "只在看板打开时响；勿扰模式下不响", settings.boardSounds) { on ->
             repo.settingsStore.update { it.copy(boardSounds = on) }
         }
