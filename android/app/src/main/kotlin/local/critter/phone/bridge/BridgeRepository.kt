@@ -97,6 +97,7 @@ class BridgeRepository(private val app: Application) {
         // The phone's own skin and the reduce-motion switch follow the settings, from the first frame on.
         val first = settingsStore.settings.value
         skins.setForced(first.skinOverride)
+        skins.setClockSkin(cached?.first?.prefs?.skin)
         MotionPrefs.manual = first.reduceMotion
         scope.launch {
             settingsStore.settings.collect {
@@ -225,9 +226,11 @@ class BridgeRepository(private val app: Application) {
 
     private fun onSnapshot(body: SnapshotBody) {
         val now = System.currentTimeMillis()
-        body.sessions.mapTo(HashSet()) { it.skin }
+        // The Mac's default skin too: its tick runs the clock, even when no session wears it ("随机宠物").
+        (body.sessions.mapTo(HashSet()) { it.skin } + body.prefs.skin)
             .filter { it !in skinsAsked && !skins.isBundled(it) && skins.pushed(it) == null }
             .forEach { name -> scope.launch { skinManifest(name) } }
+        skins.setClockSkin(body.prefs.skin)
         _snapshot.value = body
         _lastUpdated.value = now
         _live.value = body

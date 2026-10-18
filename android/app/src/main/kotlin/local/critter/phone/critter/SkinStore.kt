@@ -21,6 +21,7 @@ class SkinStore(private val context: Context) {
     private val pushed = ConcurrentHashMap<String, String>()
     private val _library: MutableStateFlow<SkinLibrary>
     @Volatile private var forced: String? = null
+    @Volatile private var clockSkin: String? = null
     val library: StateFlow<SkinLibrary> get() = _library.asStateFlow()
 
     init {
@@ -66,10 +67,21 @@ class SkinStore(private val context: Context) {
         _library.value = build()
     }
 
+    /**
+     * The Mac's selected skin (`prefs.skin`): its tick runs every row of Critters, and only skins on the same tick
+     * join (see [SkinLibrary]). [library] is rebuilt when it changes.
+     */
+    @Synchronized
+    fun setClockSkin(name: String?) {
+        if (name == clockSkin) return
+        clockSkin = name
+        _library.value = build()
+    }
+
     /** The bundled skins by name, unaffected by the phone's own choice: for the previews in the settings. */
     val previewLibrary: SkinLibrary by lazy { SkinLibrary(::readAsset) }
 
-    private fun build() = SkinLibrary(::readAsset, pushed.toMap(), forced)
+    private fun build() = SkinLibrary(::readAsset, pushed.toMap(), forced, clockSkin)
 
     private fun readAsset(path: String): String? = try {
         context.assets.open(path).bufferedReader().use { it.readText() }

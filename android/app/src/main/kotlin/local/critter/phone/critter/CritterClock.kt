@@ -6,8 +6,8 @@ import android.os.SystemClock
 import local.critter.core.motion.TickGrid
 
 /**
- * The tick source: a main-thread timer on the skin's tick grid (60 ms) that only wakes on the tick where the
- * picture can next change, like `MotionClock` on the desktop. `onTick(n)` advances `n` ticks (0 = just redraw),
+ * The tick source: a main-thread timer on the skin's tick grid (`tickMs`, 60 ms for the bundled skins) that only
+ * wakes on the tick where the picture can next change, like `MotionClock` on the desktop. `onTick(n)` advances `n` ticks (0 = just redraw),
  * draws, and returns how many ticks until something changes again; the timer then sleeps that long. Skipped
  * ticks are caught up on the next wake, so counters like the idle-to-sleep timer keep running. Stopped while
  * the view cannot be seen.
@@ -17,8 +17,20 @@ import local.critter.core.motion.TickGrid
  */
 class CritterClock(tickMs: Long, private val onTick: (Int) -> Int) {
     private val handler = Handler(Looper.getMainLooper())
-    private val grid = TickGrid(tickMs, start = now())
+    private var grid = TickGrid(tickMs, start = now())
     private val wake = Runnable { fire() }
+
+    var tickMs: Long = tickMs
+        private set
+
+    /** Runs on another skin's tick from now on; the ticks slept so far are spent on the old one first. */
+    fun retune(tickMs: Long) {
+        if (tickMs == this.tickMs) return
+        catchUp()
+        this.tickMs = tickMs
+        grid = TickGrid(tickMs, start = now())
+        if (isRunning) poke()
+    }
 
     var isRunning = false
         private set

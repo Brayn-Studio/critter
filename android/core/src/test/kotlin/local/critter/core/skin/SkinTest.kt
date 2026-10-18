@@ -340,6 +340,30 @@ class SkinTest {
         assertEquals("sprig", SkinLibrary(reader).manifest("sprig").name)
     }
 
+    /** The desktop's rule (random-pets spec): one clock per row, at the default skin's tick; others don't join. */
+    @Test
+    fun onlySkinsOnTheClockSkinsTickJoinTheRow() {
+        val slow = builtin().apply { name = "slow"; tickMs = 100 }
+        val slowJson = json.encodeToString(SkinManifest.serializer(), slow)
+        val reader = { path: String -> path.takeIf { it.startsWith("skins/") }?.let { runCatching { bundledSkinJson(it.split('/')[1]) }.getOrNull() } }
+
+        // The Mac's default runs at 60 ms: a 100 ms skin is drawn as the default instead.
+        val fast = SkinLibrary(reader, pushed = mapOf("slow" to slowJson), clockSkin = "sprig")
+        assertEquals("sprig", fast.manifest("slow").name)
+        assertEquals("mochi", fast.manifest("mochi").name)
+        assertEquals(60, fast.manifest("clawd").tickMs)
+
+        // The default runs at 100 ms: the 60 ms skins don't join, it does.
+        val slowRow = SkinLibrary(reader, pushed = mapOf("slow" to slowJson), clockSkin = "slow")
+        assertEquals("slow", slowRow.manifest("slow").name)
+        assertEquals("slow", slowRow.manifest("sprig").name)
+        assertEquals(100, slowRow.manifest("not-on-this-phone").tickMs)
+
+        // A forced skin answers for everything anyway; no clock skin, no rule.
+        assertEquals("slow", SkinLibrary(reader, pushed = mapOf("slow" to slowJson), forced = "slow", clockSkin = "sprig").manifest("mochi").name)
+        assertEquals("slow", SkinLibrary(reader, pushed = mapOf("slow" to slowJson)).manifest("slow").name)
+    }
+
     @Test
     fun unknownOrInvalidSkinFallsBackToClawd() {
         val broken = builtin()

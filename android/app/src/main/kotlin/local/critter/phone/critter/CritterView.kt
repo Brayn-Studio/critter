@@ -1,6 +1,7 @@
 package local.critter.phone.critter
 
 import android.content.Context
+import android.content.res.Configuration
 import android.graphics.Canvas
 import android.os.SystemClock
 import android.provider.Settings
@@ -116,6 +117,8 @@ class CritterView(context: Context) : View(context) {
 
     fun setActors(list: List<CritterSlot>) {
         applyReduceMotion()
+        // One clock for the whole view, on its skins' tick (the library only lets skins on one tick share a row).
+        list.firstOrNull()?.let { clock.retune(it.manifest.tickMs.toLong()) }
         clock.catchUp()
         val ids = HashSet<String>(list.size * 2)
         list.mapTo(ids) { it.sessionId }
@@ -154,7 +157,15 @@ class CritterView(context: Context) : View(context) {
     /** Stops the clock without detaching (the screen went off); [setPaused] false resumes it. */
     fun setPaused(paused: Boolean) {
         this.paused = paused
+        if (!paused) readSystemReduce()
         updateRunning()
+    }
+
+    /** The system "remove animations" switch (animation scale 0) = the desktop's "reduce motion"; it can change any time. */
+    private fun readSystemReduce() {
+        val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
+        systemReduce = scale == 0f
+        applyReduceMotion()
     }
 
     // ---- entries ------------------------------------------------------------------------------------------
@@ -207,9 +218,7 @@ class CritterView(context: Context) : View(context) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-        systemReduce = scale == 0f // system "remove animations" = the desktop's "reduce motion"
-        applyReduceMotion()
+        readSystemReduce()
         windowShown = windowVisibility == VISIBLE
         aggregatedShown = isShown
         updateRunning()
@@ -226,7 +235,14 @@ class CritterView(context: Context) : View(context) {
     override fun onWindowVisibilityChanged(visibility: Int) {
         super.onWindowVisibilityChanged(visibility)
         windowShown = visibility == VISIBLE
+        // Coming back into view (an activity resumed, the pile shown again): the switch may have changed meanwhile.
+        if (windowShown) readSystemReduce()
         updateRunning()
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration?) {
+        super.onConfigurationChanged(newConfig)
+        readSystemReduce()
     }
 
     override fun onVisibilityAggregated(isVisible: Boolean) {
