@@ -18,9 +18,10 @@ private func readStdin(timeoutSeconds: Double) -> Data {
 let arguments = Array(CommandLine.arguments.dropFirst())
 
 // `pet`/`toggle` never need stdin content to decide anything (the toggle decision comes
-// from ~/.critter/app.json), so they must not read it at all -- only `event` does, and even
-// then only up to a 2s timeout.
-let stdinData: Data = arguments.first == "event" ? readStdin(timeoutSeconds: 2.0) : Data()
+// from ~/.critter/app.json), so they must not read it at all -- only `event` and `statusline`
+// do, and even then only up to a 2s timeout.
+let readsStdin = ["event", "statusline"].contains(arguments.first ?? "")
+let stdinData: Data = readsStdin ? readStdin(timeoutSeconds: 2.0) : Data()
 
 let now = Int64(Date().timeIntervalSince1970 * 1000)
 

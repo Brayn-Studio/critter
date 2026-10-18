@@ -65,7 +65,8 @@ public enum HookCommand {
         hookParentPid: Int32,
         launcher: AppLauncher,
         processes: ProcessInspecting = SystemProcesses(),
-        probeTimeout: TimeInterval = ToggleDecision.probeTimeout
+        probeTimeout: TimeInterval = ToggleDecision.probeTimeout,
+        shell: ShellRunning = SystemShell()
     ) -> HookResult {
         let paths = CritterPaths.fromEnvironment(environment)
 
@@ -90,6 +91,9 @@ public enum HookCommand {
                 probeTimeout: probeTimeout, fallbackEvent: "toggle"
             )
             return HookResult(stdout: message + "\n", exitCode: 0)
+
+        case "statusline":
+            return StatusLineCommand.run(arguments: arguments, stdin: stdin, paths: paths, now: now, shell: shell)
 
         default:
             return HookResult(stdout: "", exitCode: 0)
