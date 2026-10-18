@@ -659,7 +659,7 @@ public struct BridgeSession: Codable, Equatable, Sendable { id, name: String; so
 public struct BridgeContext: Codable, Equatable, Sendable { usedPercent: Double; windowSize: Int; estimated: Bool }
 public struct BridgeLimits: Codable, Equatable, Sendable { fiveHour, sevenDay: RateWindow?; updatedAt: Int64 }
 public struct BridgePending: Codable, Equatable, Sendable { requestId, sessionId: String; kind: PendingKind; toolName, summary: String; input: JSONValue; createdAt, expiresAt: Int64 }
-public struct BridgePrefs: Codable, Equatable, Sendable { skin: String; randomSkins: Bool; idleDim: Double; mergeThreshold: Int }
+public struct BridgePrefs: Codable, Equatable, Sendable { skin: String; randomSkins: Bool; idleDim: Double; mergeThreshold: Int; soundTheme: String }   // soundTheme 是 SoundTheme 的 rawValue
 public struct SnapshotInputs: Sendable { sessions: [PetSession]; skins: [String: String]; statuses: [StatusLineRecord]; pending: [PendingRequest]; branches: [String: String]; estimates: [String: ContextEstimate]; prefs: BridgePrefs; home: String }
 public enum SnapshotBuilder { public static func build(_ inputs: SnapshotInputs) -> SnapshotBody }
 
@@ -902,7 +902,7 @@ git commit -m "feat(core): bridge connection state machine"
     - `sessionMonitor.onSnapshot` 先调用 `petController.show`，再调用 `bridge.update(sessions:skins:prefs:)`；
     - `writeHeartbeat` 填上 `bridgeEnabled` 和 `lastClientSeen`；
     - 设置项 `.bridge` 变化时调用 `bridge.setEnabled`；
-    - 设置项 `.skin`、`.randomSkins`、`.idleDim`、`.mergeThreshold` 变化时，用 `sessionMonitor.sessions` 重新调用一次 `bridge.update`，让 `prefs` 和形象分配及时推送出去；
+    - 设置项 `.skin`、`.randomSkins`、`.idleDim`、`.mergeThreshold`、`.sounds` 变化时，用 `sessionMonitor.sessions` 重新调用一次 `bridge.update`，让 `prefs` 和形象分配及时推送出去；
     - 新增调试 URL `critter://debug-bridge-pair?out=<绝对路径>`，只在 `debugEnabled` 时有效：调用 `beginPairing(autoApprove: true)`，把 `{"uri":…}` 写进 out 指定的文件。
 - `critter-bridge-client` 的子命令：
   - `pair <uri> [--state <path>]`：解析 URI，固定证书指纹连接，发 `pair`，收到 `paired` 后把 `{host, port, fingerprint, deviceId, token}` 存进 state 文件。state 默认是 `~/.critter/dev-client.json`。
