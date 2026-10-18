@@ -48,7 +48,10 @@
 
         <activity
             android:name=".ui.board.BoardActivity"
-            android:exported="false" />
+            android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"
+            android:exported="false"
+            android:screenOrientation="sensorLandscape"
+            android:theme="@style/Theme.Critter.Board" />
 
         <service
             android:name=".service.BridgeService"

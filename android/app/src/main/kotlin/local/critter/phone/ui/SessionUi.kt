@@ -29,6 +29,16 @@ fun stateColor(state: PetState): Color = when (state) {
     PetState.unknown -> Color(0xFF636366)
 }
 
+/** A one-character mark for the state block on the board. */
+fun stateGlyph(state: PetState): String = when (state) {
+    PetState.idle -> "z"
+    PetState.running -> "…"
+    PetState.waiting -> "!"
+    PetState.done -> "✓"
+    PetState.error -> "×"
+    PetState.unknown -> "?"
+}
+
 fun sourceLabel(source: SessionSource): String = when (source) {
     SessionSource.terminal -> "终端"
     SessionSource.vscode -> "VS Code"

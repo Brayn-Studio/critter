@@ -135,7 +135,7 @@ private fun LimitsRow(limits: BridgeLimits?, now: Long, modifier: Modifier) {
         }
         limits?.let { LimitsText.staleness(it.updatedAt, now) }?.let {
             Text(
-                "额度数据是 $it 的",
+                "额度更新于 $it",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(top = 4.dp),
