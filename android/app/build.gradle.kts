@@ -44,6 +44,10 @@ android {
 
     buildFeatures { compose = true }
 
+    testOptions {
+        unitTests.all { it.useJUnitPlatform() }
+    }
+
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_21
         targetCompatibility = JavaVersion.VERSION_21
@@ -68,4 +72,8 @@ dependencies {
     implementation(libs.camerax.lifecycle)
     implementation(libs.camerax.view)
     implementation(libs.zxing.core)
+
+    testImplementation(kotlin("test"))
+    testImplementation(libs.junit.jupiter)
+    testRuntimeOnly(libs.junit.platform.launcher)
 }
