@@ -33,7 +33,10 @@ class SkinStore(private val context: Context) {
     /** The manifest JSON of a skin the Mac sent earlier, or null. */
     fun pushed(name: String): String? = pushed[name]
 
-    fun isBundled(name: String): Boolean = readAsset("skins/$name/manifest.json") != null
+    private val bundledNames: Set<String> by lazy { context.assets.list("skins")?.toSet() ?: emptySet() }
+
+    /** Whether the app ships skin [name] (a cheap lookup, no file read). */
+    fun isBundled(name: String): Boolean = name in bundledNames
 
     /** The bundled manifest's JSON, or null if the app has no such skin. */
     fun bundled(name: String): String? = if (isPlain(name)) readAsset("skins/$name/manifest.json") else null

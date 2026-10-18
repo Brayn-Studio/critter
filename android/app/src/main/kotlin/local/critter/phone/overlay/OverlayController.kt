@@ -1,7 +1,10 @@
 package local.critter.phone.overlay
 
 import android.app.KeyguardManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.PixelFormat
 import android.os.Build
 import android.os.PowerManager
@@ -13,6 +16,7 @@ import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.widget.FrameLayout
+import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import local.critter.core.flock.FlockModel
 import local.critter.core.logic.SessionOrder
@@ -103,8 +107,25 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         edge = if (settings.overlayOnRight) Edge.Right else Edge.Left
         topY = (settings.overlayY * screen().height).roundToInt()
         rebuild()
-        windowManager.addView(root, params)
+        try {
+            windowManager.addView(root, params)
+        } catch (_: RuntimeException) {
+            // The permission was revoked meanwhile, or the window token is bad: not attached, try again later.
+            attached = false
+            expanded = false
+            root.removeAllViews()
+            pile = null
+            column = null
+            return false
+        }
         added = true
+        val filter = IntentFilter().apply {
+            addAction(Intent.ACTION_SCREEN_OFF)
+            addAction(Intent.ACTION_SCREEN_ON)
+            addAction(Intent.ACTION_USER_PRESENT)
+        }
+        ContextCompat.registerReceiver(context, screenReceiver, filter, ContextCompat.RECEIVER_NOT_EXPORTED)
+        applyPaused()
         return true
     }
 
@@ -112,6 +133,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         if (!attached) return
         attached = false
         expanded = false
+        runCatching { context.unregisterReceiver(screenReceiver) }
         pile?.critters?.setActors(emptyList())
         root.removeAllViews()
         pile = null
@@ -132,7 +154,14 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         this.body = body
         this.online = online
         if (!attached) return
-        if (resized || pile == null) rebuild() else render()
+        // While expanded, only a different column size (sessions came or went) rebuilds it; otherwise the
+        // column keeps its scroll position, its touch and its animations, and the actor diff does the rest.
+        val rebuildNeeded = resized || if (expanded) {
+            column == null || expandedSizeNow().let { it.width to it.height } != size
+        } else {
+            pile == null
+        }
+        if (rebuildNeeded) rebuild() else render()
         if (newlyWaiting && !expanded) pile?.notice()
     }
 
@@ -173,10 +202,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         column = null
         val unit = unit()
         if (expanded) {
-            val screen = screen()
-            val sessions = sessions()
-            val itemHeight = ColumnView.itemHeight(unit, density)
-            val s = OverlayGeometry.expandedSize(sessions.size, screen, itemHeight, width = (18 * unit + 150 * density).toInt())
+            val s = expandedSizeNow()
             val view = ColumnView(context, unit, edge, s.width, s.height, ::tapSession, ::collapse)
             column = view
             size = s.width to s.height
@@ -191,6 +217,35 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         render()
         place()
         applyVisibility()
+        applyPaused()
+    }
+
+    private fun expandedSizeNow(): local.critter.core.overlay.Size {
+        val unit = unit()
+        return OverlayGeometry.expandedSize(
+            sessions().size, screen(), ColumnView.itemHeight(unit, density), width = (18 * unit + 150 * density).toInt(),
+        )
+    }
+
+    /** The clock of every critter view stops while the screen is off or locked (an overlay gets no visibility event). */
+    private fun applyPaused() {
+        val power = context.getSystemService(PowerManager::class.java)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        val paused = !power.isInteractive || keyguard.isKeyguardLocked
+        pile?.critters?.setPaused(paused)
+        column?.critters?.setPaused(paused)
+    }
+
+    private val screenReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context, intent: Intent) {
+            // SCREEN_OFF arrives while the keyguard still reports itself as not locked; it is paused either way.
+            if (intent.action == Intent.ACTION_SCREEN_OFF) {
+                pile?.critters?.setPaused(true)
+                column?.critters?.setPaused(true)
+            } else {
+                applyPaused()
+            }
+        }
     }
 
     private fun render() {

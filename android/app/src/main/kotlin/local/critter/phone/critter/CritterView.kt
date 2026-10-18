@@ -303,7 +303,8 @@ class CritterView(context: Context) : View(context) {
                 best = id
             }
         }
-        return best ?: if (claimAllTouches) entries.keys.firstOrNull() else null
+        // The pile's front Critter (not a seated one behind it) takes the touches nobody else was under.
+        return best ?: if (claimAllTouches) (entries.entries.firstOrNull { it.value.slot.seatRow == null } ?: entries.entries.firstOrNull())?.key else null
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {

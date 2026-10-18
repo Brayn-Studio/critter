@@ -81,9 +81,11 @@ object AtlasPool {
     private val atlases = HashMap<String, SpriteAtlas>()
 
     fun get(skin: SkinManifest, dimStrength: Double): SpriteAtlas {
-        val key = "${skin.name}@$dimStrength"
+        // Quantized to 0.05, so a slider drag does not leave an atlas behind for every value.
+        val dim = Math.round(dimStrength.coerceIn(0.0, 1.0) * 20) / 20.0
+        val key = "${skin.name}@$dim"
         val found = atlases[key]
         if (found != null && found.skin === skin) return found
-        return SpriteAtlas(skin, dimStrength).also { atlases[key] = it }
+        return SpriteAtlas(skin, dim).also { atlases[key] = it }
     }
 }

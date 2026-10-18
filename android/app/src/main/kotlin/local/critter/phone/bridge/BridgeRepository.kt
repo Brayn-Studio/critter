@@ -135,7 +135,9 @@ class BridgeRepository(private val app: Application) {
 
     private fun onSnapshot(body: SnapshotBody) {
         val now = System.currentTimeMillis()
-        body.sessions.mapTo(HashSet()) { it.skin }.forEach { name -> scope.launch { skinManifest(name) } }
+        body.sessions.mapTo(HashSet()) { it.skin }
+            .filter { it !in skinsAsked && !skins.isBundled(it) && skins.pushed(it) == null }
+            .forEach { name -> scope.launch { skinManifest(name) } }
         _snapshot.value = body
         _lastUpdated.value = now
         _live.value = body
