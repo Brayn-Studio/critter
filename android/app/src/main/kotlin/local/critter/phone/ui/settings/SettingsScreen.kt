@@ -37,7 +37,15 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlin.math.roundToInt
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.RadioButton
+import androidx.compose.ui.viewinterop.AndroidView
+import local.critter.core.protocol.PetState
 import local.critter.phone.bridge.BridgeRepository
+import local.critter.phone.critter.CritterSlot
+import local.critter.phone.critter.CritterView
+import local.critter.phone.onboarding.OnboardingActivity
 import local.critter.phone.service.BridgeService
 import local.critter.phone.ui.connText
 
@@ -159,6 +167,20 @@ fun SettingsScreen(
             repo.settingsStore.update { it.copy(boardSounds = on) }
         }
 
+        Section("形象")
+        SkinChoice(repo, "跟着电脑", "每个会话用电脑上选的形象", null, settings.skinOverride == null)
+        listOf("clawd", "sprig", "mochi", "peep", "bristle").forEach { name ->
+            SkinChoice(
+                repo, repo.skins.previewLibrary.manifest(name).title ?: name, "手机上单独选，所有会话都用它",
+                name, settings.skinOverride == name,
+            )
+        }
+
+        Section("动画")
+        SwitchRow("减少动态效果", "小人停在代表姿势上；系统的「移除动画」打开时也会自动减少", settings.reduceMotion) { on ->
+            repo.settingsStore.update { it.copy(reduceMotion = on) }
+        }
+
         Section("省电")
         Column(Modifier.padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
@@ -173,8 +195,61 @@ fun SettingsScreen(
                     )
                 }) { Text("忽略电池优化") }
             }
+            OutlinedButton(onClick = { context.startActivity(OnboardingActivity.intent(context, onlyKeepAlive = true)) }) {
+                Text("保持后台运行")
+            }
+            Text(
+                "熄屏后连接被系统停掉时，按手机品牌打开自启动、后台耗电等开关。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = { context.startActivity(OnboardingActivity.intent(context)) }) { Text("重新走一遍引导") }
         }
     }
+}
+
+/** One skin to pick (or "follow the Mac" when [name] is null), with a small live preview. */
+@Composable
+private fun SkinChoice(repo: BridgeRepository, title: String, subtitle: String, name: String?, selected: Boolean) {
+    Row(
+        Modifier.fillMaxWidth()
+            .clickable { repo.settingsStore.update { it.copy(skinOverride = name) } }
+            .padding(horizontal = 20.dp, vertical = 4.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        RadioButton(selected = selected, onClick = { repo.settingsStore.update { it.copy(skinOverride = name) } })
+        Column(Modifier.weight(1f).padding(start = 4.dp)) {
+            Text(title, style = MaterialTheme.typography.bodyLarge)
+            if (name == null) {
+                Text(subtitle, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+        }
+        if (name != null) SkinPreview(repo, name)
+    }
+}
+
+/** A small CritterView with one idle Critter of skin [name] (the bundled ones; not affected by the phone's choice). */
+@Composable
+private fun SkinPreview(repo: BridgeRepository, name: String) {
+    val density = LocalContext.current.resources.displayMetrics.density
+    val unit = (2 * density).roundToInt().coerceAtLeast(1).toFloat() // whole pixels per cell keeps the art crisp
+    val width = 19 * unit / density
+    val height = 16 * unit / density
+    AndroidView(
+        modifier = Modifier.size(width.dp, height.dp),
+        factory = { ctx ->
+            CritterView(ctx).apply {
+                setActors(
+                    listOf(
+                        CritterSlot(
+                            "preview/$name", repo.skins.previewLibrary.manifest(name), PetState.idle, null, 1.0,
+                            x = unit, y = 14 * unit, scale = unit,
+                        ),
+                    ),
+                )
+            }
+        },
+    )
 }
 
 private fun isIgnoringBatteryOptimizations(context: Context): Boolean =

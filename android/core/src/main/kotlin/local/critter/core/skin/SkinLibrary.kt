@@ -8,14 +8,20 @@ package local.critter.core.skin
  *
  * @param assetReader reads an asset by its path (e.g. `skins/clawd/manifest.json`); null if absent.
  * @param pushed manifests pushed by the Mac, as JSON by skin name.
+ * @param forced when set, every lookup answers with this skin whatever name is asked for (the phone's own skin
+ * choice, spec §8.8); an invalid forced skin falls back to clawd like any other.
  */
 class SkinLibrary(
     private val assetReader: (String) -> String?,
     private val pushed: Map<String, String> = emptyMap(),
+    private val forced: String? = null,
 ) {
     private val cache = HashMap<String, SkinManifest>()
 
-    fun manifest(name: String): SkinManifest = cache.getOrPut(name) { find(name) ?: clawd() }
+    fun manifest(name: String): SkinManifest {
+        val wanted = forced ?: name
+        return cache.getOrPut(wanted) { find(wanted) ?: clawd() }
+    }
 
     private fun find(name: String): SkinManifest? {
         pushed[name]?.let { json -> SkinLoader.decode(json)?.let { return it } }

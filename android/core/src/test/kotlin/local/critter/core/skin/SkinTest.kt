@@ -331,6 +331,16 @@ class SkinTest {
     // MARK: - Library
 
     @Test
+    fun forcedSkinAnswersForEveryName() {
+        val reader = { path: String -> path.takeIf { it.startsWith("skins/") }?.let { runCatching { bundledSkinJson(it.split('/')[1]) }.getOrNull() } }
+        val mochi = SkinLibrary(reader, forced = "mochi")
+        assertEquals("mochi", mochi.manifest("sprig").name)
+        assertEquals("mochi", mochi.manifest("not-on-this-phone").name)
+        assertEquals("clawd", SkinLibrary(reader, forced = "nope").manifest("sprig").name)
+        assertEquals("sprig", SkinLibrary(reader).manifest("sprig").name)
+    }
+
+    @Test
     fun unknownOrInvalidSkinFallsBackToClawd() {
         val broken = builtin()
         broken.states.remove("waiting")

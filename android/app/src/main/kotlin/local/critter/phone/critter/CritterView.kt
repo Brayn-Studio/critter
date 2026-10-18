@@ -96,6 +96,7 @@ class CritterView(context: Context) : View(context) {
     private val clock = CritterClock(DEFAULT_TICK_MS) { tick(it) }
     private var layoutDirty = false
     private var reduceMotion = false
+    private var systemReduce = false
     private var windowShown = false
     private var aggregatedShown = false
     private var paused = false
@@ -105,7 +106,16 @@ class CritterView(context: Context) : View(context) {
     private val rub = RubDetector()
     private var gaze = HashMap<String, GazeZone?>()
 
+    /** Reduce motion is on when the settings say so or the system's animation scale is 0. */
+    private fun applyReduceMotion() {
+        val want = MotionPrefs.manual || systemReduce
+        if (want == reduceMotion) return
+        reduceMotion = want
+        for (e in entries.values) e.actor.reduceMotion = want
+    }
+
     fun setActors(list: List<CritterSlot>) {
+        applyReduceMotion()
         clock.catchUp()
         val ids = HashSet<String>(list.size * 2)
         list.mapTo(ids) { it.sessionId }
@@ -198,8 +208,8 @@ class CritterView(context: Context) : View(context) {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         val scale = Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f)
-        reduceMotion = scale == 0f // system "remove animations" = the desktop's "reduce motion"
-        for (e in entries.values) e.actor.reduceMotion = reduceMotion
+        systemReduce = scale == 0f // system "remove animations" = the desktop's "reduce motion"
+        applyReduceMotion()
         windowShown = windowVisibility == VISIBLE
         aggregatedShown = isShown
         updateRunning()

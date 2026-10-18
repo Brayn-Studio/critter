@@ -20,6 +20,7 @@ class SkinStore(private val context: Context) {
     private val dir = File(context.filesDir, "skins")
     private val pushed = ConcurrentHashMap<String, String>()
     private val _library: MutableStateFlow<SkinLibrary>
+    @Volatile private var forced: String? = null
     val library: StateFlow<SkinLibrary> get() = _library.asStateFlow()
 
     init {
@@ -55,7 +56,20 @@ class SkinStore(private val context: Context) {
         return true
     }
 
-    private fun build() = SkinLibrary(::readAsset, pushed.toMap())
+    /**
+     * The phone's own skin choice (spec §8.8): null follows the Mac, a name shows that skin for every session.
+     * [library] is rebuilt, so every screen redraws.
+     */
+    fun setForced(name: String?) {
+        if (name == forced) return
+        forced = name
+        _library.value = build()
+    }
+
+    /** The bundled skins by name, unaffected by the phone's own choice: for the previews in the settings. */
+    val previewLibrary: SkinLibrary by lazy { SkinLibrary(::readAsset) }
+
+    private fun build() = SkinLibrary(::readAsset, pushed.toMap(), forced)
 
     private fun readAsset(path: String): String? = try {
         context.assets.open(path).bufferedReader().use { it.readText() }

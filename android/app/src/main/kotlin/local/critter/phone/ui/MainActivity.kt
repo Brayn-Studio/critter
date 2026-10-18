@@ -2,6 +2,7 @@ package local.critter.phone.ui
 
 import android.Manifest
 import android.content.Intent
+import android.content.pm.ApplicationInfo
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
@@ -39,6 +40,7 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import local.critter.core.protocol.PairingUri
 import local.critter.phone.bridge.BridgeRepository
+import local.critter.phone.onboarding.OnboardingActivity
 import local.critter.phone.repository
 import local.critter.phone.service.BridgeService
 import local.critter.phone.ui.answer.AnswerActivity
@@ -61,6 +63,12 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         pairingUriOf(intent)?.let { openLink(it) }
         val repo = repository
+        // First run: the onboarding walks through pairing and the permissions. A pairing link opened first is
+        // handled by the pairing screen below, and the onboarding follows once it succeeds.
+        if (!repo.settingsStore.settings.value.onboardingDone && deepLink == null) {
+            startActivity(OnboardingActivity.intent(this))
+        }
+        startDebugOnboarding(intent)
         setContent {
             CritterTheme {
                 Surface(Modifier.fillMaxSize(), color = MaterialTheme.colorScheme.background) {
@@ -76,6 +84,17 @@ class MainActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         pairingUriOf(intent)?.let { openLink(it) }
+        startDebugOnboarding(intent)
+    }
+
+    /**
+     * Debug builds only: `am start -n local.critter.phone/.ui.MainActivity --ez onboarding true` runs the
+     * onboarding again without touching the pairing (`--ez keepalive true` for just the keep-alive step).
+     */
+    private fun startDebugOnboarding(intent: Intent) {
+        if (applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE == 0) return
+        if (intent.getBooleanExtra("onboarding", false)) startActivity(OnboardingActivity.intent(this))
+        if (intent.getBooleanExtra("keepalive", false)) startActivity(OnboardingActivity.intent(this, onlyKeepAlive = true))
     }
 
     private fun openLink(uri: PairingUri) {
@@ -106,7 +125,11 @@ class MainActivity : ComponentActivity() {
                 onPaired = {
                     repairing = false
                     settingsOpen = false
-                    askNotifications()
+                    if (repo.settingsStore.settings.value.onboardingDone) {
+                        askNotifications()
+                    } else {
+                        startActivity(OnboardingActivity.intent(this@MainActivity))
+                    }
                 },
                 onCancel = if (pairing != null) ({ repairing = false }) else null,
             )

@@ -68,6 +68,7 @@ fun PairingScreen(
     onDeepLinkConsumed: () -> Unit,
     onPaired: () -> Unit,
     onCancel: (() -> Unit)?,
+    modifier: Modifier = Modifier,
 ) {
     val scope = rememberCoroutineScope()
     var mode by rememberSaveable { mutableStateOf(Mode.Scan) }
@@ -93,7 +94,7 @@ fun PairingScreen(
         }
     }
 
-    Column(Modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
+    Column(modifier.fillMaxSize().safeDrawingPadding().padding(20.dp)) {
         Text("配对 Mac", style = MaterialTheme.typography.headlineSmall)
         Spacer(Modifier.height(4.dp))
         Text(

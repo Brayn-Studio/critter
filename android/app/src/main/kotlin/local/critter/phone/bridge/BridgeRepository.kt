@@ -15,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import local.critter.phone.critter.MotionPrefs
 import local.critter.core.net.BridgeClient
 import local.critter.core.net.ConnState
 import local.critter.core.net.Credentials
@@ -77,6 +78,19 @@ class BridgeRepository(private val app: Application) {
     private var client: BridgeClient? = null
     private var clientJob: Job? = null
     @Volatile private var boardVisible = false
+
+    init {
+        // The phone's own skin and the reduce-motion switch follow the settings, from the first frame on.
+        val first = settingsStore.settings.value
+        skins.setForced(first.skinOverride)
+        MotionPrefs.manual = first.reduceMotion
+        scope.launch {
+            settingsStore.settings.collect {
+                skins.setForced(it.skinOverride)
+                MotionPrefs.manual = it.reduceMotion
+            }
+        }
+    }
 
     // --- connection lifetime (called by BridgeService) ------------------------------------------
 
