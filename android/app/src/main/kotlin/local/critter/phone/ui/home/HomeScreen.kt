@@ -129,6 +129,9 @@ private const val STALE_ALPHA = 0.6f
 /** The longest command shown on a card; the answer card has all of it. */
 private const val SLIP_LINES = 6
 
+/** The widest a card's folder name gets (icon included). */
+private val FOLDER_MAX = 104.dp
+
 /**
  * The home screen (mockup "首页"): a meadow with every session's Critter, the Mac's name and connection over it
  * and the board and settings buttons; below it the limits and the session cards, the ones that need you first.
@@ -603,11 +606,14 @@ private fun GrassTile(session: BridgeSession, library: SkinLibrary, offline: Boo
     }
 }
 
-/** "proj · main · 终端" as three pieces, each with its pixel icon; the branch is cut short first. */
+/**
+ * "proj · main · 终端" as three pieces, each with its pixel icon; the branch is cut short first. A very long folder
+ * stops at [FOLDER_MAX], as in the sheets' header, so the source stays in view.
+ */
 @Composable
 private fun PlaceLine(s: BridgeSession) {
     Row(Modifier.clipToBounds(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        MetaPiece("folder", folderName(s.cwd))
+        MetaPiece("folder", folderName(s.cwd), Modifier.widthIn(max = FOLDER_MAX))
         s.branch?.takeIf { it.isNotBlank() }?.let { MetaPiece("branch", it, Modifier.weight(1f, fill = false)) }
         MetaPiece(sourceIcon(s.source), sourceLabel(s.source))
     }
