@@ -29,8 +29,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -174,7 +176,10 @@ fun SheetScaffold(
                         .pointerInput(Unit) { detectTapGestures { } }
                         .navigationBarsPadding(),
                 ) {
-                    Column(Modifier.fillMaxWidth().padding(top = if (meadowTop) 0.dp else ContentTop), content = content)
+                    // Outside a Surface the default text color is black, unreadable on the dark sheet.
+                    CompositionLocalProvider(LocalContentColor provides c.ink) {
+                        Column(Modifier.fillMaxWidth().padding(top = if (meadowTop) 0.dp else ContentTop), content = content)
+                    }
                     Grabber(
                         onMeadow = meadowTop,
                         modifier = Modifier.align(Alignment.TopCenter).padding(top = if (meadowTop) GrabberTopOnMeadow else GrabberTop),
@@ -182,6 +187,43 @@ fun SheetScaffold(
                 }
             }
         }
+    }
+}
+
+/** A sheet that only has something to say ("正在连接电脑…"). */
+@Composable
+fun SheetMessage(text: String) {
+    Box(Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, top = 6.dp, bottom = 30.dp), contentAlignment = Alignment.Center) {
+        Text(text, color = Critter.colors.ink, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 16.sp)
+    }
+}
+
+/**
+ * "Looks at you" (design §7) once both have happened, whichever comes last: the sheet has settled ([onSettled])
+ * and its Critter's view exists ([onView]); once per sheet. [view] is that view, for the other cues.
+ */
+class LookAtYouCue {
+    var view: CritterView? = null
+        private set
+    private var settled = false
+    private var played = false
+
+    fun onView(view: CritterView) {
+        this.view = view
+        // Called from the view's factory, before its Critter is set: look once that has happened.
+        if (settled) view.post { play() }
+    }
+
+    fun onSettled() {
+        settled = true
+        play()
+    }
+
+    private fun play() {
+        val v = view ?: return
+        if (played) return
+        played = true
+        v.lookAtYou(STAGE_PET)
     }
 }
 
