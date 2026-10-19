@@ -134,9 +134,12 @@ public struct PendingStore: Sendable {
     /// Only the first answer counts -- it is the one the hook acts on -- so a second one (from
     /// another phone, or a double tap) must not be taken as accepted. The file appears whole and
     /// at most once: it is written aside, then hard-linked into place, which fails if it exists.
+    /// An answer that arrives after the hook has acted on the first one and cleaned up (request
+    /// first, then answer) finds no request once it is in place: it is taken back and refused too.
     @discardableResult
     public func writeAnswer(_ answer: AnswerPayload, requestId: String) throws -> Bool {
-        guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId) else {
+        guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId),
+              let requestFile = paths.sessionScopedFile(in: paths.pendingDir, sessionId: requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
         try PrivateDirectory.ensure(paths.answersDir)
@@ -147,6 +150,10 @@ public struct PendingStore: Sendable {
             let code = errno
             if code == EEXIST { return false }
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+        }
+        guard FileManager.default.fileExists(atPath: requestFile.path) else {
+            unlink(file.path)
+            return false
         }
         return true
     }
