@@ -27,7 +27,8 @@ import local.critter.core.protocol.SnapshotBody
  * bundled ones). `--ez nopending true` leaves out the permission requests of the waiting sessions. `--ez long true`
  * gives every session a very long name, branch and folder, and the requests a 200-character command, for checking
  * that nothing overflows. `--es kind question` or `--es kind plan` makes the requests questions or a plan instead
- * of permissions. A paired Mac's next push replaces the made-up sessions; `--ei hold 120` keeps the Mac's
+ * of permissions. `--es states idle,done` cycles those states instead (e.g. a calm pile, whose Critters look into
+ * the screen). A paired Mac's next push replaces the made-up sessions; `--ei hold 120` keeps the Mac's
  * pushes off the screen for that many seconds (a later broadcast, or `--ei hold 0`, ends it).
  */
 class DebugSnapshotReceiver : BroadcastReceiver() {
@@ -35,7 +36,9 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
         if (intent.action != "local.critter.phone.DEBUG_SNAPSHOT") return
         val count = intent.getIntExtra("count", 5).coerceIn(0, 20)
         val long = intent.getBooleanExtra("long", false)
-        val states = listOf(PetState.waiting, PetState.running, PetState.done, PetState.idle, PetState.error)
+        val states = intent.getStringExtra("states")?.split(',')?.mapNotNull { name -> PetState.entries.firstOrNull { it.name == name.trim() } }
+            ?.takeIf { it.isNotEmpty() }
+            ?: listOf(PetState.waiting, PetState.running, PetState.done, PetState.idle, PetState.error)
         val skins = listOf("clawd", "sprig", "mochi", "peep", "bristle")
         val command = if (long) LONG_COMMAND else "npm test"
         val now = System.currentTimeMillis()
