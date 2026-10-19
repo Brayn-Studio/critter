@@ -8,7 +8,8 @@ import kotlin.math.abs
  * pulled, or once the phone has stood upright for [uprightExitMs] (lying flat does not close it). A board the
  * user closed stays closed until the next plug-in, and so does one the system would not show: an [Action.Open]
  * that is not followed by [onBoardShown] within [openTimeoutMs] (no overlay permission, or the OEM's "background
- * pop-up" switch is off) stops the asking until the charger is plugged in again.
+ * pop-up" switch is off) stops the asking until the charger is plugged in again, and is reported once as
+ * [Action.Blocked].
  *
  * "Shown" means the board exists, from its creation to its destruction: a board whose screen was switched off is
  * still shown, so it is neither opened again nor left behind when the charger is pulled.
@@ -24,6 +25,9 @@ class BoardTrigger(
     sealed interface Action {
         data object Open : Action
         data object Close : Action
+
+        /** The last [Open] never came up, or could not be started: the system kept the board from opening. */
+        data object Blocked : Action
         data object None : Action
     }
 
@@ -107,11 +111,12 @@ class BoardTrigger(
         unpluggedAt = null
     }
 
-    /** The board could not be started at all: same as an opening the system never showed. */
-    fun onOpenFailed() {
+    /** The board could not be started at all: same as an opening the system never showed, so [Action.Blocked]. */
+    fun onOpenFailed(): Action {
         suppressed = true
         openedAt = null
         holdSince = null
+        return Action.Blocked
     }
 
     fun onBoardShown(shown: Boolean) {
@@ -137,6 +142,8 @@ class BoardTrigger(
             // Asked, and nothing came up: the system blocks it. Retrying every few seconds would only burn power.
             openedAt = null
             suppressed = true
+            holdSince = null
+            return Action.Blocked
         }
         val hold = holdSince
         if (hold != null && !shown && charging && screenOn && autoOpen && !suppressed && nowMs - hold >= holdMs) {
