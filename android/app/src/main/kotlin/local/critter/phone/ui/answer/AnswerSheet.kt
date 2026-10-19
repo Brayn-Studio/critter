@@ -40,9 +40,8 @@ import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
 import local.critter.phone.service.Alerts
-import local.critter.phone.ui.branchAndFolder
-import local.critter.phone.ui.sourceLabel
-import local.critter.phone.ui.theme.CritterOrange
+import local.critter.phone.ui.placeLine
+import local.critter.phone.ui.theme.Critter
 
 // --- what a request asks, read from its `input` -------------------------------------------------
 
@@ -110,7 +109,7 @@ fun AnswerSheet(
         Text(Alerts.requestTitle(request, session), style = MaterialTheme.typography.titleMedium)
         session?.let {
             Text(
-                "${branchAndFolder(it)} · ${sourceLabel(it.source)}",
+                placeLine(it),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
@@ -242,7 +241,7 @@ private fun QuestionBody(request: BridgePending, draft: AnswerDraft, enabled: Bo
         questions.forEach { q ->
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
                 q.header?.let {
-                    Text(it, style = MaterialTheme.typography.labelMedium, color = CritterOrange)
+                    Text(it, style = MaterialTheme.typography.labelMedium, color = Critter.colors.brand)
                 }
                 Text(q.question, style = MaterialTheme.typography.titleSmall)
                 q.options.forEach { option ->

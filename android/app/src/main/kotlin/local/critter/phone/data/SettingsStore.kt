@@ -33,6 +33,10 @@ data class PhoneSettings(
     /** Where the pile sits: on the right edge or the left, and its top as a fraction of the screen height. */
     val overlayOnRight: Boolean = true,
     val overlayY: Float = 0.4f,
+    /** The day the opening (Critters popping up on the home screen) last played, as `LocalDate.toEpochDay()`. */
+    val openingShownOn: Long? = null,
+    /** When the system last kept the board from opening, in millis. */
+    val boardBlockedAt: Long? = null,
 )
 
 class SettingsStore(context: Context) {
@@ -68,6 +72,8 @@ class SettingsStore(context: Context) {
             overlayHideInFullscreen = prefs.getBoolean("overlayHideInFullscreen", d.overlayHideInFullscreen),
             overlayOnRight = prefs.getBoolean("overlayOnRight", d.overlayOnRight),
             overlayY = prefs.getFloat("overlayY", d.overlayY).coerceIn(0f, 1f),
+            openingShownOn = if (prefs.contains("openingShownOn")) prefs.getLong("openingShownOn", 0) else null,
+            boardBlockedAt = if (prefs.contains("boardBlockedAt")) prefs.getLong("boardBlockedAt", 0) else null,
         )
     }
 
@@ -91,5 +97,9 @@ class SettingsStore(context: Context) {
         putBoolean("overlayHideInFullscreen", s.overlayHideInFullscreen)
         putBoolean("overlayOnRight", s.overlayOnRight)
         putFloat("overlayY", s.overlayY)
+        val opening = s.openingShownOn
+        if (opening == null) remove("openingShownOn") else putLong("openingShownOn", opening)
+        val blocked = s.boardBlockedAt
+        if (blocked == null) remove("boardBlockedAt") else putLong("boardBlockedAt", blocked)
     }
 }

@@ -1,5 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!-- The main screens: the Critter mist behind the first frame, before Compose draws. -->
+    <style name="Theme.Critter.Main" parent="@android:style/Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">#F4F2FA</item>
+    </style>
+
     <!-- The answer card floats over whatever is behind it. -->
     <style name="Theme.Critter.Sheet" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowIsTranslucent">true</item>

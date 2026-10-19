@@ -45,11 +45,11 @@ import local.critter.core.protocol.PetState
 import local.critter.core.protocol.RateWindow
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.ui.agoText
-import local.critter.phone.ui.branchAndFolder
 import local.critter.phone.ui.connText
 import local.critter.phone.ui.contextFraction
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
+import local.critter.phone.ui.folderBranch
 import local.critter.phone.ui.rememberMinuteClock
 import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.stateColor
@@ -200,7 +200,7 @@ private fun SessionRow(session: BridgeSession, request: BridgePending?, onClick:
                 modifier = Modifier.padding(top = 4.dp),
             )
             Text(
-                branchAndFolder(session),
+                folderBranch(session),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,

@@ -42,10 +42,9 @@ import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterTouchListener
 import local.critter.phone.critter.CritterView
 import local.critter.phone.critter.PileSlots
-import local.critter.phone.ui.branchAndFolder
 import local.critter.phone.ui.contextFraction
 import local.critter.phone.ui.doingText
-import local.critter.phone.ui.sourceLabel
+import local.critter.phone.ui.placeLine
 import local.critter.phone.ui.stateColor
 import local.critter.phone.ui.theme.WaitingOrange
 import local.critter.phone.ui.agoText
@@ -178,7 +177,7 @@ private fun SessionTexts(s: BridgeSession, x: Float, ground: Float, scale: Float
     Column(Modifier.offset(left.dp, (ground + 6).dp).width(boxW.dp).then(tap), horizontalAlignment = Alignment.CenterHorizontally) {
         Text(s.name, color = Color(0xFFE5E5EA), fontSize = 13.sp, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = TextOverflow.Ellipsis)
         Text(
-            "${branchAndFolder(s)} · ${sourceLabel(s.source)}",
+            placeLine(s),
             color = Faint, fontSize = 9.sp, fontFamily = FontFamily.Monospace, maxLines = 1, overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center,
         )

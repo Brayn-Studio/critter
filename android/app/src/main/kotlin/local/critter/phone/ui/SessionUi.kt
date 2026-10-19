@@ -20,13 +20,22 @@ fun stateLabel(state: PetState): String = when (state) {
     PetState.unknown -> "未知"
 }
 
+/** A state's symbol color (design §5), for the View code; Compose screens use `Critter.colors.state()`. */
 fun stateColor(state: PetState): Color = when (state) {
-    PetState.idle -> Color(0xFF8E8E93)
-    PetState.running -> Color(0xFF0A84FF)
+    PetState.running -> Color(0xFFE8A21E)
     PetState.waiting -> Color(0xFFFF9F0A)
-    PetState.done -> Color(0xFF34C759)
-    PetState.error -> Color(0xFFFF3B30)
-    PetState.unknown -> Color(0xFF636366)
+    PetState.done -> Color(0xFF2FB457)
+    PetState.error -> Color(0xFFF0453A)
+    PetState.idle, PetState.unknown -> Color(0xFF8C85A3)
+}
+
+/** The pixel icon for a state, the same marks the desktop pet wears ([local.critter.phone.ui.look.PixelIcons]). */
+fun stateIcon(s: PetState): String = when (s) {
+    PetState.waiting -> "q"
+    PetState.running -> "sun"
+    PetState.done -> "check"
+    PetState.error -> "bang"
+    PetState.idle, PetState.unknown -> "z"
 }
 
 /** A one-character mark for the state block on the board. */
@@ -49,12 +58,12 @@ fun sourceLabel(source: SessionSource): String = when (source) {
 /** The last path component of [cwd] ("/Users/me/proj" -> "proj"). */
 fun folderName(cwd: String): String = cwd.trimEnd('/').substringAfterLast('/').ifEmpty { cwd }
 
-/** "main · proj" (branch omitted when unknown). */
-fun branchAndFolder(s: BridgeSession): String =
-    listOfNotNull(s.branch?.takeIf { it.isNotBlank() }, folderName(s.cwd)).joinToString(" · ")
+/** "proj · main" (branch omitted when unknown). */
+fun folderBranch(s: BridgeSession): String =
+    listOfNotNull(folderName(s.cwd), s.branch?.takeIf { it.isNotBlank() }).joinToString(" · ")
 
-/** "main · proj · 终端". */
-fun placeLine(s: BridgeSession): String = "${branchAndFolder(s)} · ${sourceLabel(s.source)}"
+/** "proj · main · 终端". */
+fun placeLine(s: BridgeSession): String = "${folderBranch(s)} · ${sourceLabel(s.source)}"
 
 /** What the session is doing: the detail line, falling back to the activity, then the state name. */
 fun doingText(s: BridgeSession): String =

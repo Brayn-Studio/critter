@@ -20,7 +20,7 @@
         android:name=".CritterApp"
         android:allowBackup="false"
         android:label="Critter"
-        android:theme="@android:style/Theme.Material.Light.NoActionBar">
+        android:theme="@style/Theme.Critter.Main">
         <activity
             android:name=".ui.MainActivity"
             android:configChanges="orientation|screenSize|keyboardHidden|smallestScreenSize|screenLayout|uiMode"

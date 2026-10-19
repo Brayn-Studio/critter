@@ -47,11 +47,10 @@ import local.critter.core.protocol.RateWindow
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.answer.permissionBody
-import local.critter.phone.ui.branchAndFolder
 import local.critter.phone.ui.contextFraction
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
-import local.critter.phone.ui.sourceLabel
+import local.critter.phone.ui.placeLine
 import local.critter.phone.ui.stateColor
 import local.critter.phone.ui.stateGlyph
 import local.critter.phone.ui.stateLabel
@@ -248,7 +247,7 @@ private fun SessionCard(
                 modifier = Modifier.padding(top = 4.dp, bottom = 5.dp),
             )
             Text(
-                "${branchAndFolder(session)} · ${sourceLabel(session.source)}",
+                placeLine(session),
                 color = Faint,
                 fontSize = 10.sp,
                 fontFamily = FontFamily.Monospace,

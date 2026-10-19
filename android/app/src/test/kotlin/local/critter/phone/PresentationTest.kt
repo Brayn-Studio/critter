@@ -11,9 +11,11 @@ import local.critter.phone.bridge.NsdLocator
 import local.critter.phone.service.Alerts
 import local.critter.phone.service.BridgeService
 import local.critter.phone.ui.agoText
-import local.critter.phone.ui.branchAndFolder
 import local.critter.phone.ui.contextPercentText
+import local.critter.phone.ui.folderBranch
 import local.critter.phone.ui.folderName
+import local.critter.phone.ui.placeLine
+import local.critter.phone.ui.stateIcon
 import local.critter.phone.ui.stateLabel
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -38,10 +40,25 @@ class PresentationTest {
     }
 
     @Test
-    fun branchAndFolderHandlesMissingBranchAndTrailingSlash() {
-        assertEquals("main · proj", branchAndFolder(session()))
-        assertEquals("proj", branchAndFolder(session(branch = null)))
+    fun folderBranchHandlesMissingBranchAndTrailingSlash() {
+        assertEquals("proj · main", folderBranch(session()))
+        assertEquals("proj", folderBranch(session(branch = null)))
         assertEquals("proj", folderName("/Users/me/proj/"))
+    }
+
+    @Test
+    fun placeLineIsFolderBranchSource() {
+        assertEquals("proj · main · 终端", placeLine(session()))
+        assertEquals("proj", folderBranch(session(branch = null)))
+    }
+
+    @Test
+    fun stateIconsMatchTheDesktopMarkers() {
+        assertEquals(
+            listOf("q", "sun", "check", "bang", "z"),
+            listOf(PetState.waiting, PetState.running, PetState.done, PetState.error, PetState.idle).map(::stateIcon),
+        )
+        assertEquals("z", stateIcon(PetState.unknown))
     }
 
     @Test
