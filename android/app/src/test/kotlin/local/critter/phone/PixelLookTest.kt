@@ -1,8 +1,14 @@
 package local.critter.phone
 
 import local.critter.core.protocol.PetState
+import local.critter.phone.ui.look.MeterLevel
 import local.critter.phone.ui.look.PixelIcons
+import local.critter.phone.ui.look.Wordmark
+import local.critter.phone.ui.look.WordmarkCell
+import local.critter.phone.ui.look.litSegments
+import local.critter.phone.ui.look.meterLevel
 import local.critter.phone.ui.look.pixelOutline
+import local.critter.phone.ui.look.steppedFraction
 import local.critter.phone.ui.stateIcon
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -71,5 +77,45 @@ class PixelLookTest {
                 }
             }
         }
+    }
+
+    @Test
+    fun litSegmentsRoundsAndClamps() {
+        assertEquals(1, litSegments(11.0, 10))
+        assertEquals(6, litSegments(62.0, 10))
+        assertEquals(10, litSegments(100.0, 10))
+        assertEquals(10, litSegments(140.0, 10))
+        assertEquals(0, litSegments(-5.0, 10))
+        assertEquals(0, litSegments(null, 20))
+        assertEquals(8, litSegments(32.0, 24))
+    }
+
+    @Test
+    fun meterLevelsSplitAtSixtyAndEightyFive() {
+        assertEquals(MeterLevel.Calm, meterLevel(59.9))
+        assertEquals(MeterLevel.Busy, meterLevel(60.0))
+        assertEquals(MeterLevel.Busy, meterLevel(84.9))
+        assertEquals(MeterLevel.Hot, meterLevel(85.0))
+        assertEquals(MeterLevel.Calm, meterLevel(null))
+    }
+
+    @Test
+    fun steppedFractionMovesInThirds() {
+        assertEquals(0f, steppedFraction(0.2f, 3))
+        assertEquals(1 / 3f, steppedFraction(0.5f, 3))
+        assertEquals(2 / 3f, steppedFraction(0.99f, 3))
+        assertEquals(1f, steppedFraction(1f, 3))
+    }
+
+    @Test
+    fun wordmarkIsFortyTwoByNine() {
+        val cells = Wordmark.cells()
+        assertTrue(cells.all { it.x in 0..41 && it.y in 0..8 })
+        assertEquals(41, cells.maxOf { it.x })
+        assertEquals(8, cells.maxOf { it.y })
+        val sprout = cells.filter { it.kind != WordmarkCell.Kind.Ink }
+        assertTrue(sprout.all { it.y in 0..1 && it.x in 13..16 })
+        assertEquals(2, sprout.count { it.kind == WordmarkCell.Kind.Leaf })
+        assertEquals(2, sprout.count { it.kind == WordmarkCell.Kind.Stem })
     }
 }
