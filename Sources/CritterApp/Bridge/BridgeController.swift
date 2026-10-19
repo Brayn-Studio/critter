@@ -99,7 +99,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         self.paths = paths
         self.skinSearchDirs = skinSearchDirs
         self.monitor = monitor
-        registry = DeviceRegistry(file: paths.bridgeDir.appendingPathComponent("devices.json"))
+        registry = DeviceRegistry(file: paths.bridgeDir.appendingPathComponent("devices.json"), log: { DiagnosticLog.shared.log($0) })
         pendingStore = PendingStore(paths: paths)
         statusStore = StatusLineStore(paths: paths)
         inboxStore = InboxStore(paths: paths)

@@ -96,15 +96,25 @@ public final class DeviceRegistry: @unchecked Sendable {
     public static let devClientName = "critter-bridge-client"
 
     private let file: URL
+    private let log: @Sendable (String) -> Void
+    private let hash: @Sendable (String) -> String
     private let lock = NSLock()
 
-    public init(file: URL) {
+    /// `log` hears about a devices file that had to be set aside (see `load`).
+    public convenience init(file: URL, log: @escaping @Sendable (String) -> Void = { _ in }) {
+        self.init(file: file, log: log, hash: Self.sha256Hex)
+    }
+
+    /// `hash` is how tokens are hashed; tests count its calls.
+    init(file: URL, log: @escaping @Sendable (String) -> Void, hash: @escaping @Sendable (String) -> String) {
         self.file = file
+        self.log = log
+        self.hash = hash
     }
 
     public func list() -> [DeviceRecord] {
         lock.lock(); defer { lock.unlock() }
-        return load()
+        return load() ?? []
     }
 
     public func add(name: String, now: Int64) throws -> (record: DeviceRecord, token: String) {
@@ -116,15 +126,20 @@ public final class DeviceRegistry: @unchecked Sendable {
         let token = Data(bytes).base64EncodedString()
             .replacingOccurrences(of: "+", with: "-").replacingOccurrences(of: "/", with: "_")
             .replacingOccurrences(of: "=", with: "")
-        let record = DeviceRecord(id: UUID().uuidString, name: name, tokenHash: Self.hash(token), pairedAt: now)
-        try save(load() + [record])
+        guard let current = load() else { throw CocoaError(.fileReadCorruptFile) }
+        let record = DeviceRecord(id: UUID().uuidString, name: name, tokenHash: hash(token), pairedAt: now)
+        try save(current + [record])
         return (record, token)
     }
 
+    /// The token is hashed and compared in constant time whether or not `deviceId` is known
+    /// (against a stand-in hash when it isn't), so the time taken doesn't tell which ids exist.
     public func verify(deviceId: String, token: String) -> DeviceRecord? {
         lock.lock(); defer { lock.unlock() }
-        guard let record = load().first(where: { $0.id == deviceId }) else { return nil }
-        return Self.constantTimeEqual(Self.hash(token), record.tokenHash) ? record : nil
+        let record = (load() ?? []).first(where: { $0.id == deviceId })
+        let matches = Self.constantTimeEqual(hash(token), record?.tokenHash ?? Self.unknownDeviceHash)
+        guard let record, matches else { return nil }
+        return record
     }
 
     public func touch(deviceId: String, now: Int64) {
@@ -141,12 +156,29 @@ public final class DeviceRegistry: @unchecked Sendable {
 
     private func update(_ transform: ([DeviceRecord]) -> [DeviceRecord]) {
         lock.lock(); defer { lock.unlock() }
-        try? save(transform(load()))
+        guard let current = load() else { return }
+        try? save(transform(current))
     }
 
-    private func load() -> [DeviceRecord] {
-        guard let data = try? Data(contentsOf: file) else { return [] }
-        return (try? JSONDecoder().decode([DeviceRecord].self, from: data)) ?? []
+    /// The records on disk; none when there is no file yet. A file that can't be read or
+    /// decoded is not taken for an empty list (the next save would overwrite it): it is renamed
+    /// `devices.json.corrupt-<ms>` beside it, kept for a look, and logged, and the list starts
+    /// empty. Nil only when it couldn't even be moved aside -- then nothing may be saved over it.
+    private func load() -> [DeviceRecord]? {
+        guard FileManager.default.fileExists(atPath: file.path) else { return [] }
+        if let data = try? Data(contentsOf: file), let records = try? JSONDecoder().decode([DeviceRecord].self, from: data) {
+            return records
+        }
+        let aside = file.deletingLastPathComponent()
+            .appendingPathComponent("\(file.lastPathComponent).corrupt-\(Int64(Date().timeIntervalSince1970 * 1000))")
+        do {
+            try FileManager.default.moveItem(at: file, to: aside)
+            log("bridge devices file unreadable, set aside as \(aside.lastPathComponent)")
+            return []
+        } catch {
+            log("bridge devices file unreadable and not set aside: \(error)")
+            return nil
+        }
     }
 
     private func save(_ records: [DeviceRecord]) throws {
@@ -154,9 +186,12 @@ public final class DeviceRegistry: @unchecked Sendable {
         try atomicWrite(JSONEncoder().encode(records), to: file, permissions: 0o600)
     }
 
-    private static func hash(_ token: String) -> String {
+    static func sha256Hex(_ token: String) -> String {
         SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
+
+    /// What an unknown device's token is compared with: a SHA-256 hex's length, matched by none.
+    private static let unknownDeviceHash = String(repeating: "-", count: 64)
 
     private static func constantTimeEqual(_ a: String, _ b: String) -> Bool {
         let x = Array(a.utf8), y = Array(b.utf8)
