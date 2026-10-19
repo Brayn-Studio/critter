@@ -51,7 +51,7 @@ private func tmpPaths() -> CritterPaths {
     #expect(shell.calls.count == 1)
     #expect(shell.calls[0].command == "bash /x/statusline.sh")
     #expect(shell.calls[0].stdin == Data(fullInput.utf8))
-    #expect(result == HookResult(stdout: "LINE", exitCode: 0))
+    #expect(result == HookResult(stdout: "", exitCode: 0, rawStdout: Data("LINE".utf8)))
     let records = StatusLineStore(paths: paths).readAll()
     #expect(records.count == 1 && records[0].sessionId == "s1")
 }
@@ -63,7 +63,7 @@ private func tmpPaths() -> CritterPaths {
         arguments: ["statusline", "--", "orig"], stdin: Data("not json".utf8), paths: paths, now: 1, shell: shell
     )
     #expect(shell.calls.count == 1)
-    #expect(result == HookResult(stdout: "LINE", exitCode: 0))
+    #expect(result == HookResult(stdout: "", exitCode: 0, rawStdout: Data("LINE".utf8)))
     #expect(StatusLineStore(paths: paths).readAll().isEmpty)
 }
 
@@ -76,15 +76,38 @@ private func tmpPaths() -> CritterPaths {
     #expect(StatusLineStore(paths: paths).readAll().count == 1)
 }
 
+/// A session id that could lead out of `status/` is refused: nothing at all is written under
+/// `critterHome` (where `status/../x.json` would land), yet the original still runs. The same
+/// call with a good id does write -- so the empty listing below is a real check.
 @Test func statusLineRejectsBadSessionId() {
+    func everything(under paths: CritterPaths) -> Set<String> {
+        Set((FileManager.default.enumerator(atPath: paths.critterHome.path)?.allObjects as? [String]) ?? [])
+    }
+    for bad in ["../x", "../../x", "x/../../x", "x/y", ".", ""] {
+        let paths = tmpPaths()
+        let shell = FakeShell()
+        let input = Data(#"{"session_id":"\#(bad)"}"#.utf8)
+        let result = StatusLineCommand.run(arguments: ["statusline", "--", "orig"], stdin: input, paths: paths, now: 1, shell: shell)
+        #expect(shell.calls.count == 1)
+        #expect(result.rawStdout == Data("LINE".utf8))
+        #expect(everything(under: paths).isEmpty, Comment(rawValue: bad))
+        #expect(!FileManager.default.fileExists(atPath: paths.critterHome.deletingLastPathComponent().appendingPathComponent("x.json").path))
+    }
+
     let paths = tmpPaths()
+    _ = StatusLineCommand.run(arguments: ["statusline", "--", "orig"], stdin: Data(#"{"session_id":"x"}"#.utf8), paths: paths, now: 1, shell: FakeShell())
+    #expect(everything(under: paths) == ["status", "status/x.json"])
+}
+
+/// The original command's output goes out byte for byte -- also bytes that aren't UTF-8.
+@Test func statusLinePassesInvalidUTF8Through() {
     let shell = FakeShell()
-    let input = #"{"session_id":"../x"}"#
-    let result = StatusLineCommand.run(arguments: ["statusline", "--", "orig"], stdin: Data(input.utf8), paths: paths, now: 1, shell: shell)
-    #expect(shell.calls.count == 1)
-    #expect(result.stdout == "LINE")
-    #expect(!FileManager.default.fileExists(atPath: paths.critterHome.deletingLastPathComponent().appendingPathComponent("x.json").path))
-    #expect(StatusLineStore(paths: paths).readAll().isEmpty)
+    shell.reply = (Data([0x41, 0xFF, 0x42]), 0)
+    let result = StatusLineCommand.run(
+        arguments: ["statusline", "--", "orig"], stdin: Data(fullInput.utf8), paths: tmpPaths(), now: 1, shell: shell
+    )
+    #expect(result.rawStdout == Data([0x41, 0xFF, 0x42]))
+    #expect(result.exitCode == 0)
 }
 
 @Test func statusLinePassesOriginalExitCode() {

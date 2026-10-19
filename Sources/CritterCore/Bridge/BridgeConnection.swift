@@ -40,9 +40,12 @@ public final class BridgeConnection {
 
     public private(set) var phase: Phase = .awaitingFirst
     private let services: BridgeServices
+    /// Epoch milliseconds, for telling whether a request has expired.
+    private let now: () -> Int64
 
-    public init(services: BridgeServices) {
+    public init(services: BridgeServices, now: @escaping () -> Int64 = { Int64(Date().timeIntervalSince1970 * 1000) }) {
         self.services = services
+        self.now = now
     }
 
     public func receive(_ frame: Data) -> [Output] {
@@ -117,6 +120,11 @@ public final class BridgeConnection {
             guard let request = services.pendingRequest(requestId) else {
                 return result(id, .resolved, "已在电脑上处理")
             }
+            // From `expiresAt` on the hook has stopped waiting (it gives up then), so an answer
+            // would go nowhere; the request is about to be swept.
+            guard now() < request.expiresAt else {
+                return result(id, .expired, "这个请求已经过期了")
+            }
             let input = services.originalToolInput(requestId) ?? [:]
             guard AskDecision.validate(payload, kind: request.kind, toolInput: input) else {
                 return result(id, .invalid, "答案无效")
@@ -130,8 +138,9 @@ public final class BridgeConnection {
             services.markSeen(sessionId: sessionId)
             return result(id, nil)
         case .say(let id, let sessionId, let text):
+            // Counted in UTF-16 code units, as phones count it (Kotlin's `String.length`).
             let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !trimmed.isEmpty, trimmed.count <= BridgeProtocol.maxSayChars else {
+            guard !trimmed.isEmpty, trimmed.utf16.count <= BridgeProtocol.maxSayUTF16Units else {
                 return result(id, .invalid, "文字为空或太长")
             }
             switch services.say(text: text, sessionId: sessionId) {

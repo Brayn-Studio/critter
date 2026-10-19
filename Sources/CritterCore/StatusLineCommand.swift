@@ -56,6 +56,6 @@ public enum StatusLineCommand {
             return HookResult(stdout: "", exitCode: 0)
         }
         let result = shell.run(command: arguments[2], stdin: stdin)
-        return HookResult(stdout: String(decoding: result.stdout, as: UTF8.self), exitCode: result.exitCode)
+        return HookResult(stdout: "", exitCode: result.exitCode, rawStdout: result.stdout)
     }
 }

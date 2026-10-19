@@ -34,7 +34,9 @@ let result = HookCommand.run(
     launcher: SystemAppLauncher()
 )
 
-if !result.stdout.isEmpty {
+if let raw = result.rawStdout {
+    if !raw.isEmpty { FileHandle.standardOutput.write(raw) }
+} else if !result.stdout.isEmpty {
     FileHandle.standardOutput.write(Data(result.stdout.utf8))
 }
 

@@ -50,6 +50,65 @@ import Testing
     #expect(registry.list().isEmpty)
 }
 
+/// A damaged devices file is not taken for an empty list and overwritten: it is set aside, kept
+/// as it was, and the registry starts a new one.
+@Test func corruptRegistryIsSetAside() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("reg-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let file = dir.appendingPathComponent("devices.json")
+    let damaged = Data(#"[{"id":"A","name":"Pixel","tokenHash":"#.utf8)
+    try damaged.write(to: file)
+
+    let registry = DeviceRegistry(file: file)
+    let (record, token) = try registry.add(name: "Pixel 9", now: 5)
+    #expect(registry.list().map(\.id) == [record.id])
+    #expect(registry.verify(deviceId: record.id, token: token) != nil)
+    let asides = try FileManager.default.contentsOfDirectory(atPath: dir.path).filter { $0.hasPrefix("devices.json.corrupt-") }
+    #expect(asides.count == 1)
+    #expect(try asides.first.map { try Data(contentsOf: dir.appendingPathComponent($0)) } == damaged)
+}
+
+private final class Recorder: @unchecked Sendable {
+    private let lock = NSLock()
+    private var items: [String] = []
+    func add(_ item: String) { lock.withLock { items.append(item) } }
+    var all: [String] { lock.withLock { items } }
+}
+
+@Test func corruptRegistryIsLogged() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("reg-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let file = dir.appendingPathComponent("devices.json")
+    try Data("not json".utf8).write(to: file)
+    let log = Recorder()
+    let registry = DeviceRegistry(file: file, log: { log.add($0) })
+    #expect(registry.list().isEmpty)
+    #expect(log.all.count == 1)
+    #expect(log.all.first?.contains("devices.json.corrupt-") == true)
+    #expect(registry.list().isEmpty) // set aside once: nothing more to report
+    #expect(log.all.count == 1)
+}
+
+/// Whether the id is known or not, `verify` hashes the token once and compares it in constant
+/// time -- so how long it takes doesn't tell which device ids exist.
+@Test func unknownIdStillHashes() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("reg-\(UUID().uuidString)")
+    defer { try? FileManager.default.removeItem(at: dir) }
+    let hashed = Recorder()
+    let registry = DeviceRegistry(file: dir.appendingPathComponent("devices.json"), log: { _ in }, hash: { token in
+        hashed.add(token)
+        return Hex.sha256(Data(token.utf8))
+    })
+    let (record, token) = try registry.add(name: "Pixel", now: 5)
+    let before = hashed.all.count
+    #expect(registry.verify(deviceId: "no-such-device", token: token) == nil)
+    #expect(hashed.all.count == before + 1)
+    #expect(registry.verify(deviceId: record.id, token: token)?.id == record.id)
+    #expect(hashed.all.count == before + 2)
+}
+
 /// A phone's name comes off the network: one line, at most 64 characters, never empty.
 @Test func deviceNameIsClampedToOneShortLine() {
     #expect(BridgeProtocol.deviceName("Pixel 9") == "Pixel 9")

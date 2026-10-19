@@ -15,7 +15,8 @@ public struct ContextEstimate: Equatable, Sendable {
 public enum ContextUsage {
     /// The latest assistant turn's token usage in the tail of a transcript. The tail starts at an
     /// arbitrary byte, so its first line may be cut off, and the last line may still be being
-    /// written; both are dropped.
+    /// written; both are dropped. A usage that adds up to 0 (a synthetic message) says nothing
+    /// about the context, so the turn before it counts instead.
     public static func lastUsage(inTranscriptTail tail: Data) -> ContextEstimate? {
         let lines = tail.split(separator: UInt8(ascii: "\n"), omittingEmptySubsequences: false)
         for line in lines.dropFirst().dropLast().reversed() {
@@ -24,10 +25,9 @@ public enum ContextUsage {
                   let message = obj["message"] as? [String: Any],
                   let usage = message["usage"] as? [String: Any] else { continue }
             func tokens(_ key: String) -> Int { (usage[key] as? NSNumber)?.intValue ?? 0 }
-            return ContextEstimate(
-                usedTokens: tokens("input_tokens") + tokens("cache_creation_input_tokens") + tokens("cache_read_input_tokens"),
-                model: message["model"] as? String
-            )
+            let used = tokens("input_tokens") + tokens("cache_creation_input_tokens") + tokens("cache_read_input_tokens")
+            guard used > 0 else { continue }
+            return ContextEstimate(usedTokens: used, model: message["model"] as? String)
         }
         return nil
     }

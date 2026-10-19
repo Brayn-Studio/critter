@@ -105,6 +105,35 @@ private func fire(_ event: String, session: String = "s1", tool: String? = nil, 
     #expect(ids(store) == ["a"])
 }
 
+/// With no request waiting -- the phone feature off, or nothing asked -- an event doesn't look at
+/// the tool input (so no match key is computed) and creates nothing.
+@Test func emptyPendingDirectoryDoesNoWork() throws {
+    let (paths, _) = tmpEnv()
+    let store = PendingStore(paths: paths)
+    var inputLookups = 0
+    func toolInput() -> Any? {
+        inputLookups += 1
+        return ["command": "ls"]
+    }
+    for event in ["PostToolUse", "PostToolUseFailure", "PermissionDenied", "UserPromptSubmit", "Stop", "SessionEnd"] {
+        PendingResolution.apply(event: event, sessionId: "s1", toolName: "Bash", toolInput: toolInput(), store: store)
+    }
+    #expect(inputLookups == 0)
+    #expect(!FileManager.default.fileExists(atPath: paths.pendingDir.path))
+
+    // A directory holding nothing but a temp file from an interrupted write counts as empty.
+    try FileManager.default.createDirectory(at: paths.pendingDir, withIntermediateDirectories: true)
+    try Data("{".utf8).write(to: paths.pendingDir.appendingPathComponent(".a.json.tmp-1-2"))
+    PendingResolution.apply(event: "PostToolUse", sessionId: "s1", toolName: "Bash", toolInput: toolInput(), store: store)
+    #expect(inputLookups == 0)
+
+    // With a request waiting, the input is what finds it.
+    try store.write(pending("a", input: ["command": "ls"]))
+    PendingResolution.apply(event: "PostToolUse", sessionId: "s1", toolName: "Bash", toolInput: toolInput(), store: store)
+    #expect(inputLookups == 1)
+    #expect(ids(store).isEmpty)
+}
+
 @Test func eventStillPrintsNothing() throws {
     let (paths, env) = tmpEnv()
     try PendingStore(paths: paths).write(pending("a", input: ["command": "a"]))

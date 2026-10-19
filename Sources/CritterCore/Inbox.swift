@@ -30,9 +30,7 @@ public struct InboxStore: Sendable {
         guard let file = paths.sessionScopedFile(in: paths.inboxDir, sessionId: record.sessionId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
-        try FileManager.default.createDirectory(
-            at: paths.inboxDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
+        try PrivateDirectory.ensure(paths.inboxDir)
         try atomicWrite(JSONEncoder().encode(record), to: file, permissions: 0o600)
     }
 

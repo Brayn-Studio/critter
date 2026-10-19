@@ -95,7 +95,7 @@ Question:
 {"id":"c3","payload":{"answers":{"Which database?":"PostgreSQL"}},"requestId":"req-3","type":"answer"}
 ```
 
-Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
+Plan, approve is `{"decision":"approve"}`; revise needs a `message` that is non-empty after trimming whitespace (Claude Code gets the trimmed text):
 
 ```json
 {"id":"c4","payload":{"decision":"revise","message":"Split step 2"},"requestId":"req-4","type":"answer"}
@@ -105,11 +105,11 @@ Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
 
 ### AskUserQuestion answers
 
-`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. The keys must be exactly the request's questions -- **every question answered**, none added -- and every value must be non-empty and at most 4000 characters (after trimming whitespace). A partial answer gets `invalid`.
+`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. The keys must be exactly the request's questions -- **every question answered**, none added -- and every value must be non-empty and at most 4000 characters (after trimming whitespace). A partial answer gets `invalid`. Claude Code gets the trimmed values -- the same text that was checked.
 
 - Single-select: the value is the **option label** that was chosen.
 - Free text ("Other"): the value is the **text itself**.
-- Multi-select (`multiSelect: true`): the value is the chosen **option labels joined with `", "`** (comma and one space), in the options' order, e.g. `"A, B"`. Verified against a real Claude Code 2.1.302 session on 2026-10-19: Claude reported receiving exactly `A, B`. The Mac passes the string through unchanged.
+- Multi-select (`multiSelect: true`): the value is the chosen **option labels joined with `", "`** (comma and one space), in the options' order, e.g. `"A, B"`. Verified against a real Claude Code 2.1.302 session on 2026-10-19: Claude reported receiving exactly `A, B`. The Mac passes the string through unchanged apart from trimming whitespace at its ends.
 
 ### seen
 
@@ -121,7 +121,7 @@ Tells the Mac the user has looked at a session (clears its "done"/"error" attent
 
 ### say
 
-Sends text into a session. Trimmed text must be non-empty and at most 4000 characters.
+Sends text into a session. Trimmed text must be non-empty and at most 4000 UTF-16 code units (what Kotlin's `String.length` counts; most emoji take two), else `invalid`. The Mac sends the trimmed text.
 
 ```json
 {"id":"c6","sessionId":"s1","text":"continue","type":"say"}
@@ -260,4 +260,4 @@ Failure:
 {"id":"c1","message":"已在电脑上处理","ok":false,"reason":"resolved","type":"result"}
 ```
 
-`reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired`, `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.
+`reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired` (an answer to a request whose `expiresAt` has come: the hook no longer waits for it, so nothing is written; message `这个请求已经过期了`), `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.

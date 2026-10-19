@@ -37,3 +37,42 @@ public struct HookInput: Decodable, Sendable {
         case commandName = "command_name"
     }
 }
+
+extension HookInput {
+    /// The `HookInput` decoding would give, built from the payload as `JSONSerialization` parsed
+    /// it -- so the event hook parses its stdin once and still has `tool_input` exactly as parsed.
+    /// Nil wherever decoding fails: a required string missing, null or of another type, or an
+    /// optional field present with another type (null counts as absent).
+    public init?(json root: [String: Any]) {
+        var wrongType = false
+        func optional(_ key: CodingKeys) -> String? {
+            guard let value = root[key.rawValue], !(value is NSNull) else { return nil }
+            guard let string = value as? String else {
+                wrongType = true
+                return nil
+            }
+            return string
+        }
+        guard let sessionId = root[CodingKeys.sessionId.rawValue] as? String,
+              let cwd = root[CodingKeys.cwd.rawValue] as? String,
+              let hookEventName = root[CodingKeys.hookEventName.rawValue] as? String else { return nil }
+        self.sessionId = sessionId
+        self.cwd = cwd
+        self.hookEventName = hookEventName
+        transcriptPath = optional(.transcriptPath)
+        source = optional(.source)
+        reason = optional(.reason)
+        prompt = optional(.prompt)
+        toolName = optional(.toolName)
+        notificationType = optional(.notificationType)
+        message = optional(.message)
+        lastAssistantMessage = optional(.lastAssistantMessage)
+        errorType = optional(.errorType)
+        errorMessage = optional(.errorMessage)
+        commandName = optional(.commandName)
+        if let value = root[CodingKeys.toolInput.rawValue], !(value is NSNull) {
+            toolInput = JSONValue(any: value)
+        }
+        if wrongType { return nil }
+    }
+}

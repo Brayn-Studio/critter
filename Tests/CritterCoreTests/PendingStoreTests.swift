@@ -81,9 +81,38 @@ private func permissions(_ url: URL) -> Int? {
     try store.write(request("dead", pid: 999))
     try store.write(request("ok"))
     try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "ok")
-    try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "orphan")
+    // An answer with no request (left over from before a crash); `writeAnswer` itself won't leave one.
+    try JSONEncoder().encode(AnswerPayload(decision: "allow")).write(to: paths.answersDir.appendingPathComponent("orphan.json"))
     store.sweep(now: 1000, isAlive: { $0 != 999 })
     #expect(store.readAll().map(\.requestId) == ["ok"])
     #expect(store.readAnswer(requestId: "ok") != nil)
     #expect(store.readAnswer(requestId: "orphan") == nil)
+}
+
+/// The hook acted on the first answer and cleaned up (the request first, then the answer): a
+/// late answer is refused like any second one -- and is not left behind in `answers`.
+@Test func answerAfterTheRequestWasTakenIsRefused() throws {
+    let paths = tmpPaths()
+    let store = PendingStore(paths: paths)
+    try store.write(request("r1"))
+    #expect(try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "r1"))
+    store.remove(requestId: "r1")
+    #expect(try !store.writeAnswer(AnswerPayload(decision: "deny"), requestId: "r1"))
+    #expect(store.readAnswer(requestId: "r1") == nil)
+    #expect(try FileManager.default.contentsOfDirectory(atPath: paths.answersDir.path).isEmpty)
+}
+
+/// Directories made by someone else (or an older version) with the default mode are made
+/// private again before anything is written into them.
+@Test func existingLooseDirectoryIsTightened() throws {
+    let paths = tmpPaths()
+    for dir in [paths.pendingDir, paths.answersDir] {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        #expect(permissions(dir) == 0o755)
+    }
+    let store = PendingStore(paths: paths)
+    try store.write(request("r1"))
+    #expect(permissions(paths.pendingDir) == 0o700)
+    try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "r1")
+    #expect(permissions(paths.answersDir) == 0o700)
 }

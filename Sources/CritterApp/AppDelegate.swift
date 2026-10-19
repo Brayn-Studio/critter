@@ -523,7 +523,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let bridgeEnabled = settings.bridgeEnabled && bridge.isServing
         let lastClientSeen = bridge.lastClientSeen
         let heartbeat = Int64(Date().timeIntervalSince1970 * 1000)
-        let version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        let version = AppVersion.current
         let store = appStatusStore
         heartbeatQueue.async {
             // `startTime` lets critter-hook tell this process from a later one that reuses its

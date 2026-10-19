@@ -43,13 +43,17 @@ public struct SystemAppLauncher: AppLauncher {
 
 /// What `critter-hook` printed to stdout, and the exit code it reported (which per the
 /// Global Constraints is always 0 -- a misbehaving hook must never block Claude Code).
+/// `rawStdout`, when set, is printed instead of `stdout`, byte for byte: `statusline` passes
+/// another program's output through, and that need not be UTF-8.
 public struct HookResult: Equatable, Sendable {
     public let stdout: String
     public let exitCode: Int32
+    public let rawStdout: Data?
 
-    public init(stdout: String, exitCode: Int32) {
+    public init(stdout: String, exitCode: Int32, rawStdout: Data? = nil) {
         self.stdout = stdout
         self.exitCode = exitCode
+        self.rawStdout = rawStdout
     }
 }
 
@@ -122,7 +126,12 @@ public enum HookCommand {
         guard let original = try? Data(contentsOf: settingsFile) else {
             return refuse("找不到 \(paths.claudeSettingsFile.path)，没有改动。")
         }
+        // Only text that encodes back to the very same bytes: bytes that aren't UTF-8 would
+        // otherwise be written back as U+FFFD.
         let text = String(decoding: original, as: UTF8.self)
+        guard Data(text.utf8) == original else {
+            return refuse("settings.json 不是有效的 UTF-8，没有改动。")
+        }
         let updated: String
         do {
             updated = install
@@ -138,9 +147,10 @@ public enum HookCommand {
         }
 
         do {
-            try FileManager.default.createDirectory(at: paths.backupDir, withIntermediateDirectories: true)
-            try atomicWrite(original, to: paths.backupDir.appendingPathComponent("settings.json.\(now)"))
             let permissions = (try? FileManager.default.attributesOfItem(atPath: settingsFile.path)[.posixPermissions]) as? Int
+            // settings.json may hold keys: the copy is no easier to read than the original.
+            try PrivateDirectory.ensure(paths.backupDir)
+            try atomicWrite(original, to: paths.backupDir.appendingPathComponent("settings.json.\(now)"), permissions: permissions ?? 0o600)
             try atomicWrite(Data(updated.utf8), to: settingsFile, permissions: permissions)
         } catch {
             return refuse("写入失败：\(error.localizedDescription)，没有改动。")
@@ -158,7 +168,10 @@ public enum HookCommand {
         hookParentPid: Int32,
         processes: ProcessInspecting
     ) {
-        guard let input = try? JSONDecoder().decode(HookInput.self, from: stdin) else { return }
+        // Parsed once: the payload that makes the `HookInput` also carries `tool_input` exactly as
+        // `critter-hook ask` saw it, which its request's `matchKey` was computed from.
+        guard let root = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any],
+              let input = HookInput(json: root) else { return }
 
         let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
         let located = ClaudeProcessLocator.locate(
@@ -183,10 +196,9 @@ public enum HookCommand {
         logIfEnabled(paths: paths, sessionId: input.sessionId, event: input.hookEventName, suffix: describe(taken), now: now)
 
         // Phone-companion bookkeeping. Best effort: nothing here may disturb the state write above.
-        let toolInput = (try? JSONSerialization.jsonObject(with: stdin)).flatMap { ($0 as? [String: Any])?["tool_input"] }
         PendingResolution.apply(
             event: input.hookEventName, sessionId: input.sessionId, toolName: input.toolName,
-            toolInput: toolInput, store: PendingStore(paths: paths)
+            toolInput: root["tool_input"], store: PendingStore(paths: paths)
         )
         switch input.hookEventName {
         case "SessionStart":

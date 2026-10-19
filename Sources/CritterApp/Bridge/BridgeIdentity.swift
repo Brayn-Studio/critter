@@ -1,4 +1,4 @@
-import CryptoKit
+import CritterCore
 import Foundation
 import Security
 
@@ -68,7 +68,7 @@ enum BridgeIdentity {
         var certificate: SecCertificate?
         guard SecIdentityCopyCertificate(identity, &certificate) == errSecSuccess, let certificate else { return nil }
         let der = SecCertificateCopyData(certificate) as Data
-        return (identity, SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined())
+        return (identity, Hex.sha256(der))
     }
 
     /// Runs `/usr/bin/openssl` in `dir` and makes every file it leaves there 0600 (the

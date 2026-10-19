@@ -9,23 +9,51 @@ public enum StateStoreError: Error, Sendable, Equatable {
 
 /// Writes `data` to `url` by first writing a same-directory hidden temp file and renaming
 /// it into place, so readers never observe a partial write. Shared by `StateStore` and
-/// `AppStatusStore`.
+/// `AppStatusStore`. With `permissions`, the file has that mode from the moment it exists;
+/// whatever step fails, the temp file is removed.
 func atomicWrite(_ data: Data, to url: URL, permissions: Int? = nil) throws {
     let dir = url.deletingLastPathComponent()
     let tmpURL = dir.appendingPathComponent(".\(url.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
-    try data.write(to: tmpURL)
-    if let permissions {
-        try FileManager.default.setAttributes([.posixPermissions: permissions], ofItemAtPath: tmpURL.path)
-    }
+    try createNewFile(data, at: tmpURL, permissions: permissions)
+    var renamed = false
+    defer { if !renamed { unlink(tmpURL.path) } }
     let renameStatus = tmpURL.withUnsafeFileSystemRepresentation { tmpPath in
         url.withUnsafeFileSystemRepresentation { destPath in
             rename(tmpPath!, destPath!)
         }
     }
-    guard renameStatus == 0 else {
-        let savedErrno = errno
-        try? FileManager.default.removeItem(at: tmpURL)
-        throw NSError(domain: NSPOSIXErrorDomain, code: Int(savedErrno))
+    guard renameStatus == 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    renamed = true
+}
+
+/// Creates `url`, which must not exist yet, holding `data`. With `permissions` it is created
+/// with exactly that mode (never readable by others for a moment, whatever the umask); without,
+/// with the default mode. Nothing is left at `url` if this throws.
+func createNewFile(_ data: Data, at url: URL, permissions: Int? = nil) throws {
+    let fd = open(url.path, O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC, mode_t(permissions ?? 0o666))
+    guard fd >= 0 else { throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno)) }
+    let handle = FileHandle(fileDescriptor: fd, closeOnDealloc: false)
+    var written = false
+    defer {
+        try? handle.close()
+        if !written { unlink(url.path) }
+    }
+    if let permissions, fchmod(fd, mode_t(permissions)) != 0 {
+        throw NSError(domain: NSPOSIXErrorDomain, code: Int(errno))
+    }
+    try handle.write(contentsOf: data)
+    written = true
+}
+
+/// Directories that hold secrets (pending requests, answers, inbox tokens): 0700.
+public enum PrivateDirectory {
+    /// Creates `dir` (and any missing parents) and leaves it 0700 -- also when it already
+    /// existed with a looser mode, which `createDirectory`'s attributes leave alone.
+    public static func ensure(_ dir: URL) throws {
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
     }
 }
 

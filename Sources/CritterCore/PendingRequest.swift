@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public enum PendingKind: String, Codable, Sendable {
@@ -69,8 +68,7 @@ public enum MatchKey {
            let data = try? JSONSerialization.data(withJSONObject: toolInput, options: [.sortedKeys, .withoutEscapingSlashes]) {
             serialized = String(decoding: data, as: UTF8.self)
         }
-        let digest = SHA256.hash(data: Data((toolName + "\n" + serialized).utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
+        return Hex.sha256(Data((toolName + "\n" + serialized).utf8))
     }
 }
 
@@ -87,8 +85,14 @@ public struct PendingStore: Sendable {
         guard let file = paths.sessionScopedFile(in: paths.pendingDir, sessionId: request.requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
-        try createPrivateDirectory(paths.pendingDir)
+        try PrivateDirectory.ensure(paths.pendingDir)
         try atomicWrite(JSONEncoder().encode(request), to: file, permissions: 0o600)
+    }
+
+    /// Whether any request file is there at all (without reading one). False when the
+    /// directory doesn't exist, which this never creates.
+    public var hasRequests: Bool {
+        !files(in: paths.pendingDir).isEmpty
     }
 
     /// Every decodable request; corrupt files and hidden temp files are skipped.
@@ -134,21 +138,26 @@ public struct PendingStore: Sendable {
     /// Only the first answer counts -- it is the one the hook acts on -- so a second one (from
     /// another phone, or a double tap) must not be taken as accepted. The file appears whole and
     /// at most once: it is written aside, then hard-linked into place, which fails if it exists.
+    /// An answer that arrives after the hook has acted on the first one and cleaned up (request
+    /// first, then answer) finds no request once it is in place: it is taken back and refused too.
     @discardableResult
     public func writeAnswer(_ answer: AnswerPayload, requestId: String) throws -> Bool {
-        guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId) else {
+        guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId),
+              let requestFile = paths.sessionScopedFile(in: paths.pendingDir, sessionId: requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
-        try createPrivateDirectory(paths.answersDir)
+        try PrivateDirectory.ensure(paths.answersDir)
         let temp = paths.answersDir.appendingPathComponent(".\(file.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
-        guard FileManager.default.createFile(
-            atPath: temp.path, contents: try JSONEncoder().encode(answer), attributes: [.posixPermissions: 0o600]
-        ) else { throw CocoaError(.fileWriteUnknown) }
+        try createNewFile(try JSONEncoder().encode(answer), at: temp, permissions: 0o600)
         defer { unlink(temp.path) }
         guard link(temp.path, file.path) == 0 else {
             let code = errno
             if code == EEXIST { return false }
             throw NSError(domain: NSPOSIXErrorDomain, code: Int(code))
+        }
+        guard FileManager.default.fileExists(atPath: requestFile.path) else {
+            unlink(file.path)
+            return false
         }
         return true
     }
@@ -173,11 +182,5 @@ public struct PendingStore: Sendable {
     private func files(in dir: URL) -> [URL] {
         let entries = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         return entries.filter { !$0.lastPathComponent.hasPrefix(".") && $0.pathExtension == "json" }
-    }
-
-    private func createPrivateDirectory(_ dir: URL) throws {
-        try FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
     }
 }

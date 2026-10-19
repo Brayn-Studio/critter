@@ -381,20 +381,11 @@ final class BridgeServer: @unchecked Sendable {
     private static func host(of endpoint: NWEndpoint) -> String? {
         guard case .hostPort(let host, _) = endpoint else { return nil }
         switch host {
-        case .ipv4(let address): return numeric(AF_INET, address.rawValue)
-        case .ipv6(let address): return numeric(AF_INET6, address.rawValue)
+        case .ipv4(let address): return IPAddress.string(address.rawValue)
+        case .ipv6(let address): return IPAddress.string(address.rawValue)
         case .name(let name, _): return name
         @unknown default: return nil
         }
-    }
-
-    private static func numeric(_ family: Int32, _ raw: Data) -> String? {
-        var buffer = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
-        let ok = raw.withUnsafeBytes { bytes in
-            inet_ntop(family, bytes.baseAddress, &buffer, socklen_t(buffer.count)) != nil
-        }
-        guard ok else { return nil }
-        return String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
     }
 }
 

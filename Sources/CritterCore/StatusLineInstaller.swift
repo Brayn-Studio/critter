@@ -26,10 +26,44 @@ public enum StatusLineInstaller {
         return "\(run) -- \(quoted)\(fallbackJoin)\(quoted)"
     }
 
-    /// The original command inside a wrapper -- today's form or the one before it
+    /// The original command inside a Critter wrapper made for any hook path -- a quoted path
+    /// ending in `/critter-hook`, then ` statusline` -- or `notWrapped`. So a wrapper made by an
+    /// install whose hook lived elsewhere (another home folder) is still recognised: install
+    /// rewraps it instead of nesting it, and uninstall restores it.
+    public static func unwrap(_ command: String) -> Unwrapped {
+        guard let hookPath = wrappedHookPath(command) else { return .notWrapped }
+        return unwrap(command, hookPath: hookPath)
+    }
+
+    /// The hook path a wrapper starts with (after `[ -x ` in today's form), if it is a
+    /// `critter-hook`. Only a candidate: `unwrap(_:hookPath:)` then checks the whole command.
+    private static func wrappedHookPath(_ command: String) -> String? {
+        let bytes = Array(command.utf8)
+        let guardPrefix = Array("[ -x ".utf8)
+        let quote = UInt8(ascii: "'")
+        let escapedQuote = Array(#"\''"#.utf8) // after a closing quote: `'\''` stands for one '
+        let start = bytes.starts(with: guardPrefix) ? guardPrefix.count : 0
+        guard start < bytes.count, bytes[start] == quote else { return nil }
+        var i = start + 1
+        while i < bytes.count {
+            if bytes[i] == quote {
+                if bytes[(i + 1)...].starts(with: escapedQuote) {
+                    i += 1 + escapedQuote.count
+                    continue
+                }
+                guard let path = shellUnquote(String(decoding: bytes[start...i], as: UTF8.self)),
+                      path.hasSuffix("/critter-hook") else { return nil }
+                return path
+            }
+            i += 1
+        }
+        return nil
+    }
+
+    /// The original command inside a wrapper for `hookPath` -- today's form or the one before it
     /// (`'<hook>' statusline [-- '<original>']`, which had no fallback) -- or `notWrapped`.
     /// Only exact `wrap` output counts, so a hand-edited command is never mistaken for one.
-    public static func unwrap(_ command: String, hookPath: String) -> Unwrapped {
+    static func unwrap(_ command: String, hookPath: String) -> Unwrapped {
         if command == wrap(original: nil, hookPath: hookPath) || command == legacyPrefix(hookPath) { return .original(nil) }
         let guarded = "[ -x \(shellQuote(hookPath)) ] && exec \(legacyPrefix(hookPath)) -- "
         if command.hasPrefix(guarded) {
@@ -46,12 +80,6 @@ public enum StatusLineInstaller {
         let legacy = legacyPrefix(hookPath) + " -- "
         guard command.hasPrefix(legacy), let original = shellUnquote(String(command.dropFirst(legacy.count))) else { return .notWrapped }
         return .original(original)
-    }
-
-    /// Whether `command` is a wrapper of the current form (`wrap`'s exact output).
-    static func isCurrentForm(_ command: String, hookPath: String) -> Bool {
-        guard case .original(let original) = unwrap(command, hookPath: hookPath) else { return false }
-        return command == wrap(original: original, hookPath: hookPath)
     }
 
     private static let fallbackJoin = " || exec /bin/sh -c "
@@ -78,27 +106,32 @@ public enum StatusLineInstaller {
             return doc.insertingStatusLine(command: wrap(original: nil, hookPath: hookPath))
         }
         let command = try doc.commandMember(of: member)
-        switch unwrap(command.value, hookPath: hookPath) {
+        switch unwrap(command.value) {
         case .notWrapped:
             return doc.replacing(command.range, with: encode(wrap(original: command.value, hookPath: hookPath)))
         case .original(let original):
-            // Already wrapped; one of the older form is brought up to date.
-            if isCurrentForm(command.value, hookPath: hookPath) { return settings }
-            return doc.replacing(command.range, with: encode(wrap(original: original, hookPath: hookPath)))
+            // Already wrapped. One of the older form, or for another hook path, is rewrapped
+            // around the same original -- never wrapped a second time.
+            let current = wrap(original: original, hookPath: hookPath)
+            if command.value == current { return settings }
+            return doc.replacing(command.range, with: encode(current))
         }
     }
 
+    /// Restores the original command of a Critter wrapper for any hook path (see `unwrap(_:)`).
     public static func uninstall(settings: String, hookPath: String) throws -> String {
         let doc = try Document(settings)
         guard let member = doc.statusLine,
               let command = try? doc.commandMember(of: member),
-              case .original(let original) = unwrap(command.value, hookPath: hookPath) else { return settings }
+              case .original(let original) = unwrap(command.value) else { return settings }
         if let original {
             return doc.replacing(command.range, with: encode(original))
         }
         return doc.removing(member)
     }
 
+    /// `installed` only for a wrapper around this `hookPath`: one for another path doesn't feed
+    /// this Critter (installing again fixes it).
     public static func status(settings: String, hookPath: String) -> Status {
         guard let doc = try? Document(settings), let member = doc.statusLine else { return .notInstalled }
         switch try? doc.commandMember(of: member) {
