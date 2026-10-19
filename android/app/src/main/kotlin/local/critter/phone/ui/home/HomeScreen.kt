@@ -77,7 +77,6 @@ import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
 import local.critter.core.protocol.RateWindow
 import local.critter.core.protocol.ResultReason
-import local.critter.core.protocol.SessionSource
 import local.critter.core.skin.SkinLibrary
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.critter.CritterPortrait
@@ -96,6 +95,7 @@ import local.critter.phone.ui.meadow.MeadowTag
 import local.critter.phone.ui.meadow.PetStage
 import local.critter.phone.ui.meadow.currentSkyTime
 import local.critter.phone.ui.rememberMinuteClock
+import local.critter.phone.ui.sourceIcon
 import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.theme.ButtonKind
 import local.critter.phone.ui.theme.ButtonSize
@@ -620,12 +620,6 @@ private fun MetaPiece(icon: String, text: String, modifier: Modifier = Modifier)
         PixelIcon(icon, tint = c.ink2)
         Text(text, color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
-}
-
-private fun sourceIcon(source: SessionSource): String = when (source) {
-    SessionSource.terminal -> "term"
-    SessionSource.vscode -> "editor"
-    SessionSource.desktop, SessionSource.other -> "laptop"
 }
 
 /** The request on a card: the command on a terminal slip, then 「拒绝」「允许」 or 「打开回答」. */

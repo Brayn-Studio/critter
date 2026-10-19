@@ -56,7 +56,6 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
-import local.critter.core.protocol.SessionSource
 import local.critter.core.skin.SkinManifest
 import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterView
@@ -64,6 +63,7 @@ import local.critter.phone.ui.folderName
 import local.critter.phone.ui.look.SkyTime
 import local.critter.phone.ui.look.skyColors
 import local.critter.phone.ui.meadow.STAGE_PET
+import local.critter.phone.ui.sourceIcon
 import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.LocalDarkTheme
@@ -319,13 +319,6 @@ private fun MetaItem(icon: String, text: String, modifier: Modifier) {
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
-}
-
-/** The icon for where a session runs. */
-internal fun sourceIcon(source: SessionSource): String = when (source) {
-    SessionSource.terminal -> "term"
-    SessionSource.vscode -> "editor"
-    SessionSource.desktop, SessionSource.other -> "laptop"
 }
 
 /**

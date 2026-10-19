@@ -79,7 +79,7 @@ import local.critter.phone.ui.sheet.LookAtYouCue
 import local.critter.phone.ui.sheet.SheetMessage
 import local.critter.phone.ui.sheet.SheetPet
 import local.critter.phone.ui.sheet.SheetScaffold
-import local.critter.phone.ui.sheet.sourceIcon
+import local.critter.phone.ui.sourceIcon
 import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.CritterTheme

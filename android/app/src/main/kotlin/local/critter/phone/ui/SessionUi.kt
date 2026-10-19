@@ -55,6 +55,13 @@ fun sourceLabel(source: SessionSource): String = when (source) {
     SessionSource.other -> "其它"
 }
 
+/** The pixel icon for where a session runs. */
+fun sourceIcon(source: SessionSource): String = when (source) {
+    SessionSource.terminal -> "term"
+    SessionSource.vscode -> "editor"
+    SessionSource.desktop, SessionSource.other -> "laptop"
+}
+
 /** The last path component of [cwd] ("/Users/me/proj" -> "proj"). */
 fun folderName(cwd: String): String = cwd.trimEnd('/').substringAfterLast('/').ifEmpty { cwd }
 
