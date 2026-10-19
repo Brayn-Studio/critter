@@ -1,22 +1,19 @@
 import CritterCore
-import Darwin
 import Foundation
 
-/// The phone bridge's brain (spec §6.5): switches the `BridgeServer` on and off, builds the
-/// snapshots it pushes (sessions from `SessionMonitor` plus branch, context, status-line data,
-/// skins and pending requests), carries out what phones ask for (`BridgeServices`), and runs
-/// pairing.
+/// The phone bridge's brain (spec §6.5): switches the `BridgeServer` on and off, pushes the
+/// snapshots `SnapshotAssembler` makes (sessions from `SessionMonitor` plus branch, context,
+/// status-line data, skins and pending requests), carries out what phones ask for
+/// (`BridgeServices`, in `BridgeController+Services.swift`), and runs pairing.
 ///
 /// All of it runs on its own serial queue, `local.critter.pet.bridge`, so nothing it does --
 /// or fails to do -- touches the pet's UI or the hooks. The main thread only hands it
 /// sessions and settings, and reads the few values below that sit behind `lock`. Switched off,
 /// nothing listens and nothing runs (no timers, no watchers); switched on with no phone
 /// connected, it only notes that something changed.
-final class BridgeController: BridgeServices, @unchecked Sendable {
+final class BridgeController: @unchecked Sendable {
     /// Changes are pushed together, at most this long after the first one.
     static let pushDelay: TimeInterval = 0.25
-    /// How much of a transcript's end is read to estimate its context usage.
-    private static let transcriptTailBytes = 64 * 1024
     /// A device's `lastSeen` on disk is refreshed at most this often.
     private static let touchIntervalMs: Int64 = 60_000
     /// After a failed start, the bridge tries again after this long, doubling up to the cap.
@@ -27,22 +24,22 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     /// any thread). Without it, pairing requests are declined.
     @MainActor var onPairRequest: (@MainActor (String, @escaping (Bool) -> Void) -> Void)?
 
+    // Not private where `BridgeController+Services.swift` uses them too.
     private let queue = DispatchQueue(label: "local.critter.pet.bridge", qos: .utility)
     private let paths: CritterPaths
-    private let skinSearchDirs: [URL]
-    private weak var monitor: SessionMonitor?
-    private let registry: DeviceRegistry
-    private let pendingStore: PendingStore
+    let skinSearchDirs: [URL]
+    weak var monitor: SessionMonitor?
+    let registry: DeviceRegistry
+    let pendingStore: PendingStore
     private let statusStore: StatusLineStore
-    private let inboxStore: InboxStore
-    private let home = NSHomeDirectory()
+    let inboxStore: InboxStore
 
     // Shared with the main thread, only behind `lock`.
-    private let lock = NSLock()
+    let lock = NSLock()
     private var listening: Listening?
     /// The listener is ready: phones can actually connect.
     private var serving = false
-    private var pairing: Pairing?
+    var pairing: Pairing?
     private var lastSeen: Int64?
     private var deviceList: [DeviceRecord] = []
 
@@ -57,9 +54,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     )
     private var pushScheduled = false
     /// The pairing code just consumed was issued with `autoApprove`.
-    private var approveNextPairing = false
-    private var branchCache: [String: CachedBranch] = [:]
-    private var estimateCache: [String: CachedEstimate] = [:]
+    var approveNextPairing = false
+    /// Snapshots, with their branch and context-estimate caches.
+    private let snapshots = SnapshotAssembler(home: NSHomeDirectory())
     private var lastTouched: [String: Int64] = [:]
     /// The last client number handed to a `BridgeServer`; never reset, so numbers stay unique
     /// across servers (see `BridgeServer.nextClientNumber`).
@@ -67,7 +64,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     private var retryDelay: TimeInterval = 0
     /// Bumped when the bridge is switched off, so a retry scheduled before doesn't fire.
     private var retryGeneration = 0
-    private lazy var computerName = Host.current().localizedName ?? "Mac"
+    lazy var computerName = Host.current().localizedName ?? "Mac"
 
     private struct Listening {
         var port: UInt16
@@ -75,22 +72,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         var macName: String
     }
 
-    private struct Pairing {
+    struct Pairing {
         var code: PairingCode
         var autoApprove: Bool
-    }
-
-    /// Keyed by cwd; valid while `HEAD`'s modification time is the same.
-    private struct CachedBranch {
-        var headModified: Date?
-        var branch: String?
-    }
-
-    /// Keyed by transcript path; valid while its size and modification time are the same.
-    private struct CachedEstimate {
-        var size: UInt64
-        var modified: Date
-        var estimate: ContextEstimate?
     }
 
     let version: String
@@ -147,7 +131,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     /// shows; nil while the bridge isn't listening or the Mac has no private-network address.
     /// With `autoApprove`, the phone that uses this code is paired without asking.
     func beginPairing(autoApprove: Bool) -> PairingURI? {
-        guard let host = Self.lanAddress() else { return nil }
+        guard let host = LANAddress.current() else { return nil }
         let code = PairingCode.generate(now: Self.nowMs())
         return lock.withLock {
             guard let listening else { return nil }
@@ -272,8 +256,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
             lastSeen = nil
         }
         approveNextPairing = false
-        branchCache = [:]
-        estimateCache = [:]
+        snapshots.reset()
     }
 
     /// The listener became ready, or went back to waiting (e.g. no network). While it waits,
@@ -335,61 +318,11 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         }
     }
 
-    private func buildSnapshot() -> SnapshotBody {
-        let now = Self.nowMs()
-        pendingStore.sweep(now: now, isAlive: ProcessTools.isAlive)
-        let statuses = statusStore.readAll()
-        let reported = Set(statuses.filter { $0.contextUsedPercentage != nil }.map(\.sessionId))
-
-        var branches: [String: String] = [:]
-        let cwds = Set(sessions.map(\.cwd).filter { !$0.isEmpty })
-        for cwd in cwds {
-            if let branch = branch(cwd: cwd) { branches[cwd] = branch }
-        }
-        branchCache = branchCache.filter { cwds.contains($0.key) }
-
-        var estimates: [String: ContextEstimate] = [:]
-        var transcripts: Set<String> = []
-        for session in sessions where !reported.contains(session.id) {
-            guard let path = session.transcriptPath, !path.isEmpty else { continue }
-            transcripts.insert(path)
-            if let estimate = estimate(transcript: path) { estimates[session.id] = estimate }
-        }
-        estimateCache = estimateCache.filter { transcripts.contains($0.key) }
-
-        return SnapshotBuilder.build(SnapshotInputs(
-            sessions: sessions, skins: skins, statuses: statuses, pending: pendingStore.readAll(),
-            branches: branches, estimates: estimates, prefs: prefs, home: home
-        ))
-    }
-
-    private func branch(cwd: String) -> String? {
-        let modified = GitBranch.headFile(cwd: cwd, stopAt: home).flatMap(Self.modificationDate)
-        if let cached = branchCache[cwd], cached.headModified == modified { return cached.branch }
-        let branch = GitBranch.read(cwd: cwd, stopAt: home)
-        branchCache[cwd] = CachedBranch(headModified: modified, branch: branch)
-        return branch
-    }
-
-    private func estimate(transcript path: String) -> ContextEstimate? {
-        guard let attributes = try? FileManager.default.attributesOfItem(atPath: path),
-              let size = (attributes[.size] as? NSNumber)?.uint64Value,
-              let modified = attributes[.modificationDate] as? Date else { return nil }
-        if let cached = estimateCache[path], cached.size == size, cached.modified == modified { return cached.estimate }
-        let estimate = Self.tail(of: path, size: size).flatMap(ContextUsage.lastUsage(inTranscriptTail:))
-        estimateCache[path] = CachedEstimate(size: size, modified: modified, estimate: estimate)
-        return estimate
-    }
-
-    /// The last `transcriptTailBytes` of a file. `ContextUsage.lastUsage` drops the first line
-    /// as possibly cut off, so when the whole file fits, a newline goes in front of it.
-    private static func tail(of path: String, size: UInt64) -> Data? {
-        guard let handle = FileHandle(forReadingAtPath: path) else { return nil }
-        defer { try? handle.close() }
-        let offset = size > UInt64(transcriptTailBytes) ? size - UInt64(transcriptTailBytes) : 0
-        guard (try? handle.seek(toOffset: offset)) != nil, var data = try? handle.readToEnd() else { return nil }
-        if offset == 0 { data.insert(UInt8(ascii: "\n"), at: 0) }
-        return data
+    func buildSnapshot() -> SnapshotBody {
+        pendingStore.sweep(now: Self.nowMs(), isAlive: ProcessTools.isAlive)
+        return snapshots.build(
+            sessions: sessions, skins: skins, statuses: statusStore.readAll(), pending: pendingStore.readAll(), prefs: prefs
+        )
     }
 
     // MARK: - Pairing
@@ -442,114 +375,9 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         lock.withLock { deviceList = list }
     }
 
-    // MARK: - BridgeServices (called by `BridgeConnection`, on the bridge queue)
-
-    var macName: String { computerName }
-
-    func verify(deviceId: String, token: String) -> DeviceRecord? {
-        registry.verify(deviceId: deviceId, token: token)
-    }
-
-    func consumePairingCode(_ code: String) -> Bool {
-        let now = Self.nowMs()
-        let consumed: Pairing? = lock.withLock {
-            guard let current = pairing, now <= current.code.expiresAt else {
-                pairing = nil
-                return nil
-            }
-            guard current.code.code == code.uppercased() else { return nil }
-            pairing = nil
-            return current
-        }
-        guard let consumed else { return false }
-        approveNextPairing = consumed.autoApprove
-        return true
-    }
-
-    func pendingRequest(_ requestId: String) -> PendingRequest? {
-        pendingStore.read(requestId: requestId)
-    }
-
-    /// The request's input as published; question texts are never truncated in it.
-    func originalToolInput(_ requestId: String) -> [String: Any]? {
-        guard let input = pendingStore.read(requestId: requestId)?.input,
-              let data = try? JSONEncoder().encode(input) else { return nil }
-        return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
-    }
-
-    func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome {
-        do {
-            return try pendingStore.writeAnswer(payload, requestId: requestId) ? .accepted : .alreadyAnswered
-        } catch {
-            return .failed
-        }
-    }
-
-    func markSeen(sessionId: String) {
-        DispatchQueue.main.async { [weak monitor] in
-            // Safe: `DispatchQueue.main` always runs on the main thread/actor.
-            MainActor.assumeIsolated { monitor?.markSeen(sessionId) }
-        }
-    }
-
-    func say(text: String, sessionId: String) -> SayOutcome {
-        guard let record = inboxStore.read(sessionId: sessionId) else { return .unavailable }
-        do {
-            try InboxSender.send(text: text.trimmingCharacters(in: .whitespacesAndNewlines), to: record)
-            return .sent
-        } catch {
-            return .failed
-        }
-    }
-
-    /// Only plain skin folder names: the name comes off the network, so nothing that could
-    /// walk out of the skin directories.
-    func skinManifest(name: String) -> JSONValue? {
-        guard (1...64).contains(name.count),
-              name.unicodeScalars.allSatisfy({ $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") })
-        else { return nil }
-        for dir in skinSearchDirs where SkinLoader.find(name: name, searchDirs: [dir]) != nil {
-            if let data = try? Data(contentsOf: dir.appendingPathComponent(name).appendingPathComponent("manifest.json")),
-               let manifest = try? JSONDecoder().decode(JSONValue.self, from: data) {
-                return manifest
-            }
-        }
-        guard name.caseInsensitiveCompare(SkinLoader.builtin().name) == .orderedSame else { return nil }
-        return try? JSONDecoder().decode(JSONValue.self, from: Data(SkinLoader.builtinJSON.utf8))
-    }
-
-    /// `seq` is a placeholder: `BridgeServer` numbers snapshots per connection.
-    func snapshotMessage() -> ServerMessage {
-        .snapshot(seq: 0, sentAt: Self.nowMs(), body: buildSnapshot())
-    }
-
     // MARK: - Helpers
 
-    /// The Mac's address for the pairing QR code: the first private IPv4 address of an active
-    /// interface, Wi-Fi/Ethernet (`en*`) first and link-local last.
-    private static func lanAddress() -> String? {
-        var list: UnsafeMutablePointer<ifaddrs>?
-        guard getifaddrs(&list) == 0, let first = list else { return nil }
-        defer { freeifaddrs(list) }
-        var best: (rank: Int, address: String)?
-        for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
-            let flags = Int32(entry.pointee.ifa_flags)
-            guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0,
-                  let sockaddr = entry.pointee.ifa_addr, sockaddr.pointee.sa_family == UInt8(AF_INET) else { continue }
-            let addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
-            guard let address = IPAddress.string(addr), PrivateNetwork.isAllowed(host: address) else { continue }
-            let name = String(cString: entry.pointee.ifa_name)
-            let rank = address.hasPrefix("169.254.") ? 3 : name == "en0" ? 0 : name.hasPrefix("en") ? 1 : 2
-            if best == nil || rank < best!.rank { best = (rank, address) }
-        }
-        return best?.address
-    }
-
-    private static func modificationDate(_ url: URL) -> Date? {
-        (try? FileManager.default.attributesOfItem(atPath: url.path))?[.modificationDate] as? Date
-    }
-
-    private static func nowMs() -> Int64 {
+    static func nowMs() -> Int64 {
         Int64(Date().timeIntervalSince1970 * 1000)
     }
 }
