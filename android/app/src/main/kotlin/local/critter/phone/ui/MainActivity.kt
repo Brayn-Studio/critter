@@ -65,8 +65,11 @@ class MainActivity : ComponentActivity() {
      */
     private var onboardingRunning by mutableStateOf(false)
 
-    private val onboarding = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+    private val onboarding = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
         onboardingRunning = false
+        // Backed out of before pairing: what is behind it is the same pairing screen, so leave instead. The
+        // onboarding starts again next time.
+        if (result.resultCode != RESULT_OK && repository.pairing.value == null) finish()
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {

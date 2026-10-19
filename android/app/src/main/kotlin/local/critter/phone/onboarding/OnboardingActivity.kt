@@ -94,6 +94,7 @@ class OnboardingActivity : ComponentActivity() {
             } else {
                 if (!onlyKeepAlive) repo.settingsStore.update { it.copy(onboardingDone = true) }
                 BridgeService.sync(context, repo)
+                setResult(RESULT_OK)
                 finish()
             }
         }
