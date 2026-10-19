@@ -5,7 +5,8 @@ import Foundation
 public enum BridgeProtocol {
     public static let version = 1
     public static let maxFrameBytes = 1_048_576
-    public static let maxSayChars = 4000
+    /// How long `say` text may be once trimmed, in UTF-16 code units (as phones count it).
+    public static let maxSayUTF16Units = 4000
     public static let defaultPort: UInt16 = 47823
     public static let portRange: ClosedRange<UInt16> = 47823...47832
     public static let bonjourType = "_critter._tcp"

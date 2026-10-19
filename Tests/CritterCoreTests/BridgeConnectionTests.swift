@@ -32,9 +32,9 @@ private final class FakeServices: BridgeServices {
     }
 }
 
-private func request(_ id: String, kind: PendingKind) -> PendingRequest {
+private func request(_ id: String, kind: PendingKind, expiresAt: Int64 = .max) -> PendingRequest {
     PendingRequest(requestId: id, sessionId: "s", kind: kind, toolName: "T", summary: "", input: .null,
-                   matchKey: "k", createdAt: 0, expiresAt: 1, hookPid: 1)
+                   matchKey: "k", createdAt: 0, expiresAt: expiresAt, hookPid: 1)
 }
 
 private func hello(version: Int = 1, token: String = "tok") -> Data {
@@ -171,6 +171,49 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
     #expect(reason("hi") == .unavailable)
     s.sayResult = .failed
     #expect(reason("hi") == .failed)
+}
+
+/// The length is counted in UTF-16 code units, as the phone counts it (Kotlin's `String.length`):
+/// whatever a phone lets through, the Mac takes.
+@Test func sayCountsUTF16Units() {
+    let s = FakeServices()
+    let c = readyConnection(s)
+    func reason(_ text: String) -> ResultReason? {
+        guard case .send(.result(_, _, let r, _))? = c.receive(ClientMessage.say(id: "1", sessionId: "s", text: text).encode()).first else { return .expired }
+        return r
+    }
+    let emoji = "😀" // one character, two UTF-16 code units
+    #expect(reason(String(repeating: emoji, count: 2000)) == nil)
+    #expect(reason("  " + String(repeating: emoji, count: 2000) + "\n") == nil)
+    #expect(reason(String(repeating: emoji, count: 2000) + "a") == .invalid)
+    #expect(s.said.count == 2)
+    // A frame exactly as phones have always sent it (the protocol doc's example).
+    let docFrame = Data(#"{"id":"c6","sessionId":"s1","text":"continue","type":"say"}"#.utf8)
+    #expect(c.receive(docFrame) == [.send(.result(id: "c6", ok: true, reason: nil, message: nil))])
+    #expect(s.said.last.map { [$0.0, $0.1] } == ["continue", "s1"])
+}
+
+/// Once its `expiresAt` has come the hook no longer waits for an answer: one that arrives then
+/// is turned away as `expired`, and nothing is written.
+@Test func answerToAnExpiredRequestSaysExpired() {
+    let s = FakeServices()
+    let now: Int64 = 1_000_000
+    let c = BridgeConnection(services: s, now: { now })
+    _ = c.receive(hello())
+    s.requests["late"] = request("late", kind: .permission, expiresAt: now - 1)
+    s.requests["due"] = request("due", kind: .permission, expiresAt: now)
+    s.requests["fine"] = request("fine", kind: .permission, expiresAt: now + 1)
+    for id in ["late", "due"] {
+        let out = c.receive(ClientMessage.answer(id: "a", requestId: id, payload: AnswerPayload(decision: "allow")).encode())
+        #expect(out == [.send(.result(id: "a", ok: false, reason: .expired, message: "这个请求已经过期了"))])
+    }
+    // A frame exactly as phones have always sent it (the protocol doc's example).
+    let docFrame = Data(#"{"id":"c1","payload":{"decision":"allow"},"requestId":"late","type":"answer"}"#.utf8)
+    #expect(c.receive(docFrame) == [.send(.result(id: "c1", ok: false, reason: .expired, message: "这个请求已经过期了"))])
+    #expect(s.submitted.isEmpty)
+    let out = c.receive(ClientMessage.answer(id: "b", requestId: "fine", payload: AnswerPayload(decision: "allow")).encode())
+    #expect(out == [.send(.result(id: "b", ok: true, reason: nil, message: nil))])
+    #expect(s.submitted.map(\.1) == ["fine"])
 }
 
 @Test func seenMarksSession() {

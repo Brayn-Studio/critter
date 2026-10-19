@@ -121,7 +121,7 @@ Tells the Mac the user has looked at a session (clears its "done"/"error" attent
 
 ### say
 
-Sends text into a session. Trimmed text must be non-empty and at most 4000 characters.
+Sends text into a session. Trimmed text must be non-empty and at most 4000 UTF-16 code units (what Kotlin's `String.length` counts; most emoji take two), else `invalid`. The Mac sends the trimmed text.
 
 ```json
 {"id":"c6","sessionId":"s1","text":"continue","type":"say"}
@@ -260,4 +260,4 @@ Failure:
 {"id":"c1","message":"已在电脑上处理","ok":false,"reason":"resolved","type":"result"}
 ```
 
-`reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired`, `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.
+`reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired` (an answer to a request whose `expiresAt` has come: the hook no longer waits for it, so nothing is written; message `这个请求已经过期了`), `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.
