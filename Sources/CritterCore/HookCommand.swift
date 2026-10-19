@@ -138,9 +138,10 @@ public enum HookCommand {
         }
 
         do {
-            try FileManager.default.createDirectory(at: paths.backupDir, withIntermediateDirectories: true)
-            try atomicWrite(original, to: paths.backupDir.appendingPathComponent("settings.json.\(now)"))
             let permissions = (try? FileManager.default.attributesOfItem(atPath: settingsFile.path)[.posixPermissions]) as? Int
+            // settings.json may hold keys: the copy is no easier to read than the original.
+            try PrivateDirectory.ensure(paths.backupDir)
+            try atomicWrite(original, to: paths.backupDir.appendingPathComponent("settings.json.\(now)"), permissions: permissions ?? 0o600)
             try atomicWrite(Data(updated.utf8), to: settingsFile, permissions: permissions)
         } catch {
             return refuse("写入失败：\(error.localizedDescription)，没有改动。")

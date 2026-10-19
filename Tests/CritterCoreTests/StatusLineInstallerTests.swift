@@ -199,8 +199,12 @@ private func runCLI(_ sub: String, env: [String: String], now: Int64 = 42) -> Ho
 
     let result = runCLI("statusline-install", env: env)
     #expect(result.exitCode == 0 && !result.stdout.isEmpty)
-    let backup = try String(contentsOf: paths.backupDir.appendingPathComponent("settings.json.42"), encoding: .utf8)
+    let backupFile = paths.backupDir.appendingPathComponent("settings.json.42")
+    let backup = try String(contentsOf: backupFile, encoding: .utf8)
     #expect(backup == original)
+    // settings.json may hold keys: its copy is no easier to read than it is.
+    #expect(try FileManager.default.attributesOfItem(atPath: backupFile.path)[.posixPermissions] as? Int == 0o600)
+    #expect(try FileManager.default.attributesOfItem(atPath: paths.backupDir.path)[.posixPermissions] as? Int == 0o700)
     let written = try String(contentsOf: paths.claudeSettingsFile, encoding: .utf8)
     #expect(StatusLineInstaller.status(settings: written, hookPath: paths.binDir.appendingPathComponent("critter-hook").path) == .installed)
     let perms = try FileManager.default.attributesOfItem(atPath: paths.claudeSettingsFile.path)[.posixPermissions] as? Int
