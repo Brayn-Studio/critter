@@ -63,6 +63,7 @@ import local.critter.phone.onboarding.bundledSkin
 import local.critter.phone.service.BridgeService
 import local.critter.phone.ui.connText
 import local.critter.phone.ui.meadow.LonePet
+import local.critter.phone.ui.look.skyColors
 import local.critter.phone.ui.meadow.MeadowBackdrop
 import local.critter.phone.ui.meadow.PetStage
 import local.critter.phone.ui.meadow.STAGE_PET
@@ -557,11 +558,12 @@ private fun SkinTile(label: String, on: Boolean, onClick: () -> Unit, picture: @
     }
 }
 
-/** "跟着电脑": the meadow with a little computer on it. */
+/** "跟着电脑": the meadow with a little computer on it, in the sky's ink so it shows at night too. */
 @Composable
 private fun BoxScope.FollowPicture() {
-    MeadowBackdrop(currentSkyTime(), 61.dp, Modifier.matchParentSize())
-    PixelIcon("laptop", Modifier.align(Alignment.Center), tint = Critter.colors.ink2, cell = 4.dp)
+    val time = currentSkyTime()
+    MeadowBackdrop(time, 61.dp, Modifier.matchParentSize())
+    PixelIcon("laptop", Modifier.align(Alignment.Center), tint = Color(skyColors(time).onSky), cell = 4.dp)
 }
 
 /** A 3 dp [color] frame inside the tile's stepped edge, drawn over the picture, when [on]. */
