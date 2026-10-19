@@ -101,7 +101,8 @@ private fun WelcomeMeadow(time: SkyTime, height: Dp) {
             }
         }
         Box(Modifier.matchParentSize()) {
-            MeadowBackdrop(time, ground, Modifier.matchParentSize())
+            // The mockup's welcome sky: the moon low on the right, clear of the wordmark.
+            MeadowBackdrop(time, ground, Modifier.matchParentSize(), clouds = WELCOME_CLOUDS, moon = WELCOME_MOON)
             AndroidView(
                 factory = { context ->
                     // After the first update has placed them: under the ground, then up one after another.
@@ -121,6 +122,9 @@ private fun WelcomeMeadow(time: SkyTime, height: Dp) {
         }
     }
 }
+
+private val WELCOME_CLOUDS = listOf(0.06f to 0.06f, 0.7f to 0.5f)
+private val WELCOME_MOON = 0.82f to 0.62f
 
 /** A Critter's base box is 18 cells wide. */
 private const val BASE_COLUMNS = 18

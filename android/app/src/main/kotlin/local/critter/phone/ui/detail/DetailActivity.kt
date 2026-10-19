@@ -121,6 +121,9 @@ private const val STAGE_CENTER = 0.25f
 private const val BASE_COLUMNS = 18
 private const val HEAD_ROWS = 14
 
+private val DETAIL_CLOUDS = listOf(0.05f to 0.12f, 0.5f to 0.05f)
+private val DETAIL_MOON = 0.9f to 0.08f
+
 /** The letter moves one step per tick of the pet's beat. */
 private const val LETTER_STEP_MS = 60L
 
@@ -328,7 +331,8 @@ class DetailActivity : ComponentActivity() {
             val ground = with(density) { groundPx.toDp() }
             val u = with(density) { wholePx(StageCell) }
             val petRight = with(density) { ((constraints.maxWidth * STAGE_CENTER - BASE_COLUMNS * u / 2).roundToInt() + BASE_COLUMNS * u).toDp() }
-            MeadowBackdrop(currentSkyTime(), ground, Modifier.matchParentSize())
+            // The mockup's details sky: the moon in the top right corner, clear of the bubble.
+            MeadowBackdrop(currentSkyTime(), ground, Modifier.matchParentSize(), clouds = DETAIL_CLOUDS, moon = DETAIL_MOON)
             SheetPet(
                 manifest, session.state, session.activity, Modifier.matchParentSize(),
                 cell = StageCell, groundInset = StageGround, centerX = STAGE_CENTER, onView = onView,
