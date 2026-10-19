@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import local.critter.core.protocol.BridgeContext
@@ -23,8 +22,8 @@ import local.critter.core.protocol.SnapshotBody
  * shows `count` made-up sessions (states cycle waiting, running, done, idle, error; skins cycle through the five
  * bundled ones). `--ez nopending true` leaves out the permission requests of the waiting sessions. `--ez long true`
  * gives every session a very long name, branch and folder, and the requests a 200-character command, for checking
- * that nothing overflows. A paired Mac's next push replaces the made-up sessions; `--ei hold 120` puts them back
- * every 250 ms for that many seconds (a later broadcast, or `--ei hold 0`, ends it).
+ * that nothing overflows. A paired Mac's next push replaces the made-up sessions; `--ei hold 120` keeps the Mac's
+ * pushes off the screen for that many seconds (a later broadcast, or `--ei hold 0`, ends it).
  */
 class DebugSnapshotReceiver : BroadcastReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
@@ -62,16 +61,11 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
         }
         val body = SnapshotBody(sessions, null, pending, BridgePrefs("clawd", false, 0.6, 5))
         val repo = context.applicationContext.repository
-        repo.injectSnapshotForDebug(body)
+        val hold = intent.getIntExtra("hold", 0)
         handler.removeCallbacksAndMessages(null)
-        val until = SystemClock.uptimeMillis() + intent.getIntExtra("hold", 0) * 1000L
-        handler.post(object : Runnable {
-            override fun run() {
-                if (SystemClock.uptimeMillis() >= until) return
-                if (repo.snapshot.value !== body) repo.injectSnapshotForDebug(body)
-                handler.postDelayed(this, 250)
-            }
-        })
+        repo.holdForDebug(hold > 0)
+        repo.injectSnapshotForDebug(body)
+        if (hold > 0) handler.postDelayed({ repo.holdForDebug(false) }, hold * 1000L)
     }
 
     private companion object {

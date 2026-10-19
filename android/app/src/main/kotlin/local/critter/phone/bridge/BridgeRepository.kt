@@ -137,7 +137,7 @@ class BridgeRepository(private val app: Application) {
                 }
             }
             launch {
-                c.snapshot.filterNotNull().collect { onSnapshot(it.body) }
+                c.snapshot.filterNotNull().collect { if (!holdingForDebug) onSnapshot(it.body) }
             }
         }
         c.start()
@@ -260,6 +260,15 @@ class BridgeRepository(private val app: Application) {
     fun injectSnapshotForDebug(body: SnapshotBody) {
         onSnapshot(body)
         _live.value = body
+    }
+
+    /** Debug builds only (DebugSnapshotReceiver's `hold`): while set, the Mac's snapshots are not shown. */
+    @Volatile
+    private var holdingForDebug = false
+
+    fun holdForDebug(hold: Boolean) {
+        holdingForDebug = hold
+        if (!hold) client?.snapshot?.value?.let { onSnapshot(it.body) }
     }
 
     // --- commands -----------------------------------------------------------------------------
