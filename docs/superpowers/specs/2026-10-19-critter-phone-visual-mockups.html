@@ -619,7 +619,7 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
         <p class="obtitle" style="position:absolute;left:24px;right:24px;top:84px;color:#F3F0FC">扫 Mac 上的二维码</p>
         <div id="viewfinder" style="position:absolute;left:56px;top:176px;width:248px;height:248px"></div>
         <div style="position:absolute;left:0;right:0;top:396px;display:grid;place-items:center"><canvas data-live data-skin="sprig" data-pose="look_up" data-u="4" aria-label="小芽抬头看着取景框"></canvas></div>
-        <p class="obbody" style="position:absolute;left:28px;right:28px;top:470px;color:#C9C2E0;text-align:center">在 Mac 菜单栏点 Critter › 设置 › 手机连接 › 添加手机，把屏幕上的码放进框里。</p>
+        <p class="obbody" style="position:absolute;left:28px;right:28px;top:470px;color:#C9C2E0;text-align:center">在 Mac 上打开 Critter 的「设置…」，打开「允许手机连接」，点「添加手机…」，把二维码放进框里。</p>
         <div style="position:absolute;left:24px;right:24px;bottom:40px;display:flex;flex-direction:column;gap:8px">
           <button class="btn sec px c3 raise"><i class="ic" data-ic="keys"></i>手动输入</button>
           <button class="btn ghost" style="color:#C9C2E0">返回</button>
@@ -636,10 +636,10 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
         <div class="meadow px c6" data-sky="day" style="left:24px;right:24px;top:92px;height:210px" data-scene="approve"><canvas></canvas></div>
         <div style="position:absolute;left:24px;right:24px;top:326px;display:flex;flex-direction:column;gap:10px">
           <p class="obtitle">在 Mac 上点「允许」</p>
-          <p class="obbody">Mac 上弹出了下面这个窗口。点允许之后，这里会自己往下走。</p>
+          <p class="obbody">Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。</p>
           <div class="px c5 raise" style="background:var(--a-surface);padding:14px 16px 18px;margin-top:6px;display:flex;flex-direction:column;gap:10px">
-            <div style="display:flex;gap:10px;align-items:center"><i class="ic" data-ic="laptop" data-s="3" style="color:var(--a-brand)"></i><b style="font-size:14.5px">要添加「vivo V2121A」吗？</b></div>
-            <p style="font-size:12.5px;color:var(--a-ink2);font-weight:600">指纹 3F2A 9C10 77E1</p>
+            <div style="display:flex;gap:10px;align-items:center"><i class="ic" data-ic="laptop" data-s="3" style="color:var(--a-brand)"></i><b style="font-size:14.5px">「V2121A」请求连接</b></div>
+            <p style="font-size:12.5px;color:var(--a-ink2);font-weight:600">在 Mac 上点「允许」</p>
             <div class="acts"><span class="btn sec sm px c3 raise">拒绝</span><span class="btn pri sm px c3 raise hl" style="box-shadow:inset 0 -3px 0 var(--a-brand-deep),0 0 0 0 transparent;outline:3px dashed var(--a-wait);outline-offset:2px">允许</span></div>
           </div>
         </div>
@@ -659,26 +659,26 @@ table.tbl{width:100%;border-collapse:collapse;font-size:14px;min-width:640px}
             <div class="row"><i class="ic" data-ic="laptop" data-s="3" style="color:var(--a-brand)"></i><span class="tx"><b>MacBook Pro</b><small>192.168.1.23:47110</small></span><span class="chip px c2" style="--cb:var(--a-brand-soft);--cf:var(--a-brand)"><i class="ic" data-ic="check"></i>已选</span></div>
             <div class="row"><i class="ic" data-ic="laptop" data-s="3" style="color:var(--a-ink3)"></i><span class="tx"><b>Mac mini</b><small>192.168.1.40:47110</small></span></div>
           </div>
-          <span class="label" style="margin-top:8px">电脑上显示的 6 位码</span>
-          <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px" id="otp"></div>
+          <span class="label" style="margin-top:8px">Mac 上显示的 8 位码</span>
+          <div style="display:grid;grid-template-columns:repeat(4,1fr) 10px repeat(4,1fr);gap:5px" id="otp"></div>
           <div class="px c3" style="display:flex;gap:10px;align-items:center;background:var(--a-err-bg);color:var(--a-err);padding:8px 10px 10px;margin-top:4px">
             <canvas data-live data-skin="sprig" data-state="error" data-u="2" aria-hidden="true"></canvas>
-            <p style="font-size:12.5px;font-weight:700;line-height:1.5">这个码不对，或者已经过期了。在 Mac 上点「换一个码」再试。</p>
+            <p style="font-size:12.5px;font-weight:700;line-height:1.5">这个码不对，或者已经过期了。在 Mac 的「添加手机」里点「重新生成」再试。</p>
           </div>
         </div>
         <div style="position:absolute;left:18px;right:18px;bottom:40px;display:flex;flex-direction:column;gap:8px"><button class="btn pri big px c3 raise hl">连接</button><button class="btn ghost"><i class="ic" data-ic="qr"></i>改用扫码</button></div>
         <div class="gb"></div>
       </div></div></div>
-      <figcaption><b>手动输入和出错</b>找到的 Mac 列成一张卡片，6 位码分成 6 个格子。配对失败按原因分开说（台账里 pair() 一律返回空的那一条），旁边是一只蔫下去的小芽。</figcaption>
+      <figcaption><b>手动输入和出错</b>找到的 Mac 列成一张卡片，8 位码分成 4+4 两组格子，和 Mac 上的显示一样。配对失败按原因分开说（台账里 pair() 一律返回空的那一条），旁边是一只蔫下去的小芽。</figcaption>
     </figure>
 
     <figure class="shot">
       <div class="panel" style="width:360px;max-width:100%;display:flex;flex-direction:column;gap:12px">
         <h3 style="margin:0">配对失败的三种说法</h3>
         <div class="app demo-app" style="position:relative;inset:auto;display:flex;flex-direction:column;gap:10px;padding:14px">
-          <div class="px c3" style="display:flex;gap:10px;background:var(--a-err-bg);color:var(--a-err);padding:10px 10px 12px"><canvas data-live data-skin="mochi" data-state="error" data-u="2" aria-hidden="true"></canvas><p style="font-size:12.5px;font-weight:700;line-height:1.5"><b style="display:block">码不对或过期</b>这个码不对，或者已经过期了。在 Mac 上点「换一个码」再试。</p></div>
+          <div class="px c3" style="display:flex;gap:10px;background:var(--a-err-bg);color:var(--a-err);padding:10px 10px 12px"><canvas data-live data-skin="mochi" data-state="error" data-u="2" aria-hidden="true"></canvas><p style="font-size:12.5px;font-weight:700;line-height:1.5"><b style="display:block">码不对或过期</b>这个码不对，或者已经过期了。在 Mac 的「添加手机」里点「重新生成」再试。</p></div>
           <div class="px c3" style="display:flex;gap:10px;background:var(--a-err-bg);color:var(--a-err);padding:10px 10px 12px"><canvas data-live data-skin="bristle" data-state="error" data-u="2" aria-hidden="true"></canvas><p style="font-size:12.5px;font-weight:700;line-height:1.5"><b style="display:block">证书对不上</b>这台 Mac 的证书和二维码里的不一样，已经停下。确认扫的是你自己的 Mac。</p></div>
-          <div class="px c3" style="display:flex;gap:10px;background:var(--a-err-bg);color:var(--a-err);padding:10px 10px 12px"><canvas data-live data-skin="peep" data-state="error" data-u="2" aria-hidden="true"></canvas><p style="font-size:12.5px;font-weight:700;line-height:1.5"><b style="display:block">连不上</b>连不上这台 Mac。确认手机和电脑在同一个 Wi‑Fi，并且 Mac 上的手机连接开着。</p></div>
+          <div class="px c3" style="display:flex;gap:10px;background:var(--a-err-bg);color:var(--a-err);padding:10px 10px 12px"><canvas data-live data-skin="peep" data-state="error" data-u="2" aria-hidden="true"></canvas><p style="font-size:12.5px;font-weight:700;line-height:1.5"><b style="display:block">连不上</b>连不上这台 Mac。确认手机和电脑在同一个 Wi‑Fi，并且 Mac 上开着「允许手机连接」。</p></div>
         </div>
       </div>
       <figcaption><b>错误文案</b>三种失败要分开处理：码错了重输，证书不对要警惕，连不上是网络问题。需要连接层把原因传上来。</figcaption>
@@ -2056,7 +2056,7 @@ function build() {
       f('dot', '最后更新', '刚刚');
   }
   const otp = $('#otp');
-  if (otp) otp.innerHTML = '482917'.split('').map((d) => `<span class="px c3 pxnum" style="height:48px;display:grid;place-items:center;background:var(--a-surface);font-size:24px;box-shadow:inset 0 -4px 0 var(--a-shade),inset 0 0 0 2px var(--a-err-bg)">${d}</span>`).join('');
+  if (otp) otp.innerHTML = '4829 1735'.split('').map((d) => d === ' ' ? '<span></span>' : `<span class="px c3 pxnum" style="height:48px;display:grid;place-items:center;background:var(--a-surface);font-size:24px;box-shadow:inset 0 -4px 0 var(--a-shade),inset 0 0 0 2px var(--a-err-bg)">${d}</span>`).join('');
   const ime = $('#ime');
   if (ime) ime.innerHTML = [10, 9, 9, 5].map((n, r) => `<div style="display:flex;gap:5px;padding:0 ${r === 1 ? 18 : r === 3 ? 6 : 4}px">${Array.from({ length: n }, (_, i) => `<span class="px c2" style="flex:${r === 3 && i === 2 ? 4 : 1};background:var(--a-surface);box-shadow:inset 0 -3px 0 var(--a-shade)"></span>`).join('')}</div>`).join('');
   const vf = $('#viewfinder');
