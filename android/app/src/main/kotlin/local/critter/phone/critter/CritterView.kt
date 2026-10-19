@@ -560,6 +560,10 @@ class CritterView(context: Context) : View(context) {
         cancelPress()
         val id = hit(e.x, e.y) ?: return false
         press = Press(id, e.rawX, e.rawY)
+        // A swipe that starts on a carryable Critter carries it. Without this the board's own sideways swipe (the
+        // mode switch) took the gesture over past its touch slop: the Critter got a cancel and jumped home, and
+        // the board changed modes.
+        if (carryOnDrag) parent?.requestDisallowInterceptTouchEvent(true)
         clock.catchUp()
         endPet()
         if (isFree(id)) {
