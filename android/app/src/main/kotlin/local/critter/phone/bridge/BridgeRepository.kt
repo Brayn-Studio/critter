@@ -195,9 +195,10 @@ class BridgeRepository(private val app: Application) {
     /**
      * For a caller with no screen (a notification button): brings the connection back, waits for it to list
      * [requestId], and answers with what [payloadFor] makes of the request (null: cannot be answered this way,
-     * reason `invalid`). If the connection dropped under the answer, it tries once more on the next one; the Mac
-     * refuses a second answer to the same request, so that is safe. A request that is gone gives `resolved`;
-     * no connection gives `unknown` "没连上电脑".
+     * reason `invalid`). If the answer failed on the phone's side (the connection dropped under it, or no reply in
+     * time: reason `unknown`), it tries once more; the Mac only accepts an answer to a request it still lists, so a
+     * second one for a request the first already settled comes back `resolved`. A request that is gone gives
+     * `resolved`; no connection gives `unknown` "没连上电脑".
      */
     suspend fun answerWhenLive(requestId: String, payloadFor: (BridgePending) -> AnswerPayload?): ServerMessage.Result {
         for (attempt in 0..1) {
@@ -208,8 +209,9 @@ class BridgeRepository(private val app: Application) {
                 is LiveRequest.Found -> {
                     val payload = payloadFor(found.request) ?: return failure(ResultReason.invalid, "要打开卡片回答")
                     val result = answer(requestId, payload)
-                    val dropped = !result.ok && result.reason == ResultReason.unknown && _state.value !is ConnState.Connected
-                    if (!dropped || attempt == 1) return result
+                    // Checking the state here would race: the socket's end is reported before the state leaves Connected.
+                    val localFailure = !result.ok && result.reason == ResultReason.unknown
+                    if (!localFailure || attempt == 1) return result
                 }
             }
         }
