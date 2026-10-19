@@ -295,7 +295,8 @@ class DetailActivity : ComponentActivity() {
                                 onValueChange = { text = it.take(MAX_SAY_LENGTH) },
                                 placeholder = "发一句…",
                                 modifier = Modifier.weight(1f),
-                                enabled = !busy,
+                                // Not disabled (nor read-only) while sending: either drops the keyboard, and the
+                                // sheet changes shape under the flying letter. The send button waits instead.
                                 maxLines = 5,
                                 contentDescription = "发一句",
                             )
