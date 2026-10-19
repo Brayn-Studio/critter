@@ -92,7 +92,16 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
         FLAGS,
         PixelFormat.TRANSLUCENT,
-    ).apply { gravity = Gravity.TOP or Gravity.START }
+    ).apply {
+        gravity = Gravity.TOP or Gravity.START
+        // Placed in display coordinates, like screen(): by default the system starts the window's y under the
+        // status bar (and the camera cutout in it), so the pile stood 28 dp lower than placed and a shelf at the
+        // bottom ran off the screen. screen() keeps the window clear of the bars itself.
+        if (Build.VERSION.SDK_INT >= 30) {
+            fitInsetsTypes = 0
+            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+        }
+    }
 
     private val root = object : FrameLayout(context) {
         override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
@@ -129,7 +138,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         if (!canDraw()) return false
         attached = true
         edge = if (settings.overlayOnRight) Edge.Right else Edge.Left
-        topY = (settings.overlayY * screen().height).roundToInt()
+        topY = screen().let { it.top + (settings.overlayY * it.height).roundToInt() }
         rebuild()
         try {
             windowManager.addView(root, params)
@@ -443,10 +452,13 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         if (added) windowManager.updateViewLayout(root, params)
     }
 
+    /** Where the window may go, in display coordinates: the screen, clear of the status and navigation bars. */
     private fun screen(): Rect {
         if (Build.VERSION.SDK_INT >= 30) {
-            val b = windowManager.currentWindowMetrics.bounds
-            return Rect(b.left, b.top, b.right, b.bottom)
+            val metrics = windowManager.currentWindowMetrics
+            val b = metrics.bounds
+            val bars = metrics.windowInsets.getInsetsIgnoringVisibility(WindowInsets.Type.systemBars() or WindowInsets.Type.displayCutout())
+            return Rect(b.left + bars.left, b.top + bars.top, b.right - bars.right, b.bottom - bars.bottom)
         }
         val m = DisplayMetrics()
         @Suppress("DEPRECATION")
@@ -456,7 +468,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
 
     private fun remember() {
         val screen = screen()
-        repo.settingsStore.update { it.copy(overlayOnRight = edge == Edge.Right, overlayY = topY.toFloat() / screen.height) }
+        repo.settingsStore.update { it.copy(overlayOnRight = edge == Edge.Right, overlayY = (topY - screen.top).toFloat() / screen.height) }
     }
 
     // ---- touch -----------------------------------------------------------------------------------------
