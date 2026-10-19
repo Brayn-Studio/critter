@@ -7,13 +7,19 @@ import androidx.camera.core.Preview
 import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
+import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.semantics.clearAndSetSemantics
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.LifecycleOwner
@@ -24,6 +30,7 @@ import com.google.zxing.DecodeHintType
 import com.google.zxing.PlanarYUVLuminanceSource
 import com.google.zxing.common.HybridBinarizer
 import com.google.zxing.qrcode.QRCodeReader
+import local.critter.phone.ui.theme.wholePx
 import java.util.concurrent.Executors
 
 /** A camera preview that reports the text of the first QR code it reads (ZXing, no Play services). */
@@ -73,6 +80,26 @@ fun QrScanner(onResult: (String) -> Unit, modifier: Modifier = Modifier) {
             view
         },
     )
+}
+
+/**
+ * The viewfinder over the camera: four pixel right angles, 34 dp arms 6 dp thick, in [color] (green for a moment
+ * after a read). Whole pixels throughout.
+ */
+@Composable
+fun PixelViewfinder(color: Color, modifier: Modifier = Modifier) {
+    Canvas(modifier.clearAndSetSemantics {}) {
+        val t = wholePx(6.dp)
+        val arm = wholePx(34.dp)
+        val w = size.width
+        val h = size.height
+        for ((x, y) in listOf(0f to 0f, w - arm to 0f, 0f to h - t, w - arm to h - t)) {
+            drawRect(color, Offset(x, y), Size(arm, t))
+        }
+        for ((x, y) in listOf(0f to 0f, w - t to 0f, 0f to h - arm, w - t to h - arm)) {
+            drawRect(color, Offset(x, y), Size(t, arm))
+        }
+    }
 }
 
 /**
