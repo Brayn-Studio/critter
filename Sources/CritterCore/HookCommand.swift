@@ -43,13 +43,17 @@ public struct SystemAppLauncher: AppLauncher {
 
 /// What `critter-hook` printed to stdout, and the exit code it reported (which per the
 /// Global Constraints is always 0 -- a misbehaving hook must never block Claude Code).
+/// `rawStdout`, when set, is printed instead of `stdout`, byte for byte: `statusline` passes
+/// another program's output through, and that need not be UTF-8.
 public struct HookResult: Equatable, Sendable {
     public let stdout: String
     public let exitCode: Int32
+    public let rawStdout: Data?
 
-    public init(stdout: String, exitCode: Int32) {
+    public init(stdout: String, exitCode: Int32, rawStdout: Data? = nil) {
         self.stdout = stdout
         self.exitCode = exitCode
+        self.rawStdout = rawStdout
     }
 }
 
@@ -122,7 +126,12 @@ public enum HookCommand {
         guard let original = try? Data(contentsOf: settingsFile) else {
             return refuse("找不到 \(paths.claudeSettingsFile.path)，没有改动。")
         }
+        // Only text that encodes back to the very same bytes: bytes that aren't UTF-8 would
+        // otherwise be written back as U+FFFD.
         let text = String(decoding: original, as: UTF8.self)
+        guard Data(text.utf8) == original else {
+            return refuse("settings.json 不是有效的 UTF-8，没有改动。")
+        }
         let updated: String
         do {
             updated = install

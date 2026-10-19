@@ -51,7 +51,7 @@ private func tmpPaths() -> CritterPaths {
     #expect(shell.calls.count == 1)
     #expect(shell.calls[0].command == "bash /x/statusline.sh")
     #expect(shell.calls[0].stdin == Data(fullInput.utf8))
-    #expect(result == HookResult(stdout: "LINE", exitCode: 0))
+    #expect(result == HookResult(stdout: "", exitCode: 0, rawStdout: Data("LINE".utf8)))
     let records = StatusLineStore(paths: paths).readAll()
     #expect(records.count == 1 && records[0].sessionId == "s1")
 }
@@ -63,7 +63,7 @@ private func tmpPaths() -> CritterPaths {
         arguments: ["statusline", "--", "orig"], stdin: Data("not json".utf8), paths: paths, now: 1, shell: shell
     )
     #expect(shell.calls.count == 1)
-    #expect(result == HookResult(stdout: "LINE", exitCode: 0))
+    #expect(result == HookResult(stdout: "", exitCode: 0, rawStdout: Data("LINE".utf8)))
     #expect(StatusLineStore(paths: paths).readAll().isEmpty)
 }
 
@@ -82,9 +82,20 @@ private func tmpPaths() -> CritterPaths {
     let input = #"{"session_id":"../x"}"#
     let result = StatusLineCommand.run(arguments: ["statusline", "--", "orig"], stdin: Data(input.utf8), paths: paths, now: 1, shell: shell)
     #expect(shell.calls.count == 1)
-    #expect(result.stdout == "LINE")
+    #expect(result.rawStdout == Data("LINE".utf8))
     #expect(!FileManager.default.fileExists(atPath: paths.critterHome.deletingLastPathComponent().appendingPathComponent("x.json").path))
     #expect(StatusLineStore(paths: paths).readAll().isEmpty)
+}
+
+/// The original command's output goes out byte for byte -- also bytes that aren't UTF-8.
+@Test func statusLinePassesInvalidUTF8Through() {
+    let shell = FakeShell()
+    shell.reply = (Data([0x41, 0xFF, 0x42]), 0)
+    let result = StatusLineCommand.run(
+        arguments: ["statusline", "--", "orig"], stdin: Data(fullInput.utf8), paths: tmpPaths(), now: 1, shell: shell
+    )
+    #expect(result.rawStdout == Data([0x41, 0xFF, 0x42]))
+    #expect(result.exitCode == 0)
 }
 
 @Test func statusLinePassesOriginalExitCode() {

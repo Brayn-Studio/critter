@@ -215,6 +215,24 @@ private func runCLI(_ sub: String, env: [String: String], now: Int64 = 42) -> Ho
     #expect(try String(contentsOf: paths.claudeSettingsFile, encoding: .utf8) == original)
 }
 
+/// Bytes that aren't UTF-8 can't be edited without losing them: neither command touches the
+/// file, and nothing is backed up.
+@Test func invalidUTF8SettingsAreLeftAlone() throws {
+    let (paths, env) = tmpEnv()
+    try FileManager.default.createDirectory(at: paths.claudeHome, withIntermediateDirectories: true)
+    var bytes = Data("{\n  \"statusLine\": {\"type\": \"command\", \"command\": \"bash /x.sh\"},\n  \"note\": \"".utf8)
+    bytes.append(0xFF)
+    bytes.append(contentsOf: Data("\"\n}\n".utf8))
+    try bytes.write(to: paths.claudeSettingsFile)
+    for sub in ["statusline-install", "statusline-uninstall"] {
+        let result = runCLI(sub, env: env)
+        #expect(result.exitCode != 0)
+        #expect(result.stdout.contains("不是有效的 UTF-8"))
+        #expect(try Data(contentsOf: paths.claudeSettingsFile) == bytes)
+        #expect(!FileManager.default.fileExists(atPath: paths.backupDir.path))
+    }
+}
+
 @Test func cliInstallRefusesWithExitOne() throws {
     let (paths, env) = tmpEnv()
     try FileManager.default.createDirectory(at: paths.claudeHome, withIntermediateDirectories: true)

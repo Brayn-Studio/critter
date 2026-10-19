@@ -230,7 +230,7 @@ Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手�
   包装后原命令照常运行，输出原样不变。万一 `critter-hook` 不在了（比如 `~/.critter` 被删了），`||` 后面那段会直接运行原命令，状态栏不会坏。
 - 原来没有状态栏的话，就接成 `[ -x '/Users/你/.critter/bin/critter-hook' ] && exec '/Users/你/.critter/bin/critter-hook' statusline || exit 0`，什么都不输出。实测（Claude Code 2.1.302）终端底部和没有状态栏时一模一样。
 - 早先的版本接成的是 `'/Users/你/.critter/bin/critter-hook' statusline -- '<原命令>'`，没有后面那段兜底。这种也认得：撤销时照常还原；重新运行 `make install` 会把它升级成上面的形式。
-- 改之前先备份到 `~/.critter/backup/`；除了这一个字符串，文件里的其它字节都不变。
+- 改之前先备份到 `~/.critter/backup/`（备份和原文件权限相同，读不到原权限时是 0600）；除了这一个字符串，文件里的其它字节都不变。`settings.json` 不是有效的 UTF-8 时不做任何改动。
 - 撤销：设置里点"撤销"，或者运行 `~/.critter/bin/critter-hook statusline-uninstall`，恢复成原来的命令。`make install` 会自动接入，`make uninstall` 会自动撤销。
 - 项目级设置如果覆盖了 `statusLine`，那个项目里的会话采不到这些数据，Critter 不做处理。
 

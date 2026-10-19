@@ -78,6 +78,32 @@ private func critterHookBinaryURL() throws -> URL {
     #expect(record.state == .done)
 }
 
+/// `statusline` hands the original command's output to Claude Code byte for byte, even bytes
+/// that aren't UTF-8.
+@Test func binaryStatusLinePassesTheOriginalBytes() throws {
+    let binary = try critterHookBinaryURL()
+    let base = FileManager.default.temporaryDirectory.appendingPathComponent("critter-hook-statusline-\(UUID().uuidString)")
+    let process = Process()
+    process.executableURL = binary
+    process.arguments = ["statusline", "--", #"printf 'A\377B'"#]
+    process.environment = [
+        "CRITTER_HOME": base.appendingPathComponent(".critter").path,
+        "CLAUDE_CONFIG_DIR": base.appendingPathComponent(".claude").path,
+        "HOME": base.path,
+    ]
+    let stdinPipe = Pipe()
+    let stdoutPipe = Pipe()
+    process.standardInput = stdinPipe
+    process.standardOutput = stdoutPipe
+    try process.run()
+    stdinPipe.fileHandleForWriting.write(Data(#"{"session_id":"t1"}"#.utf8))
+    try stdinPipe.fileHandleForWriting.close()
+    let output = stdoutPipe.fileHandleForReading.readDataToEndOfFile()
+    process.waitUntilExit()
+    #expect(process.terminationStatus == 0)
+    #expect(output == Data([0x41, 0xFF, 0x42]))
+}
+
 /// With no app running the gate is closed: `ask` must give up at once and print nothing, so
 /// Claude Code falls back to its normal terminal prompt.
 @Test func binaryAskWithoutAppExitsFast() throws {
