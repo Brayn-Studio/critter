@@ -5,8 +5,12 @@ import android.content.Context
 import android.content.Intent
 import android.os.Handler
 import android.os.Looper
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import kotlinx.serialization.json.addJsonObject
 import kotlinx.serialization.json.buildJsonObject
+import kotlinx.serialization.json.put
+import kotlinx.serialization.json.putJsonArray
 import local.critter.core.protocol.BridgeContext
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgePrefs
@@ -22,7 +26,8 @@ import local.critter.core.protocol.SnapshotBody
  * shows `count` made-up sessions (states cycle waiting, running, done, idle, error; skins cycle through the five
  * bundled ones). `--ez nopending true` leaves out the permission requests of the waiting sessions. `--ez long true`
  * gives every session a very long name, branch and folder, and the requests a 200-character command, for checking
- * that nothing overflows. A paired Mac's next push replaces the made-up sessions; `--ei hold 120` keeps the Mac's
+ * that nothing overflows. `--es kind question` or `--es kind plan` makes the requests questions or a plan instead
+ * of permissions. A paired Mac's next push replaces the made-up sessions; `--ei hold 120` keeps the Mac's
  * pushes off the screen for that many seconds (a later broadcast, or `--ei hold 0`, ends it).
  */
 class DebugSnapshotReceiver : BroadcastReceiver() {
@@ -52,12 +57,27 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
                 skin = skins[i % skins.size], eventTime = now, startedAt = now - i * 60_000L, tracked = true,
             )
         }
+        val kind = when (intent.getStringExtra("kind")) {
+            "question" -> PendingKind.question
+            "plan" -> PendingKind.plan
+            else -> PendingKind.permission
+        }
         val pending = if (intent.getBooleanExtra("nopending", false)) emptyList() else sessions.filter { it.state == PetState.waiting }.map {
-            BridgePending(
-                requestId = "r-${it.id}", sessionId = it.id, kind = PendingKind.permission, toolName = "Bash",
-                summary = command, input = buildJsonObject { put("command", JsonPrimitive(command)) },
-                createdAt = now, expiresAt = null,
-            )
+            when (kind) {
+                PendingKind.question -> BridgePending(
+                    requestId = "r-${it.id}", sessionId = it.id, kind = kind, toolName = "AskUserQuestion",
+                    summary = "DNS 缓存放在哪一层？", input = QUESTIONS, createdAt = now,
+                )
+                PendingKind.plan -> BridgePending(
+                    requestId = "r-${it.id}", sessionId = it.id, kind = kind, toolName = "ExitPlanMode",
+                    summary = null, input = buildJsonObject { put("plan", PLAN) }, createdAt = now,
+                )
+                else -> BridgePending(
+                    requestId = "r-${it.id}", sessionId = it.id, kind = kind, toolName = "Bash",
+                    summary = command, input = buildJsonObject { put("command", JsonPrimitive(command)) },
+                    createdAt = now, expiresAt = null,
+                )
+            }
         }
         val body = SnapshotBody(sessions, null, pending, BridgePrefs("clawd", false, 0.6, 5))
         val repo = context.applicationContext.repository
@@ -73,6 +93,42 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
         const val LONG_NAME = "这是一个名字特别特别长的会话-with-a-very-long-english-tail"
         const val LONG_BRANCH = "feature/a-really-long-branch-name-that-keeps-going"
         const val LONG_FOLDER = "a-really-long-folder-name-without-any-spaces-"
+
+        val QUESTIONS: JsonObject = buildJsonObject {
+            putJsonArray("questions") {
+                addJsonObject {
+                    put("header", "缓存"); put("question", "DNS 缓存放在哪一层？"); put("multiSelect", false)
+                    putJsonArray("options") {
+                        addJsonObject { put("label", "本地进程内"); put("description", "最快，重启就没了") }
+                        addJsonObject { put("label", "Redis"); put("description", "多个实例共用，多一次网络往返") }
+                    }
+                }
+                addJsonObject {
+                    put("header", "测试"); put("question", "要补哪些测试？"); put("multiSelect", true)
+                    putJsonArray("options") {
+                        addJsonObject { put("label", "缓存过期"); put("description", "TTL 到了重新解析") }
+                        addJsonObject { put("label", "解析失败"); put("description", "上游超时用旧值") }
+                        addJsonObject { put("label", "并发"); put("description", "同一个域名只解析一次") }
+                    }
+                }
+            }
+        }
+
+        val PLAN = """
+            |# 给秋天的三篇文章换配图
+            |原图太大，首页打开要 4 秒。
+            |## 步骤
+            |1. 把 `posts/2026-10-*` 里的 PNG 转成 WebP
+            |2. 宽度统一缩到 1600px，质量 82
+            |3. 更新三篇文章里的图片链接
+            |4. 本地跑一遍 `npm run build`，看首页大小
+            |## 不动的
+            |原图保留在 originals/ 里，不删。
+            |## 之后
+            |- 看一周首页的打开时间
+            |- 没问题再处理其他年份的文章
+            |- 把转换脚本放进 tools/，以后新图自动转
+        """.trimMargin()
 
         /** Exactly 200 characters. */
         const val LONG_COMMAND = "adb shell am start -n local.critter.phone/.ui.answer.AnswerActivity --es requestId r-s0 && " +
