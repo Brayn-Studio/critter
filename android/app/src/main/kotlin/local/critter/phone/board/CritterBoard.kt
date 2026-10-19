@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentWidth
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
 import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
@@ -26,9 +28,13 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextMeasurer
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -45,6 +51,9 @@ import local.critter.core.skin.SkinLibrary
 import local.critter.phone.critter.CritterTouchListener
 import local.critter.phone.critter.CritterView
 import local.critter.phone.critter.PileSlots
+import local.critter.phone.overlay.countIconColor
+import local.critter.phone.overlay.fitCounts
+import local.critter.phone.overlay.pileCounts
 import local.critter.phone.ui.board.BoardData
 import local.critter.phone.ui.board.BoardMeter
 import local.critter.phone.ui.board.CardRequest
@@ -55,14 +64,14 @@ import local.critter.phone.ui.board.cardRequests
 import local.critter.phone.ui.board.offlineText
 import local.critter.phone.ui.doingText
 import local.critter.phone.ui.folderBranch
-import local.critter.phone.ui.stateIcon
+import local.critter.phone.ui.look.PixelIcons
 import local.critter.phone.ui.theme.BoardColors
 import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.Silkscreen
 import local.critter.phone.ui.theme.pixelSurface
-import local.critter.phone.ui.theme.state
+import local.critter.phone.ui.theme.wholePx
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -76,6 +85,27 @@ private const val PITCH_CELLS = 22
 private const val BUBBLE_CELLS = 20
 
 private const val BUBBLE_MAX_DP = 150f
+
+/** How wide the pile's count tag may be, in cells: the pile (25) and the gap beside it (4). */
+private const val PILE_TAG_CELLS = 18 + PileSlots.EXTRA_CELLS + 4
+
+// The pile's count tag: icon cells, the gaps and the number style.
+private val TAG_CELL = 2.dp
+private val TAG_INNER = 3.dp
+private val TAG_BETWEEN = 8.dp
+private val TAG_PAD = 8.dp
+private val CountStyle = TextStyle(fontFamily = Silkscreen, fontSize = 12.sp)
+
+/** How wide a count tag with [entries] is, in pixels (padding, icons, numbers and the gaps between them). */
+private fun Density.countTagWidth(entries: List<Pair<String, Int>>, measurer: TextMeasurer): Float {
+    val cell = wholePx(TAG_CELL)
+    var w = 2 * TAG_PAD.toPx() + TAG_BETWEEN.toPx() * (entries.size - 1).coerceAtLeast(0)
+    for ((icon, n) in entries) {
+        val cols = PixelIcons.rows[icon]?.firstOrNull()?.length ?: 0
+        w += cols * cell + TAG_INNER.toPx() + measurer.measure("$n", CountStyle, density = this).size.width
+    }
+    return w
+}
 
 /**
  * The board's Critter mode (mockup "看板 · 宠物模式", design §8.7): the Critters standing on a dim horizon with
@@ -98,8 +128,11 @@ fun CritterBoard(
     val dim = body?.prefs?.idleDim ?: 1.0
     val density = LocalDensity.current.density
     val (dx, dy) = shift.value
-    // Carried away from their place (CritterTouchListener.onCarry), until they have walked back.
+    // Carried away from their place (CritterTouchListener.onCarry), until they have walked back; a session that
+    // ended meanwhile is dropped.
     val carried = remember { mutableStateSetOf<String>() }
+    val liveIds = sessions.mapTo(HashSet()) { it.id }
+    LaunchedEffect(liveIds) { carried.retainAll(liveIds) }
 
     BoxWithConstraints(Modifier.fillMaxSize().background(BoardColors.bg).offset(dx, dy)) {
         val w = maxWidth.value
@@ -155,17 +188,19 @@ fun CritterBoard(
 
         Column(Modifier.padding(start = 30.dp, top = 20.dp)) {
             Text(boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 52.sp, lineHeight = 52.sp, maxLines = 1)
-            Text(
-                boardDateText(data.now),
-                color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 13.sp, maxLines = 1,
-                modifier = Modifier.padding(start = 2.dp, top = 10.dp),
-            )
-            if (!data.connected) {
+            // The offline line shares the date's row: a two-line bubble at 6 dp a cell reaches up to just under it.
+            Row(Modifier.padding(start = 2.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    offlineText(data),
-                    color = BoardColors.wait, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 12.sp, maxLines = 1,
-                    modifier = Modifier.padding(start = 2.dp, top = 4.dp),
+                    boardDateText(data.now),
+                    color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 13.sp, maxLines = 1,
                 )
+                if (!data.connected) {
+                    Text(
+                        offlineText(data),
+                        color = BoardColors.wait, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 12.sp, maxLines = 1,
+                        modifier = Modifier.padding(start = 10.dp),
+                    )
+                }
             }
         }
         Column(Modifier.align(Alignment.TopEnd).padding(top = 24.dp, end = 76.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -303,27 +338,40 @@ private fun Bubble(s: BridgeSession, card: CardRequest?, modifier: Modifier) {
     }
 }
 
-/** The pile's counts (icon and number per state) above it and "N 个会话" below; a tap is the most urgent one's. */
+/**
+ * The pile's counts (icon and number per state, [pileCounts]) above it and "N 个会话" below; a tap is the most
+ * urgent one's. The count tag is as wide as its content, centered over the pile and never squeezed; it may reach
+ * into the gap next to the pile but no further ([PILE_TAG_CELLS]), so on a crowded board the least urgent states
+ * are left out ([fitCounts]) instead of running into the neighbor's bubble.
+ */
 @Composable
 private fun PileTexts(pile: List<BridgeSession>, x: Float, ground: Float, scale: Float, onTap: (String) -> Unit) {
     val merged = FlockModel.merged(pile)
     val boxW = (18 + PileSlots.EXTRA_CELLS) * scale
     val tap = Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { onTap(merged.lead.id) }
+    val density = LocalDensity.current
+    val measurer = rememberTextMeasurer()
+    val counts = pileCounts(pile)
+    val maxPx = with(density) { (PILE_TAG_CELLS * scale).dp.toPx() }
+    val shown = remember(counts, maxPx, density) {
+        fitCounts(counts, maxPx) { entries -> with(density) { countTagWidth(entries, measurer) } }
+    }
     Box(
         Modifier.offset(x.dp, 0.dp).width(boxW.dp).height((ground - BUBBLE_CELLS * scale).coerceAtLeast(0f).dp),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Row(
             tap
+                .wrapContentWidth(Alignment.CenterHorizontally, unbounded = true)
                 .pixelSurface(BoardColors.card2, step = 2.dp, lip = 0.dp, lipColor = Color.Transparent, border = BoardColors.edge, borderWidth = 1.5.dp)
-                .padding(horizontal = 8.dp, vertical = 5.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                .padding(horizontal = TAG_PAD, vertical = 5.dp),
+            horizontalArrangement = Arrangement.spacedBy(TAG_BETWEEN),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            for (c in merged.counts) {
-                Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
-                    PixelIcon(stateIcon(c.state), tint = Critter.colors.state(c.state).glyph)
-                    Text("${c.count}", color = BoardColors.name, fontFamily = Silkscreen, fontSize = 12.sp, maxLines = 1)
+            for ((icon, n) in shown) {
+                Row(horizontalArrangement = Arrangement.spacedBy(TAG_INNER), verticalAlignment = Alignment.CenterVertically) {
+                    PixelIcon(icon, tint = countIconColor(icon, Critter.colors), cell = TAG_CELL)
+                    Text("$n", style = CountStyle, color = BoardColors.name, maxLines = 1, softWrap = false)
                 }
             }
         }

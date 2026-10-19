@@ -73,20 +73,14 @@ internal object OverlayLook {
     /** How tall a tag with a line of [label]'s text is. */
     fun tagHeight(label: TextView): Int = label.lineHeight + label.context.px(2f) + label.context.px(4f)
 
-    /** The count row's icon colors, as on the mockup: the deep orange question mark, the sun, the check… */
-    fun iconColor(icon: String, colors: CritterColors): Int = when (icon) {
-        "q" -> colors.waitDeep
-        "sun" -> colors.runGlyph
-        "check" -> colors.doneGlyph
-        "bang" -> colors.errGlyph
-        else -> colors.ink3
-    }.toArgb()
+    /** The count row's icon colors ([countIconColor]) for View code. */
+    fun iconColor(icon: String, colors: CritterColors): Int = countIconColor(icon, colors).toArgb()
 }
 
 /**
  * A row of [pileCounts] entries (a pixel icon and a Silkscreen number each), on a [OverlayLook.tag] when [framed].
- * When the row does not fit [show]'s width, the least urgent states are left out (idle first, then done, running,
- * error); the total is on the pile's "n 个会话" tag anyway.
+ * When the row does not fit [show]'s width, the least urgent states are left out ([fitCounts]); the total is on the
+ * pile's "n 个会话" tag anyway.
  */
 internal class CountsRow(context: Context, private val colors: CritterColors, private val framed: Boolean) : LinearLayout(context) {
     private val cell = context.px(1.5f)
@@ -137,16 +131,6 @@ internal class CountsRow(context: Context, private val colors: CritterColors, pr
         return w
     }
 
-    private fun fit(counts: List<Pair<String, Int>>, maxWidth: Int): List<Pair<String, Int>> {
-        var entries = counts
-        for (drop in DROP_ORDER) {
-            if (entries.size <= 1 || width(entries) <= maxWidth) break
-            entries = entries.filter { it.first != drop }
-        }
-        return entries
-    }
-
-    private companion object {
-        val DROP_ORDER = listOf("z", "check", "sun", "bang")
-    }
+    private fun fit(counts: List<Pair<String, Int>>, maxWidth: Int): List<Pair<String, Int>> =
+        fitCounts(counts, maxWidth.toFloat()) { width(it).toFloat() }
 }

@@ -3,6 +3,7 @@ package local.critter.phone.ui.board
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
@@ -10,6 +11,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -27,6 +29,7 @@ import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.PixelShape
 import local.critter.phone.ui.theme.SegmentMeter
+import local.critter.phone.ui.theme.wholePx
 import java.time.DayOfWeek
 import java.time.Instant
 import java.time.ZoneId
@@ -67,17 +70,29 @@ fun BoardMeter(percent: Double?, segments: Int, height: Dp, modifier: Modifier =
     SegmentMeter(percent, segments, modifier, height = height, colors = BoardColors.meter)
 }
 
-/** The 40 dp mode switch at the top right: [icon] is the mode it switches to (`grid` for pro, `paw` for Critters). */
+/**
+ * The 40 dp mode switch at the top right: [icon] is the mode it switches to (`grid` for pro, `paw` for Critters).
+ * Pressed, it sinks 3 dp in one step, like the pixel buttons.
+ */
 @Composable
 fun BoardModeButton(icon: String, contentDescription: String, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    val source = remember { MutableInteractionSource() }
+    val down = source.collectIsPressedAsState().value
     Box(
         modifier
             .size(44.dp)
-            .clickable(remember { MutableInteractionSource() }, indication = null, role = Role.Button, onClick = onClick)
+            .clickable(source, indication = null, role = Role.Button, onClick = onClick)
             .semantics { this.contentDescription = contentDescription },
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.size(40.dp).clip(PixelShape(3.dp)).background(BoardColors.card2), contentAlignment = Alignment.Center) {
+        Box(
+            Modifier
+                .size(40.dp)
+                .graphicsLayer { translationY = if (down) wholePx(3.dp) else 0f }
+                .clip(PixelShape(3.dp))
+                .background(BoardColors.card2),
+            contentAlignment = Alignment.Center,
+        ) {
             PixelIcon(icon, tint = BoardColors.dim)
         }
     }
