@@ -203,11 +203,11 @@ fun SettingsScreen(
                         fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.padding(start = ROW_PADDING, end = ROW_PADDING, bottom = 10.dp),
                     )
-                    if (settings.boardBlockedAt != null) {
-                        NoticeRow("上次插电时被系统拦下了。vivo、小米等手机要在应用权限里打开「后台弹出界面」。", "去打开") {
-                            OemGuide.openAppDetails(context)
-                            update { it.copy(boardBlockedAt = null) }
-                        }
+                }
+                if (settings.boardBlockedAt != null) {
+                    NoticeRow("上次插电时被系统拦下了。vivo、小米等手机要在应用权限里打开「后台弹出界面」。", "去打开") {
+                        OemGuide.openAppDetails(context)
+                        update { it.copy(boardBlockedAt = null) }
                     }
                 }
                 Line()
@@ -287,7 +287,7 @@ private fun ConnectionCard(
         Modifier
             .fillMaxWidth()
             .pixelSurface(c.surface, step = 5.dp, lip = 4.dp, lipColor = c.shade)
-            .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 14.dp),
+            .padding(start = 14.dp, end = 14.dp, top = 14.dp, bottom = 18.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         Row(

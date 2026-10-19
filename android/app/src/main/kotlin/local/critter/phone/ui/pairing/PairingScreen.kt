@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Canvas
@@ -275,6 +276,7 @@ fun PairingScreen(
 /** Sprig waits with its hand up, over the row the Mac's "添加手机" window shows now, with 「允许」 circled. */
 @Composable
 private fun WaitingPane(position: StepPosition?, pairState: ConnState, onCancel: () -> Unit) {
+    BackHandler(onBack = onCancel)
     StepPage(
         position, "在 Mac 上点「允许」", "Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。",
         ghost = "取消", onGhost = onCancel,
@@ -563,6 +565,8 @@ private fun ManualPane(
     var code by rememberSaveable { mutableStateOf("") }
     var probing by remember { mutableStateOf(false) }
     var confirm by remember { mutableStateOf<Pair<FoundMac, String>?>(null) }
+    // Back goes to the scanner this screen came from, like the back icon.
+    BackHandler(onBack = onScan)
 
     Column(Modifier.fillMaxSize().background(c.bg).safeDrawingPadding().padding(horizontal = 18.dp)) {
         Row(
