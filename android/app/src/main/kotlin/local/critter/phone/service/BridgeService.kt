@@ -87,11 +87,12 @@ class BridgeService : Service() {
                 val s = repo.settingsStore.settings.value
                 val prefs = AlertPrefs(s.vibrateOnWaiting, s.notifyDone, s.notifyError)
                 val plan = tracker.next(body, prefs)
-                // Notifications only when the floating pile cannot be seen (spec §8.7); the buzz stays.
+                // Notifications only when neither the floating pile nor the board (which the pile hides behind) can
+                // be seen (spec §8.7); the buzz stays.
                 Alerts.apply(
                     this@BridgeService, plan, body,
                     canVibrate = Alerts.vibrationAllowed(this@BridgeService),
-                    notify = !overlay.isVisible,
+                    notify = !overlay.isVisible && !repo.boardOnScreen.value,
                 )
             }
         }
@@ -104,6 +105,11 @@ class BridgeService : Service() {
                     syncOverlay()
                     boardTrigger.settingsChanged()
                 }
+        }
+
+        // The pile sinks out of sight while the board is up, and comes back up when it goes (design §8.4).
+        scope.launch {
+            repo.boardOnScreen.collect { overlay.setBoardShown(it) }
         }
 
         // Stop when unpaired or switched off in settings.

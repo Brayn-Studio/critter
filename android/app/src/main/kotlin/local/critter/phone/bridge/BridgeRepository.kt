@@ -89,7 +89,10 @@ class BridgeRepository(private val app: Application) {
     private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
     private var client: BridgeClient? = null
     private var clientJob: Job? = null
-    @Volatile private var boardVisible = false
+    private val _boardOnScreen = MutableStateFlow(false)
+
+    /** The board is on screen (started): the floating pile hides meanwhile (design §8.4). */
+    val boardOnScreen: StateFlow<Boolean> = _boardOnScreen.asStateFlow()
 
     /** The newest snapshot not yet written to [cache], and when the cache was last written (see [onSnapshot]). */
     private var unsaved: Pair<SnapshotBody, Long>? = null
@@ -220,13 +223,13 @@ class BridgeRepository(private val app: Application) {
         return failure(ResultReason.unknown, "没有发送出去")
     }
 
-    /** The board is open: ping every 30 s; otherwise every 3 minutes (spec §8.3). */
+    /** The board is open: ping every 30 s; otherwise every 3 minutes (spec §8.3). Also [boardOnScreen]. */
     fun boardVisible(visible: Boolean) {
-        boardVisible = visible
+        _boardOnScreen.value = visible
         client?.setPingInterval(pingInterval())
     }
 
-    private fun pingInterval() = if (boardVisible) 30_000L else 180_000L
+    private fun pingInterval() = if (_boardOnScreen.value) 30_000L else 180_000L
 
     private fun onSnapshot(body: SnapshotBody) {
         val now = System.currentTimeMillis()
