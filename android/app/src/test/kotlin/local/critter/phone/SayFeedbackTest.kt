@@ -2,6 +2,7 @@ package local.critter.phone
 
 import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
+import local.critter.phone.ui.detail.afterSent
 import local.critter.phone.ui.detail.letterPath
 import local.critter.phone.ui.detail.sayFeedback
 import org.junit.jupiter.api.Test
@@ -23,6 +24,16 @@ class SayFeedbackTest {
     @Test fun failedShowsTheReason() = assertEquals("socket 连不上", sayFeedback(result(false, ResultReason.failed, "socket 连不上")))
 
     @Test fun failedWithoutAReasonStillSaysSo() = assertEquals("发送失败", sayFeedback(result(false, ResultReason.failed)))
+
+    @Test
+    fun whatWasTypedDuringTheSendStays() {
+        // Nothing typed meanwhile: the field is emptied.
+        assertEquals("", afterSent(current = "hello", sent = "hello"))
+        // More typed after the sent words while the send was on its way: only the sent words go.
+        assertEquals("还有一件事", afterSent(current = "hello 还有一件事", sent = "hello"))
+        // The sent words were edited meanwhile: the field is the user's new draft and is left alone.
+        assertEquals("hullo", afterSent(current = "hullo", sent = "hello"))
+    }
 
     @Test
     fun letterArcsAndLands() {

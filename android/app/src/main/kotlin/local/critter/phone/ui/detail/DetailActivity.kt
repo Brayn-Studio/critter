@@ -105,6 +105,14 @@ fun sayFeedback(result: ServerMessage.Result): String = when {
     else -> result.message?.takeIf { it.isNotBlank() } ?: "发送失败"
 }
 
+/**
+ * The field after [sent] went out: the field stays editable during the send (the keyboard stays up), so what was
+ * typed after the sent words in the meantime is kept. A field whose sent words were edited meanwhile is the
+ * user's new draft and is left as it is.
+ */
+fun afterSent(current: String, sent: String): String =
+    if (current.startsWith(sent)) current.removePrefix(sent).trimStart() else current
+
 /** How long "这个会话已经结束" stays before the sheet closes by itself. */
 private const val ENDED_CLOSE_MS = 1_500L
 
@@ -253,12 +261,13 @@ class DetailActivity : ComponentActivity() {
             withKeyguardDismissed {
                 busy = true
                 feedback = null
+                val sent = text
                 scope.launch {
-                    val result = repository.say(session.id, text.trim())
+                    val result = repository.say(session.id, sent.trim())
                     busy = false
                     feedback = sayFeedback(result) to result.ok
                     if (result.ok) {
-                        text = ""
+                        text = afterSent(text, sent)
                         // Under reduce motion nothing flies: the green line says it.
                         if (!reduce) flyLetter()
                     }
@@ -296,7 +305,8 @@ class DetailActivity : ComponentActivity() {
                                 placeholder = "发一句…",
                                 modifier = Modifier.weight(1f),
                                 // Not disabled (nor read-only) while sending: either drops the keyboard, and the
-                                // sheet changes shape under the flying letter. The send button waits instead.
+                                // sheet changes shape under the flying letter. The send button waits instead, and
+                                // what is typed meanwhile survives the send (afterSent).
                                 maxLines = 5,
                                 contentDescription = "发一句",
                             )
