@@ -17,6 +17,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -523,20 +524,23 @@ private fun lookingUp(skin: SkinManifest): MotionClip {
     return List(LOOK_UP_ROUNDS) { round.map { it.copy() } }.flatten() + ClipKey(n.lookCenter, 2)
 }
 
-/** Light status and navigation bar icons while this is on screen (the scanner is dark in either theme). */
+/**
+ * Light status and navigation bar icons while this is on screen (the scanner is dark in either theme); on leaving,
+ * the theme's again (dark icons in the light theme), which the manual entry and settings pages rely on.
+ */
 @Composable
 private fun LightSystemBarIcons() {
     val view = LocalView.current
-    DisposableEffect(view) {
+    // The system's theme, not this pane's always-dark one.
+    val themeDarkIcons = !isSystemInDarkTheme()
+    DisposableEffect(view, themeDarkIcons) {
         val window = view.context.findActivity()?.window ?: return@DisposableEffect onDispose {}
         val bars = WindowCompat.getInsetsController(window, view)
-        val status = bars.isAppearanceLightStatusBars
-        val navigation = bars.isAppearanceLightNavigationBars
         bars.isAppearanceLightStatusBars = false
         bars.isAppearanceLightNavigationBars = false
         onDispose {
-            bars.isAppearanceLightStatusBars = status
-            bars.isAppearanceLightNavigationBars = navigation
+            bars.isAppearanceLightStatusBars = themeDarkIcons
+            bars.isAppearanceLightNavigationBars = themeDarkIcons
         }
     }
 }

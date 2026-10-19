@@ -8,6 +8,7 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -294,16 +295,20 @@ private fun rememberOffline(state: ConnState): Boolean {
     return offline
 }
 
-/** Dark status bar icons on the dawn and day skies, light ones at dusk and night; back as they were on leaving. */
+/**
+ * Dark status bar icons on the dawn and day skies, light ones at dusk and night. On leaving they go back to the
+ * theme's (dark in the light theme), not to whatever was read on entering: a value read while another screen had
+ * changed them stuck, and the light settings page was left with white icons.
+ */
 @Composable
 private fun StatusBarIcons(darkIcons: Boolean) {
     val view = LocalView.current
-    DisposableEffect(view, darkIcons) {
+    val themeDarkIcons = !isSystemInDarkTheme()
+    DisposableEffect(view, darkIcons, themeDarkIcons) {
         val window = view.context.findActivity()?.window
         val controller = window?.let { WindowCompat.getInsetsController(it, view) }
-        val before = controller?.isAppearanceLightStatusBars
         controller?.isAppearanceLightStatusBars = darkIcons
-        onDispose { if (before != null) controller.isAppearanceLightStatusBars = before }
+        onDispose { controller?.isAppearanceLightStatusBars = themeDarkIcons }
     }
 }
 
