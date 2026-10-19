@@ -27,6 +27,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -34,6 +35,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Density
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -54,6 +56,7 @@ import local.critter.phone.critter.PileSlots
 import local.critter.phone.overlay.countIconColor
 import local.critter.phone.overlay.fitCounts
 import local.critter.phone.overlay.pileCounts
+import local.critter.phone.ui.board.BOARD_LINE
 import local.critter.phone.ui.board.BoardData
 import local.critter.phone.ui.board.BoardMeter
 import local.critter.phone.ui.board.CardRequest
@@ -183,11 +186,13 @@ fun CritterBoard(
         )
 
         val pitch = PITCH_CELLS * layout.scale
+        // Where the date's line ends: no bubble reaches above it (a large font makes bubbles taller).
+        val headerBottom = with(LocalDensity.current) { (HEADER_TOP + CLOCK_SIZE.toDp() + DATE_GAP + DATE_SIZE.toDp() * BOARD_LINE).value }
         layout.slots.forEachIndexed { i, p ->
             val x = p.x.toFloat()
             if (i < shown.size) {
                 val s = shown[i]
-                SessionTexts(s, requests[s.id], x, ground, layout.scale, pitch, w, bubble = s.id !in carried, onTap)
+                SessionTexts(s, requests[s.id], x, ground, layout.scale, pitch, w, headerBottom, bubble = s.id !in carried, onTap)
             } else {
                 PileTexts(pileSessions, x, ground, layout.scale, onTap)
             }
@@ -271,7 +276,7 @@ private fun MiniLimit(label: String, window: RateWindow?) {
 /**
  * The bubble over a Critter (while it is [bubble], i.e. at home) and, under the horizon, its name, the folder and
  * branch and the context meter. Everything stays inside the slot's [pitch], so long names end in "…" rather than
- * running into the neighbor; the bubble also stays inside the board ([width]).
+ * running into the neighbor; the bubble also stays inside the board ([width]) and below the date ([floor]).
  */
 @Composable
 private fun SessionTexts(
@@ -282,6 +287,7 @@ private fun SessionTexts(
     scale: Float,
     pitch: Float,
     width: Float,
+    floor: Float,
     bubble: Boolean,
     onTap: (String) -> Unit,
 ) {
@@ -292,8 +298,8 @@ private fun SessionTexts(
         val bubbleW = minOf(BUBBLE_MAX_DP, textW)
         val left = (center - bubbleW / 2).coerceIn(4f, max(4f, width - bubbleW - 4))
         Box(
-            Modifier.offset(left.dp, 0.dp).width(bubbleW.dp).height((ground - BUBBLE_CELLS * scale).coerceAtLeast(0f).dp),
-            contentAlignment = Alignment.BottomCenter,
+            Modifier.offset(left.dp, 0.dp).width(bubbleW.dp).bubbleAt((ground - BUBBLE_CELLS * scale).coerceAtLeast(0f), floor),
+            contentAlignment = Alignment.TopCenter,
         ) {
             Bubble(s, card, tap)
         }
@@ -312,6 +318,17 @@ private fun SessionTexts(
         )
         s.context?.let { BoardMeter(it.usedPercent, 14, 3.dp, Modifier.padding(top = 6.dp).width(84.dp)) }
     }
+}
+
+/**
+ * Stands a bubble with its bottom [anchor] dp from the top, over its Critter's head, but never higher than [floor]
+ * dp: at a large font size a two-line bubble would reach into the date. It then stands lower, over the head's
+ * marker, rather than on the date.
+ */
+private fun Modifier.bubbleAt(anchor: Float, floor: Float): Modifier = layout { measurable, constraints ->
+    val bubble = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+    val top = max(anchor.dp.roundToPx() - bubble.height, floor.dp.roundToPx())
+    layout(bubble.width, top + bubble.height) { bubble.place(0, top) }
 }
 
 /**
