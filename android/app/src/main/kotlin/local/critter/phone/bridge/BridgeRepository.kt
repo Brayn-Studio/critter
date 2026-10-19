@@ -89,6 +89,7 @@ class BridgeRepository(private val app: Application) {
     private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
     private var client: BridgeClient? = null
     private var clientJob: Job? = null
+    private val boards = BoardPresence()
     private val _boardOnScreen = MutableStateFlow(false)
 
     /** The board is on screen (started): the floating pile hides meanwhile (design §8.4). */
@@ -223,9 +224,13 @@ class BridgeRepository(private val app: Application) {
         return failure(ResultReason.unknown, "没有发送出去")
     }
 
-    /** The board is open: ping every 30 s; otherwise every 3 minutes (spec §8.3). Also [boardOnScreen]. */
+    /**
+     * A board started ([visible]) or stopped; each board reports both, once. While one is open: ping every 30 s,
+     * otherwise every 3 minutes (spec §8.3). Also [boardOnScreen].
+     */
     fun boardVisible(visible: Boolean) {
-        _boardOnScreen.value = visible
+        if (visible) boards.started() else boards.stopped()
+        _boardOnScreen.value = boards.onScreen
         client?.setPingInterval(pingInterval())
     }
 

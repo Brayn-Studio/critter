@@ -59,6 +59,9 @@ class BoardActivity : ComponentActivity() {
     /** Opened by the trigger rather than by hand: it has no business on screen once the charger is gone. */
     private val auto by lazy { intent.getBooleanExtra(EXTRA_AUTO, false) }
 
+    /** Between onStart and onStop, once this board has told the repository it is on screen. */
+    private var counted = false
+
     /** True when the trigger asked the board to go (unplugged, or the phone stood up); that is not a manual exit. */
     private var closedByTrigger = false
 
@@ -110,6 +113,7 @@ class BoardActivity : ComponentActivity() {
         }
         keepScreenOn(window, charging)
         repository.boardVisible(true)
+        counted = true
         repository.ensureConnected()
     }
 
@@ -121,7 +125,10 @@ class BoardActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        repository.boardVisible(false)
+        if (counted) {
+            counted = false
+            repository.boardVisible(false)
+        }
         // Leaving by hand (back, home) keeps the board from opening again on this charge. The screen going off
         // is not leaving.
         val byHand = isFinishing || getSystemService(PowerManager::class.java).isInteractive
