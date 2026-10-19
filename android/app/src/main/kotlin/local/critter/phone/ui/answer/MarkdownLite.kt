@@ -5,7 +5,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -14,11 +14,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
+import androidx.compose.ui.unit.sp
+import local.critter.phone.ui.theme.Critter
+import local.critter.phone.ui.theme.Nunito
+import local.critter.phone.ui.theme.PixelShape
 
 // Just enough Markdown for a plan: #/##/### headings, "-" and "1." lists, `code`, ``` blocks and **bold**.
 // Anything else is shown as plain text.
@@ -110,53 +117,53 @@ internal fun parseInline(s: String): List<Span> {
     return spans
 }
 
-/** [text] rendered as [parseMarkdownLite] blocks; code (inline and fenced) sits on [codeBackground]. */
+/**
+ * [text] rendered as [parseMarkdownLite] blocks in the plan paper's type (mockup "计划"): 13.5 sp lines 1.65 apart,
+ * a 16 sp first-level heading and 13.5 sp bold ones under it, plain paragraphs in ink2; code (inline and fenced)
+ * is 12.5 sp monospace on [codeBackground].
+ */
 @Composable
 fun MarkdownLite(
     text: String,
     modifier: Modifier = Modifier,
     codeBackground: Color = MaterialTheme.colorScheme.surfaceVariant,
 ) {
+    val c = Critter.colors
     val blocks = remember(text) { parseMarkdownLite(text) }
+    val body = LocalTextStyle.current.merge(TextStyle(color = c.ink, fontFamily = Nunito, fontSize = 13.5.sp, lineHeight = 1.65.em))
     Column(modifier) {
-        blocks.forEach { block ->
+        blocks.forEachIndexed { i, block ->
             when (block) {
                 is MdBlock.Heading -> Text(
                     styled(block.spans, codeBackground),
-                    style = when (block.level) {
-                        1 -> MaterialTheme.typography.titleLarge
-                        2 -> MaterialTheme.typography.titleMedium
-                        else -> MaterialTheme.typography.titleSmall
-                    },
-                    fontWeight = FontWeight.SemiBold,
-                    modifier = Modifier.padding(top = 10.dp, bottom = 2.dp),
+                    style = body.merge(TextStyle(fontSize = if (block.level == 1) 16.sp else 13.5.sp, fontWeight = FontWeight.W800)),
+                    modifier = Modifier.padding(top = if (i == 0) 0.dp else 10.dp, bottom = if (block.level == 1) 4.dp else 0.dp),
                 )
 
-                is MdBlock.Bullet -> Row(Modifier.padding(start = 8.dp, top = 2.dp)) {
-                    Text("•  ", style = MaterialTheme.typography.bodyMedium)
-                    Text(styled(block.spans, codeBackground), style = MaterialTheme.typography.bodyMedium)
+                is MdBlock.Bullet -> Row(Modifier.padding(start = 6.dp, top = 2.dp)) {
+                    Text("•  ", style = body)
+                    Text(styled(block.spans, codeBackground), style = body)
                 }
 
-                is MdBlock.Numbered -> Row(Modifier.padding(start = 8.dp, top = 2.dp)) {
-                    Text("${block.number}.  ", style = MaterialTheme.typography.bodyMedium)
-                    Text(styled(block.spans, codeBackground), style = MaterialTheme.typography.bodyMedium)
+                is MdBlock.Numbered -> Row(Modifier.padding(start = 6.dp, top = 2.dp)) {
+                    Text("${block.number}.  ", style = body)
+                    Text(styled(block.spans, codeBackground), style = body)
                 }
 
                 is MdBlock.CodeBlock -> Text(
                     block.text,
-                    fontFamily = FontFamily.Monospace,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = body.merge(TextStyle(fontFamily = FontFamily.Monospace, fontSize = 12.5.sp, lineHeight = 1.55.em)),
                     modifier = Modifier
                         .padding(vertical = 6.dp)
                         .fillMaxWidth()
-                        .background(codeBackground, RoundedCornerShape(8.dp))
+                        .background(codeBackground, PixelShape(2.dp))
                         .padding(8.dp),
                 )
 
                 is MdBlock.Paragraph -> Text(
                     styled(block.spans, codeBackground),
-                    style = MaterialTheme.typography.bodyMedium,
-                    modifier = Modifier.padding(top = 4.dp),
+                    style = body.merge(TextStyle(color = c.ink2, fontWeight = FontWeight.W600)),
+                    modifier = Modifier.padding(top = if (i == 0) 0.dp else 4.dp),
                 )
             }
         }
@@ -167,8 +174,9 @@ private fun styled(spans: List<Span>, codeBackground: Color): AnnotatedString =
     buildAnnotatedString {
         spans.forEach { span ->
             val style = SpanStyle(
-                fontWeight = if (span.bold) FontWeight.Bold else null,
+                fontWeight = if (span.bold) FontWeight.W800 else null,
                 fontFamily = if (span.code) FontFamily.Monospace else null,
+                fontSize = if (span.code) 12.5.sp else TextUnit.Unspecified,
                 background = if (span.code) codeBackground else Color.Unspecified,
             )
             withStyle(style) { append(span.text) }
