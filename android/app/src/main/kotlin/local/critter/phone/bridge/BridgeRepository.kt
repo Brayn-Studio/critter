@@ -277,6 +277,21 @@ class BridgeRepository(private val app: Application) {
     }
 
     /**
+     * Allows or denies a lone permission [request] from a screen's own buttons (the home list), drafted like the
+     * answer card does it (`AnswerDraft`). It is sent in this repository's scope, so leaving the screen does not
+     * cancel it; [onResult] runs on the main thread.
+     */
+    fun answerPermission(request: BridgePending, allow: Boolean, onResult: (ServerMessage.Result) -> Unit) {
+        val draft = local.critter.core.logic.AnswerDraft(request)
+        if (allow) draft.allow() else draft.deny(null)
+        val payload = draft.payload()
+        scope.launch {
+            val result = if (payload == null) failure(ResultReason.invalid, "要打开卡片回答") else answer(request.requestId, payload)
+            withContext(Dispatchers.Main) { onResult(result) }
+        }
+    }
+
+    /**
      * The manifest JSON for skin [name]: a bundled skin straight from assets; otherwise the one the Mac sent
      * before, or else asked for now with a `skin` request, remembered in memory and in the app's private
      * `skins/<name>.json` (this is what feeds [SkinStore.library]). Null if the Mac has no such skin or is out
