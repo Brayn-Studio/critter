@@ -8,11 +8,16 @@ import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
+import android.graphics.Canvas
+import android.graphics.Paint
 import android.net.Uri
 import android.os.Build
 import android.os.VibrationEffect
 import android.os.Vibrator
 import android.os.VibratorManager
+import android.provider.Settings
+import androidx.compose.ui.graphics.toArgb
 import androidx.core.app.NotificationCompat
 import androidx.core.content.ContextCompat
 import androidx.core.net.toUri
@@ -23,10 +28,16 @@ import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
 import local.critter.core.protocol.PetState
 import local.critter.core.protocol.SnapshotBody
+import local.critter.phone.R
+import local.critter.phone.critter.Portraits
+import local.critter.phone.repository
 import local.critter.phone.ui.MainActivity
 import local.critter.phone.ui.answer.AnswerActivity
+import local.critter.phone.ui.answer.permissionBody
 import local.critter.phone.ui.detail.DetailActivity
+import local.critter.phone.ui.folderName
 import local.critter.phone.ui.stateLabel
+import local.critter.phone.ui.theme.LightCritterColors
 
 /** Notification channels, and turning an [AlertPlan] into notifications and one buzz. */
 object Alerts {
@@ -39,6 +50,18 @@ object Alerts {
     private const val TAG_SESSION = "session"
     private const val TAG_WAITING = "waiting"
     private const val TAG_HANDLED = "handled"
+    private const val TAG_BOARD = "board"
+    private const val BOARD_BLOCKED_ID = 1
+
+    /** The small icon's tint: Sprig purple (design §8.9). */
+    private val Accent = LightCritterColors.brand.toArgb()
+
+    /** The large icon's side in pixels: the session's Critter on its state's pale tile. */
+    private const val LARGE_ICON_PX = 96
+    private const val LARGE_ICON_CELL_PX = 4
+
+    /** What the lock screen says instead of the command or the question. */
+    private const val PUBLIC_TEXT = "解锁后查看内容"
 
     const val ACTION_ANSWER = "local.critter.phone.ANSWER"
     const val EXTRA_REQUEST_ID = "requestId"
@@ -59,6 +82,23 @@ object Alerts {
             PendingKind.unknown -> "$name 需要你"
         }
     }
+
+    /** A request's notification text: the command or path of a permission, otherwise the session's folder. */
+    fun requestText(request: BridgePending, session: BridgeSession?): String? =
+        (if (request.kind == PendingKind.permission) permissionBody(request.input) else null)
+            ?: session?.cwd?.let { folderName(it) }
+
+    /** The lock screen's title for a request: who is waiting, nothing about what for. */
+    fun publicTitle(session: BridgeSession?): String = "${session?.name ?: "会话"} 需要你确认"
+
+    /** What the lock screen shows of a notification that waits for you. */
+    data class LockScreenText(val title: String, val text: String)
+
+    /**
+     * The public version of a request or waiting notification: the session's name and "解锁后查看内容", never the
+     * command, what it is doing or its folder (the notifications themselves are VISIBILITY_PRIVATE).
+     */
+    fun lockScreenText(session: BridgeSession?): LockScreenText = LockScreenText(publicTitle(session), PUBLIC_TEXT)
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -86,7 +126,8 @@ object Alerts {
             context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
         return NotificationCompat.Builder(context, CH_STATUS)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
             .setContentTitle(title)
             .setContentText(text)
             .setContentIntent(open)
@@ -152,12 +193,42 @@ object Alerts {
     fun showHandled(context: Context, requestId: String) {
         if (!canPost(context)) return
         val n = NotificationCompat.Builder(context, CH_RESULT)
-            .setSmallIcon(android.R.drawable.stat_notify_sync_noanim)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
             .setContentTitle("已在电脑上处理")
             .setTimeoutAfter(3_000)
             .setAutoCancel(true)
             .build()
         context.getSystemService(NotificationManager::class.java).notify(TAG_HANDLED, notificationId(requestId), n)
+    }
+
+    /**
+     * The board could not open by itself: the system blocked a pop-up from the background. A quiet notification
+     * says so and how to allow it; 「去设置」 opens the app's details page.
+     */
+    fun boardBlocked(context: Context) {
+        if (!canPost(context)) return
+        val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())
+            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val open = PendingIntent.getActivity(context, BOARD_BLOCKED_ID, details, PendingIntent.FLAG_IMMUTABLE)
+        val text = "系统拦下了后台弹出的界面。打开「后台弹出界面」后，下次插电就能自动打开。"
+        val n = NotificationCompat.Builder(context, CH_STATUS)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
+            .setContentTitle("没能自动打开看板")
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setContentIntent(open)
+            .addAction(NotificationCompat.Action.Builder(0, "去设置", open).build())
+            .setPriority(NotificationCompat.PRIORITY_LOW)
+            .setAutoCancel(true)
+            .build()
+        context.getSystemService(NotificationManager::class.java).notify(TAG_BOARD, BOARD_BLOCKED_ID, n)
+    }
+
+    /** The board opened by itself after all: the "blocked" notification no longer applies. */
+    fun boardUnblocked(context: Context) {
+        context.getSystemService(NotificationManager::class.java).cancel(TAG_BOARD, BOARD_BLOCKED_ID)
     }
 
     /** Only while no Do Not Disturb filter is on (spec §8.7); the system handles the notifications themselves. */
@@ -177,10 +248,32 @@ object Alerts {
             AnswerActivity.intent(context, request.requestId),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val text = requestText(request, session)
+        val icon = largeIcon(context, session, PetState.waiting)
+        val actions = if (request.kind == PendingKind.permission) {
+            listOf(decisionAction(context, request, DECISION_ALLOW, "允许"), decisionAction(context, request, DECISION_DENY, "拒绝"))
+        } else {
+            listOf(NotificationCompat.Action.Builder(0, "打开", open).build())
+        }
+        // On the lock screen: who is waiting, not the command (the buttons still ask to unlock first).
+        val locked = lockScreenText(session)
+        val lockScreen = NotificationCompat.Builder(context, CH_WAITING)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
+            .setContentTitle(locked.title)
+            .setContentText(locked.text)
+            .setLargeIcon(icon)
+            .setContentIntent(open)
+        actions.forEach { lockScreen.addAction(it) }
         val builder = NotificationCompat.Builder(context, CH_WAITING)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
             .setContentTitle(requestTitle(request, session))
-            .setContentText(session?.cwd?.substringAfterLast('/'))
+            .setContentText(text)
+            .setStyle(NotificationCompat.BigTextStyle().bigText(text))
+            .setLargeIcon(icon)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(lockScreen.build())
             .setContentIntent(open)
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -188,13 +281,33 @@ object Alerts {
             .setOnlyAlertOnce(true)
         // The hook gives up at expiresAt; the notification goes then even if no snapshot says so (offline).
         request.expiresAt?.let { it - System.currentTimeMillis() }?.takeIf { it > 0 }?.let { builder.setTimeoutAfter(it) }
-        if (request.kind == PendingKind.permission) {
-            builder.addAction(decisionAction(context, request, DECISION_ALLOW, "允许"))
-            builder.addAction(decisionAction(context, request, DECISION_DENY, "拒绝"))
-        } else {
-            builder.addAction(NotificationCompat.Action.Builder(0, "打开", open).build())
-        }
+        actions.forEach { builder.addAction(it) }
         nm.notify(TAG_REQUEST, notificationId(request.requestId), builder.build())
+    }
+
+    /**
+     * The session's Critter standing still in its state's pose on that state's pale tile ([LARGE_ICON_PX] square,
+     * corners rounded by a quarter), as on the mockup; null without a session.
+     */
+    private fun largeIcon(context: Context, session: BridgeSession?, state: PetState): Bitmap? {
+        session ?: return null
+        val manifest = context.repository.skins.library.value.manifest(session.skin)
+        val still = Portraits.still(manifest, state, session.activity, LARGE_ICON_CELL_PX)
+        val c = LightCritterColors
+        val tile = when (state) {
+            PetState.waiting -> c.waitBg
+            PetState.done -> c.doneBg
+            PetState.error -> c.errBg
+            PetState.running -> c.runBg
+            PetState.idle, PetState.unknown -> c.idleBg
+        }
+        val size = LARGE_ICON_PX.toFloat()
+        val bitmap = Bitmap.createBitmap(LARGE_ICON_PX, LARGE_ICON_PX, Bitmap.Config.ARGB_8888)
+        val canvas = Canvas(bitmap)
+        canvas.drawRoundRect(0f, 0f, size, size, size / 4, size / 4, Paint(Paint.ANTI_ALIAS_FLAG).apply { color = tile.toArgb() })
+        // Drawn 1:1 (no scaling, so no smoothing), centered, standing just above the bottom edge.
+        canvas.drawBitmap(still, ((LARGE_ICON_PX - still.width) / 2).toFloat(), (LARGE_ICON_PX - still.height - LARGE_ICON_CELL_PX).toFloat(), null)
+        return bitmap
     }
 
     private fun decisionAction(
@@ -223,10 +336,25 @@ object Alerts {
             DetailActivity.intent(context, session.id),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+        val icon = largeIcon(context, session, PetState.waiting)
+        // What it is doing may name a command too: the lock screen only says who.
+        val locked = lockScreenText(session)
+        val lockScreen = NotificationCompat.Builder(context, CH_WAITING)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
+            .setContentTitle(locked.title)
+            .setContentText(locked.text)
+            .setLargeIcon(icon)
+            .setContentIntent(open)
+            .build()
         val n = NotificationCompat.Builder(context, CH_WAITING)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
             .setContentTitle(waitingNoticeTitle(session))
-            .setContentText(session.detail?.takeIf { it.isNotBlank() } ?: session.cwd.substringAfterLast('/'))
+            .setContentText(session.detail?.takeIf { it.isNotBlank() } ?: folderName(session.cwd))
+            .setLargeIcon(icon)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setPublicVersion(lockScreen)
             .setContentIntent(open)
             .setCategory(NotificationCompat.CATEGORY_REMINDER)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
@@ -243,9 +371,11 @@ object Alerts {
             context, 0, Intent(context, MainActivity::class.java), PendingIntent.FLAG_IMMUTABLE,
         )
         val n = NotificationCompat.Builder(context, CH_RESULT)
-            .setSmallIcon(android.R.drawable.stat_notify_more)
+            .setSmallIcon(R.drawable.ic_stat_critter)
+            .setColor(Accent)
             .setContentTitle("${session.name} ${stateLabel(state)}")
             .setContentText(session.detail)
+            .setLargeIcon(largeIcon(context, session, state))
             .setContentIntent(open)
             .setAutoCancel(true)
             .build()

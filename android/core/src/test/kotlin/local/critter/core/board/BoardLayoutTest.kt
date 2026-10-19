@@ -23,7 +23,7 @@ class BoardLayoutTest {
     @Test fun oneSessionIsBigAndCentred() {
         val l = BoardLayout.place(1, 740f, 360f)
         assertEquals(1, l.slots.size)
-        assertEquals(5f, l.scale)
+        assertEquals(6f, l.scale)
         assertNull(l.pileFrom)
         assertInside(l, 740f, 360f)
         assertEquals(740.0 / 2, l.slots[0].x + 9 * l.scale, 0.5)
@@ -34,7 +34,7 @@ class BoardLayoutTest {
             val l = BoardLayout.place(6, w, 360f)
             assertEquals(6, l.slots.size)
             assertNull(l.pileFrom)
-            assertTrue(l.scale in 3f..5f)
+            assertTrue(l.scale in 3f..6f)
             assertInside(l, w, 360f)
         }
     }
@@ -60,7 +60,15 @@ class BoardLayoutTest {
         assertInside(l, 300f, 360f)
     }
 
-    @Test fun scaleShrinksFromFiveToThreeAsTheRowFills() {
+    /** Design §8.7: 6 dp a cell, as on the mockup's 800 x 360 board with five sessions. */
+    @Test fun fiveSessionsAreSixDpACellOnAPhone() {
+        val l = BoardLayout.place(5, 800f, 360f)
+        assertEquals(6f, l.scale)
+        assertNull(l.pileFrom)
+        assertInside(l, 800f, 360f)
+    }
+
+    @Test fun scaleShrinksFromSixToThreeAsTheRowFills() {
         val few = BoardLayout.place(2, 800f, 360f).scale
         val many = BoardLayout.place(6, 800f, 360f).scale
         assertTrue(few >= many)

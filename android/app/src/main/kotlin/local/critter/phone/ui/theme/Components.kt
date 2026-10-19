@@ -30,6 +30,7 @@ import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -357,7 +358,14 @@ fun PixelSlider(
     }
 }
 
-/** A meter in [segments] cells: green, amber or red by [level]; the brand color when [level] is null. */
+/** A meter's own colors, for a place outside the theme (the board): flat cells, without the darker bottom rows. */
+@Immutable
+data class MeterColors(val off: Color, val calm: Color, val busy: Color, val hot: Color)
+
+/**
+ * A meter in [segments] cells: green, amber or red by [level]; the brand color when [level] is null. With
+ * [colors] the cells are flat and take those colors instead of the theme's.
+ */
 @Composable
 fun SegmentMeter(
     percent: Double?,
@@ -365,13 +373,14 @@ fun SegmentMeter(
     modifier: Modifier = Modifier,
     height: Dp = 8.dp,
     level: MeterLevel? = meterLevel(percent),
+    colors: MeterColors? = null,
 ) {
     val c = Critter.colors
     val on = when (level) {
-        MeterLevel.Calm -> c.doneGlyph
-        MeterLevel.Busy -> c.runGlyph
-        MeterLevel.Hot -> c.errGlyph
-        null -> c.brand
+        MeterLevel.Calm -> colors?.calm ?: c.doneGlyph
+        MeterLevel.Busy -> colors?.busy ?: c.runGlyph
+        MeterLevel.Hot -> colors?.hot ?: c.errGlyph
+        null -> colors?.calm ?: c.brand
     }
     val lit = litSegments(percent, segments)
     Canvas(
@@ -384,6 +393,10 @@ fun SegmentMeter(
         val offLip = wholePx(1.dp)
         forEachSegment(segments, wholePx(2.dp)) { i, left, w ->
             val isLit = i < lit
+            if (colors != null) {
+                drawRect(if (isLit) on else colors.off, Offset(left, 0f), Size(w, size.height))
+                return@forEachSegment
+            }
             val lip = if (isLit) litLip else offLip
             drawRect(if (isLit) on else c.surface2, Offset(left, 0f), Size(w, size.height))
             drawRect(if (isLit) LitCellLip else c.line, Offset(left, size.height - lip), Size(w, lip))

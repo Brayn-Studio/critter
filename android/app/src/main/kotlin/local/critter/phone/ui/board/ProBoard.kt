@@ -1,69 +1,70 @@
 package local.critter.phone.ui.board
 
-import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.RowScope
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
-import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
-import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
 import local.critter.core.logic.LimitsText
 import local.critter.core.logic.SessionOrder
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
+import local.critter.core.protocol.PetState
 import local.critter.core.protocol.RateWindow
 import local.critter.core.protocol.SnapshotBody
-import local.critter.phone.ui.agoText
+import local.critter.core.skin.SkinLibrary
+import local.critter.phone.critter.CritterPortrait
 import local.critter.phone.ui.answer.permissionBody
-import local.critter.phone.ui.contextFraction
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
-import local.critter.phone.ui.placeLine
-import local.critter.phone.ui.stateColor
-import local.critter.phone.ui.stateGlyph
-import local.critter.phone.ui.stateLabel
-import local.critter.phone.ui.theme.WaitingOrange
-import java.time.Instant
+import local.critter.phone.ui.folderName
+import local.critter.phone.ui.sourceLabel
+import local.critter.phone.ui.theme.BoardColors
+import local.critter.phone.ui.theme.ButtonKind
+import local.critter.phone.ui.theme.ButtonSize
+import local.critter.phone.ui.theme.Nunito
+import local.critter.phone.ui.theme.PixelButton
+import local.critter.phone.ui.theme.PixelIcon
+import local.critter.phone.ui.theme.PixelShape
+import local.critter.phone.ui.theme.Silkscreen
+import local.critter.phone.ui.theme.StateChip
+import local.critter.phone.ui.theme.pixelSurface
 import java.time.ZoneId
 
-private val CardBg = Color(0xFF0E0E10)
-private val Track = Color(0xFF1C1C1E)
-private val Dim = Color(0xFF8E8E93)
-private val Faint = Color(0xFF636366)
-private val Bright = Color(0xFFF2F2F7)
-private val CritterButton = Color(0xFFD97757)
+/** How many lines of a command the card shows; the answer sheet (a tap on the card) shows all of it. */
+private const val SLIP_LINES = 4
 
 /** What the board shows: the latest data and how fresh it is. */
 data class BoardData(
@@ -98,10 +99,38 @@ fun cardRequests(body: SnapshotBody?): Map<String, CardRequest> =
         CardRequest(oldest, what, detail, requests.size - 1)
     }
 
-/** The landscape pro dashboard (mockup "专业看板"): clock and limits on the left, session cards on the right. */
+/**
+ * The pro board's two columns of cards. A card with a request is two rows tall and always heads the left column
+ * (the mockup's `grid-row: span 2`); every other card, in order, goes to the shorter column, the left one on a
+ * tie, so without requests they simply alternate.
+ */
+fun proColumns(sessions: List<BridgeSession>, requests: Map<String, CardRequest>): Pair<List<BridgeSession>, List<BridgeSession>> {
+    val (asking, others) = sessions.partition { it.id in requests }
+    val left = asking.toMutableList()
+    val right = ArrayList<BridgeSession>()
+    var leftRows = 2 * asking.size
+    var rightRows = 0
+    for (s in others) {
+        if (leftRows <= rightRows) {
+            left += s
+            leftRows++
+        } else {
+            right += s
+            rightRows++
+        }
+    }
+    return left to right
+}
+
+/**
+ * The landscape pro dashboard (mockup "看板 · 专业模式"): the clock, the date and two limit cards in a 212 dp
+ * column on the left; the session cards in two columns on the right, each with its Critter standing still at the
+ * top left (dimmed unless it is waiting). A lone permission request is answered on its card.
+ */
 @Composable
 fun ProBoard(
     data: BoardData,
+    library: SkinLibrary,
     shift: State<Pair<Dp, Dp>>,
     onAllow: (BridgePending) -> Unit,
     onDeny: (BridgePending) -> Unit,
@@ -115,209 +144,221 @@ fun ProBoard(
     Row(
         Modifier
             .fillMaxSize()
-            .background(Color.Black)
+            .background(BoardColors.bg)
             .offset(dx, dy)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .padding(start = 26.dp, end = 18.dp, top = 18.dp, bottom = 18.dp),
+        horizontalArrangement = Arrangement.spacedBy(18.dp),
     ) {
-        Column(Modifier.width(178.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            if (!data.connected) {
+        Column(Modifier.width(212.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+            Column {
+                Text(boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 44.sp, lineHeight = 44.sp, maxLines = 1)
                 Text(
-                    "未连接" + (data.updatedAt?.let { " · ${agoText(it, data.now)}" } ?: ""),
-                    color = WaitingOrange,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.SemiBold,
+                    boardDateText(data.now),
+                    color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 13.sp, maxLines = 1,
+                    modifier = Modifier.padding(start = 2.dp, top = 8.dp, bottom = 4.dp),
                 )
+                if (!data.connected) {
+                    Text(
+                        offlineText(data),
+                        color = BoardColors.wait, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 12.sp, maxLines = 1,
+                        modifier = Modifier.padding(start = 2.dp, bottom = 4.dp),
+                    )
+                }
             }
-            Text(clockText(data.now), color = Color(0xFFAEAEB2), fontSize = 40.sp, fontWeight = FontWeight.Light)
             Gauge("5 小时额度", body?.limits?.fiveHour, data.now)
             Gauge("7 天额度", body?.limits?.sevenDay, data.now)
             body?.limits?.let { LimitsText.staleness(it.updatedAt, data.now) }?.let {
-                Text("更新于 $it", color = Faint, fontSize = 10.5.sp)
+                Text("更新于 $it", color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 11.sp)
             }
         }
 
         if (sessions.isEmpty()) {
             Box(Modifier.weight(1f).fillMaxHeight(), contentAlignment = Alignment.Center) {
-                Text(if (data.connected) "电脑上还没有会话" else "还没有数据", color = Faint, fontSize = 14.sp)
+                Text(
+                    if (data.connected) "电脑上还没有会话" else "还没有数据",
+                    color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 14.sp,
+                )
             }
         } else {
-            LazyVerticalGrid(
-                columns = GridCells.Fixed(2),
-                modifier = Modifier.weight(1f).fillMaxHeight(),
+            val (left, right) = proColumns(sessions, requests)
+            // Two columns that scroll together; the right 44 dp stay clear for the mode button.
+            Row(
+                Modifier.weight(1f).fillMaxHeight().verticalScroll(rememberScrollState()).padding(end = 44.dp),
                 horizontalArrangement = Arrangement.spacedBy(10.dp),
-                verticalArrangement = Arrangement.spacedBy(10.dp),
             ) {
-                items(sessions, key = { it.id }) { session ->
-                    SessionCard(session, requests[session.id], data.connected, onAllow, onDeny, onOpen)
+                for (column in listOf(left, right)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                        for (session in column) {
+                            SessionCard(session, requests[session.id], library, data.connected, onAllow, onDeny, onOpen)
+                        }
+                    }
                 }
             }
         }
     }
 }
 
-private fun clockText(nowMs: Long): String {
-    val t = Instant.ofEpochMilli(nowMs).atZone(ZoneId.systemDefault())
-    return "%02d:%02d".format(t.hour, t.minute)
-}
-
-private fun gaugeColor(percent: Double): Color = when {
-    percent < 60 -> Color(0xFF34C759)
-    percent < 85 -> Color(0xFFFF9F0A)
-    else -> Color(0xFFFF3B30)
-}
-
+/** A limit: its name and share in Silkscreen, a 20-cell meter, and when it resets. */
 @Composable
 private fun Gauge(title: String, window: RateWindow?, now: Long) {
-    Column(Modifier.fillMaxWidth().background(CardBg, RoundedCornerShape(14.dp)).padding(horizontal = 12.dp, vertical = 11.dp)) {
-        Text(title, color = Dim, fontSize = 11.sp, fontWeight = FontWeight.SemiBold)
-        Text(LimitsText.percent(window), color = Bright, fontSize = 26.sp, fontWeight = FontWeight.SemiBold)
-        Spacer(Modifier.height(4.dp))
-        Box(Modifier.fillMaxWidth().height(6.dp).clip(RoundedCornerShape(3.dp)).background(Track)) {
-            if (window != null) {
-                Box(
-                    Modifier
-                        .fillMaxWidth((window.usedPercentage / 100.0).toFloat().coerceIn(0f, 1f))
-                        .fillMaxHeight()
-                        .background(gaugeColor(window.usedPercentage), RoundedCornerShape(3.dp)),
-                )
-            }
+    Column(
+        Modifier
+            .fillMaxWidth()
+            .pixelSurface(BoardColors.card, step = 3.dp, lip = 0.dp, lipColor = Color.Transparent, border = BoardColors.edge, borderWidth = 1.dp)
+            .padding(start = 12.dp, end = 12.dp, top = 10.dp, bottom = 12.dp),
+    ) {
+        Row(verticalAlignment = Alignment.Bottom) {
+            Text(
+                title, color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 11.5.sp,
+                maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).alignByBaseline(),
+            )
+            Text(
+                boardPercent(LimitsText.percent(window), 17.sp),
+                color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 22.sp, lineHeight = 22.sp, maxLines = 1,
+                modifier = Modifier.alignByBaseline(),
+            )
         }
+        BoardMeter(window?.usedPercentage, 20, 7.dp, Modifier.padding(top = 8.dp, bottom = 6.dp))
         Text(
             LimitsText.resets(window, now, ZoneId.systemDefault()),
-            color = Faint,
-            fontSize = 10.5.sp,
-            modifier = Modifier.padding(top = 6.dp),
+            color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 11.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
     }
 }
 
+/**
+ * One session: its still Critter, the name and state chip, what it is doing (what it wants, with a request), the
+ * folder, branch and source, and a 16-cell context meter. With a request the card has an orange edge; a lone
+ * permission request shows its command and 「拒绝」「允许」, any other request 「打开」.
+ */
 @Composable
 private fun SessionCard(
     session: BridgeSession,
     card: CardRequest?,
+    library: SkinLibrary,
     online: Boolean,
     onAllow: (BridgePending) -> Unit,
     onDeny: (BridgePending) -> Unit,
     onOpen: (BridgePending) -> Unit,
 ) {
     val request = card?.request
-    val shape = RoundedCornerShape(14.dp)
-    Row(
+    val edge = if (request != null) 2.dp else 1.dp
+    Column(
         Modifier
             .fillMaxWidth()
-            .clip(shape)
-            .background(CardBg)
-            .then(if (request != null) Modifier.border(BorderStroke(1.5.dp, WaitingOrange), shape) else Modifier)
-            .then(if (request != null) Modifier.clickable { onOpen(request) } else Modifier)
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        horizontalArrangement = Arrangement.spacedBy(10.dp),
+            .pixelSurface(
+                BoardColors.card, step = 3.dp, lip = 0.dp, lipColor = Color.Transparent,
+                border = if (request != null) BoardColors.wait else BoardColors.edge, borderWidth = edge,
+            )
+            .then(
+                if (request != null) Modifier.clickable(remember { MutableInteractionSource() }, indication = null) { onOpen(request) }
+                else Modifier,
+            )
+            .padding(start = 11.dp, end = 11.dp, top = 10.dp, bottom = 11.dp),
     ) {
-        Box(
-            Modifier.size(34.dp).background(stateColor(session.state).copy(alpha = 0.22f), RoundedCornerShape(9.dp)),
-            contentAlignment = Alignment.Center,
-        ) { Text(stateGlyph(session.state), color = stateColor(session.state), fontSize = 16.sp, fontWeight = FontWeight.Bold) }
-
-        Column(Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    session.name,
-                    color = Bright,
-                    fontSize = 12.5.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f),
-                )
-                Text(
-                    stateLabel(session.state),
-                    color = stateColor(session.state),
-                    fontSize = 9.5.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.background(stateColor(session.state).copy(alpha = 0.18f), RoundedCornerShape(6.dp))
-                        .padding(horizontal = 6.dp, vertical = 3.dp),
+        Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+            Box(Modifier.size(44.dp, 40.dp), contentAlignment = Alignment.BottomCenter) {
+                CritterPortrait(
+                    library.manifest(session.skin), session.state, session.activity, cell = 2.dp,
+                    dim = session.state != PetState.waiting,
                 )
             }
-            Text(
-                doingText(session),
-                color = Color(0xFFC7C7CC),
-                fontSize = 11.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(top = 4.dp, bottom = 5.dp),
-            )
-            Text(
-                placeLine(session),
-                color = Faint,
-                fontSize = 10.sp,
-                fontFamily = FontFamily.Monospace,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            session.context?.let { c ->
-                Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Box(Modifier.weight(1f).height(4.dp).clip(RoundedCornerShape(2.dp)).background(Track)) {
-                        Box(Modifier.fillMaxWidth(contextFraction(c)).fillMaxHeight().background(Dim, RoundedCornerShape(2.dp)))
-                    }
-                    Text("  ${contextPercentText(c)}", color = Dim, fontSize = 10.sp)
-                }
-            }
-            if (card != null && request != null) {
-                // The request the buttons act on, in full: what it wants and the command or path.
-                Text(
-                    card.what,
-                    color = Bright,
-                    fontSize = 11.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(top = 7.dp),
-                )
-                card.detail?.let {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Text(
-                        it,
-                        color = Color(0xFFC7C7CC),
-                        fontSize = 10.sp,
-                        fontFamily = FontFamily.Monospace,
-                        maxLines = 3,
-                        overflow = TextOverflow.Ellipsis,
-                        modifier = Modifier
-                            .padding(top = 4.dp)
-                            .fillMaxWidth()
-                            .background(Track, RoundedCornerShape(6.dp))
-                            .padding(horizontal = 6.dp, vertical = 4.dp),
+                        session.name, color = BoardColors.name, fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 14.sp,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f),
                     )
+                    StateChip(session.state)
                 }
-                if (card.more > 0) {
-                    Text("还有 ${card.more} 个", color = WaitingOrange, fontSize = 10.sp, modifier = Modifier.padding(top = 4.dp))
-                }
-                Row(Modifier.padding(top = 7.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    if (card.inline) {
-                        CardButton("拒绝", false, online) { onDeny(request) }
-                        CardButton("允许", true, online) { onAllow(request) }
-                    } else {
-                        CardButton("打开", true, true) { onOpen(request) }
-                    }
-                }
+                Text(
+                    card?.what ?: doingText(session),
+                    color = if (request != null) BoardColors.waitInk else BoardColors.doing,
+                    fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
+                Meta(session)
+            }
+        }
+        if (card != null && request != null) Ask(card, request, online, onAllow, onDeny, onOpen)
+        session.context?.let { ctx ->
+            Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                BoardMeter(ctx.usedPercent, 16, 4.dp, Modifier.weight(1f))
+                Text(
+                    boardPercent(contextPercentText(ctx), 10.5.sp),
+                    color = BoardColors.dim, fontFamily = Silkscreen, fontSize = 10.5.sp, textAlign = TextAlign.End, maxLines = 1,
+                    modifier = Modifier.widthIn(min = 30.dp),
+                )
             }
         }
     }
 }
 
+/** Folder and branch, each with its little icon, then the source. */
 @Composable
-private fun RowScope.CardButton(text: String, primary: Boolean, enabled: Boolean, onClick: () -> Unit) {
-    Text(
-        text,
-        color = if (primary) Color.White else Color(0xFFE5E5EA),
-        fontSize = 11.sp,
-        fontWeight = FontWeight.SemiBold,
-        textAlign = TextAlign.Center,
-        modifier = Modifier
-            .weight(1f)
-            .clip(RoundedCornerShape(7.dp))
-            .background(if (primary) CritterButton else Track)
-            .then(if (enabled) Modifier.clickable(onClick = onClick) else Modifier)
-            .padding(vertical = 5.dp)
-            .alpha(if (enabled) 1f else 0.4f),
-    )
+private fun Meta(s: BridgeSession) {
+    Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+        MetaPiece("folder", folderName(s.cwd), Modifier.weight(1f, fill = false))
+        s.branch?.takeIf { it.isNotBlank() }?.let { MetaPiece("branch", it, Modifier.weight(1f, fill = false)) }
+        Text(sourceLabel(s.source), color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 10.5.sp, maxLines = 1)
+    }
+}
+
+@Composable
+private fun MetaPiece(icon: String, text: String, modifier: Modifier) {
+    Row(modifier, horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        PixelIcon(icon, tint = BoardColors.dim, cell = 1.5.dp)
+        Text(
+            text, color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 10.5.sp,
+            maxLines = 1, overflow = TextOverflow.Ellipsis,
+        )
+    }
+}
+
+/** The command on a dark slip and the buttons; [online] or the answer buttons are grey and do nothing. */
+@Composable
+private fun Ask(
+    card: CardRequest,
+    request: BridgePending,
+    online: Boolean,
+    onAllow: (BridgePending) -> Unit,
+    onDeny: (BridgePending) -> Unit,
+    onOpen: (BridgePending) -> Unit,
+) {
+    card.detail?.let { command ->
+        Text(
+            buildAnnotatedString {
+                withStyle(SpanStyle(color = BoardColors.dim)) { append("› ") }
+                append(command)
+            },
+            color = BoardColors.waitInk, fontFamily = FontFamily.Monospace, fontSize = 11.5.sp, lineHeight = 1.5.em,
+            maxLines = SLIP_LINES, overflow = TextOverflow.Ellipsis,
+            modifier = Modifier
+                .padding(top = 6.dp)
+                .fillMaxWidth()
+                .clip(PixelShape(2.dp))
+                .background(BoardColors.card2)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+        )
+    }
+    if (card.more > 0) {
+        Text(
+            "还有 ${card.more} 个", color = BoardColors.wait, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 11.sp,
+            modifier = Modifier.padding(top = 4.dp),
+        )
+    }
+    Row(Modifier.padding(top = 8.dp), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (card.inline) {
+            PixelButton(
+                "拒绝", { onDeny(request) }, Modifier.weight(1f),
+                kind = ButtonKind.Secondary, size = ButtonSize.Small, enabled = online,
+            )
+            PixelButton(
+                "允许", { onAllow(request) }, Modifier.weight(1.3f),
+                kind = ButtonKind.Primary, size = ButtonSize.Small, enabled = online,
+            )
+        } else {
+            PixelButton("打开", { onOpen(request) }, Modifier.weight(1f), kind = ButtonKind.Primary, size = ButtonSize.Small)
+        }
+    }
 }

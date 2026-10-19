@@ -28,4 +28,11 @@ class MotionCuesTest {
         MotionCues.lookAtYou(skin).first().ticks = 99
         assertEquals(2, skin.clips.getValue(skin.interactions.notice).first().ticks)
     }
+
+    /** How long the hop lasts on screen: its ticks at the skin's tick (the floating shelf waits for it). */
+    @Test
+    fun hopMsIsItsTicksAtTheSkinsTick() {
+        val skin = bundledSkin("sprig")
+        assertEquals(6L * skin.tickMs, MotionCues.hopMs(skin))
+    }
 }

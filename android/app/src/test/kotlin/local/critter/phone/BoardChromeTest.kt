@@ -2,8 +2,12 @@ package local.critter.phone
 
 import local.critter.phone.ui.board.IDLE_DIM_AFTER_MS
 import local.critter.phone.ui.board.boardBrightness
+import local.critter.phone.ui.board.boardClockText
+import local.critter.phone.ui.board.boardDateText
 import local.critter.phone.ui.board.randomShift
 import org.junit.jupiter.api.Test
+import java.time.ZoneId
+import java.time.ZonedDateTime
 import kotlin.random.Random
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -34,5 +38,16 @@ class BoardChromeTest {
             val (x, y) = randomShift(random)
             assertTrue(x in -4..4 && y in -4..4)
         }
+    }
+
+    @Test
+    fun clockAndDateReadLikeTheMockup() {
+        val zone = ZoneId.of("Asia/Shanghai")
+        val sunday = ZonedDateTime.of(2025, 10, 19, 22, 12, 0, 0, zone).toInstant().toEpochMilli()
+        assertEquals("22:12", boardClockText(sunday, zone))
+        assertEquals("10 月 19 日 星期日", boardDateText(sunday, zone))
+        val morning = ZonedDateTime.of(2026, 3, 2, 7, 5, 0, 0, zone).toInstant().toEpochMilli()
+        assertEquals("07:05", boardClockText(morning, zone))
+        assertEquals("3 月 2 日 星期一", boardDateText(morning, zone))
     }
 }

@@ -19,7 +19,9 @@
     <application
         android:name=".CritterApp"
         android:allowBackup="false"
+        android:icon="@mipmap/ic_launcher"
         android:label="Critter"
+        android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@style/Theme.Critter.Main">
         <activity
             android:name=".ui.MainActivity"

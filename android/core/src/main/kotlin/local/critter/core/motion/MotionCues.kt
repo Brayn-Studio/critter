@@ -29,4 +29,7 @@ object MotionCues {
             ClipKey(n.land, 2, 0, 0, n.landDust),
         )
     }
+
+    /** How long [hop] lasts on [skin]'s clock, in milliseconds. */
+    fun hopMs(skin: SkinManifest): Long = hop(skin).sumOf { it.ticks }.toLong() * skin.tickMs
 }

@@ -4,9 +4,13 @@ import kotlinx.serialization.json.JsonObject
 import local.critter.core.protocol.BridgeJson
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgePrefs
+import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
+import local.critter.core.protocol.PetState
+import local.critter.core.protocol.SessionSource
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.ui.board.cardRequests
+import local.critter.phone.ui.board.proColumns
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -66,5 +70,30 @@ class ProBoardTest {
     @Test
     fun noSnapshotNoCards() {
         assertTrue(cardRequests(null).isEmpty())
+    }
+
+    private fun session(id: String, state: PetState = PetState.running) = BridgeSession(
+        id = id, name = id, source = SessionSource.terminal, state = state, cwd = "/p/$id",
+        skin = "clawd", eventTime = 0, startedAt = 0, tracked = true,
+    )
+
+    @Test
+    fun cardsAlternateBetweenTheColumns() {
+        val (left, right) = proColumns(listOf("a", "b", "c", "d", "e").map { session(it) }, emptyMap())
+        assertEquals(listOf("a", "c", "e"), left.map { it.id })
+        assertEquals(listOf("b", "d"), right.map { it.id })
+    }
+
+    /** A card with a request is two rows tall and always heads the left column; the others fill the shorter column. */
+    @Test
+    fun requestCardsStackOnTheLeftAndTakeTwoRows() {
+        val sessions = listOf(
+            session("w1", PetState.waiting), session("a"), session("w2", PetState.waiting),
+            session("b"), session("c"), session("d"), session("e"),
+        )
+        val requests = cardRequests(body(request("r1", "w1", 1), request("r2", "w2", 2)))
+        val (left, right) = proColumns(sessions, requests)
+        assertEquals(listOf("w1", "w2", "e"), left.map { it.id })
+        assertEquals(listOf("a", "b", "c", "d"), right.map { it.id })
     }
 }

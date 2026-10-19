@@ -13,20 +13,16 @@ import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import local.critter.core.flock.SoundTrigger
 import local.critter.core.protocol.PetState
@@ -40,9 +36,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import local.critter.core.logic.AnswerDraft
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.ResultReason
@@ -50,6 +43,8 @@ import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.repository
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.rememberMinuteClock
+import local.critter.phone.ui.theme.BoardColors
+import local.critter.phone.ui.theme.CritterTheme
 import local.critter.phone.ui.withKeyguardDismissed
 
 /**
@@ -99,7 +94,8 @@ class BoardActivity : ComponentActivity() {
         // Shown from now until onDestroy: a board whose screen went off is still the board on top.
         BoardTriggerService.boardShown(true)
         val repo = repository
-        setContent { Board(repo) }
+        // The board is always dark (design §5), whatever the phone's theme.
+        setContent { CritterTheme(dark = true) { Board(repo) } }
     }
 
     override fun onStart() {
@@ -179,7 +175,7 @@ class BoardActivity : ComponentActivity() {
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black)
+                .background(BoardColors.bg)
                 .pointerInput(Unit) {
                     // A horizontal swipe on empty board switches the mode (swipes that start on a Critter lift it).
                     detectHorizontalDragGestures(
@@ -193,18 +189,18 @@ class BoardActivity : ComponentActivity() {
             } else {
                 ProBoard(
                     data = data,
+                    library = library,
                     shift = shift,
                     onAllow = { answerPermission(repo, it, allow = true) },
                     onDeny = { answerPermission(repo, it, allow = false) },
                     onOpen = { startActivity(AnswerActivity.intent(this@BoardActivity, it.requestId)) },
                 )
             }
-            Text(
-                if (settings.boardCritterMode) "▤" else "◉",
-                color = Color(0xFF8E8E93),
-                fontSize = 18.sp,
-                modifier = Modifier.align(Alignment.TopEnd).padding(8.dp)
-                    .clickable { toggleMode(repo) }.padding(6.dp),
+            BoardModeButton(
+                icon = if (settings.boardCritterMode) "grid" else "paw",
+                contentDescription = if (settings.boardCritterMode) "切换到专业模式" else "切换到宠物模式",
+                onClick = { toggleMode(repo) },
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = 18.dp, end = 20.dp),
             )
         }
     }
@@ -213,20 +209,16 @@ class BoardActivity : ComponentActivity() {
         repo.settingsStore.update { it.copy(boardCritterMode = !it.boardCritterMode) }
     }
 
-    /** On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). */
+    /**
+     * On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). The
+     * answer goes out in the repository's scope, so the board closing meanwhile does not cancel it.
+     */
     private fun answerPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
-        withKeyguardDismissed { sendPermission(repo, request, allow) }
-    }
-
-    private fun sendPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
-        val draft = AnswerDraft(request)
-        if (allow) draft.allow() else draft.deny(null)
-        val payload = draft.payload() ?: return
-        if (!draft.markSubmitted()) return
-        lifecycleScope.launch {
-            val result = repo.answer(request.requestId, payload)
-            if (!result.ok && result.reason != ResultReason.resolved) {
-                Toast.makeText(this@BoardActivity, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+        withKeyguardDismissed {
+            repo.answerPermission(request, allow) { result ->
+                if (!result.ok && result.reason != ResultReason.resolved) {
+                    Toast.makeText(applicationContext, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }

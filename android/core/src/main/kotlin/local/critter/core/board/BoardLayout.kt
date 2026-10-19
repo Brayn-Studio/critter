@@ -4,13 +4,13 @@ import local.critter.core.motion.Pt
 
 /**
  * Where each Critter stands on the board's Critter mode (landscape, lengths in dp). One row of at most
- * [MAX_PER_ROW] Critters, each [CELLS] cells wide with a gap of 4 cells, drawn at 5 dp per cell, or smaller
- * (4, then 3) as the row fills. More Critters than fit are not squeezed further: the last slot becomes a
- * pile, and the sessions from [Layout.pileFrom] on merge into it (it needs room for the two back rows too).
+ * [MAX_PER_ROW] Critters, each [CELLS] cells wide with a gap of 4 cells, drawn at 6 dp per cell (design §8.7),
+ * or smaller (5, 4, then 3) as the row fills. More Critters than fit are not squeezed further: the last slot
+ * becomes a pile, and the sessions from [Layout.pileFrom] on merge into it (it needs room for the two back rows too).
  */
 object BoardLayout {
     const val MAX_PER_ROW = 6
-    const val MAX_SCALE = 5f
+    const val MAX_SCALE = 6f
     const val MIN_SCALE = 3f
     private const val CELLS = 18
     private const val GAP_CELLS = 4

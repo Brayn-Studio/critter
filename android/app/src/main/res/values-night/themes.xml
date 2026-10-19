@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Dark mode: the dark background behind the first frame, so there is no white flash before Compose draws. -->
+    <style name="Theme.Critter.Main" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">#17142A</item>
+    </style>
+</resources>

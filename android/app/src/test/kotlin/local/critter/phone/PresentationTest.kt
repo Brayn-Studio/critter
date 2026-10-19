@@ -1,7 +1,9 @@
 package local.critter.phone
 
+import kotlinx.serialization.json.JsonObject
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgeContext
+import local.critter.core.protocol.BridgeJson
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PendingKind
@@ -10,6 +12,7 @@ import local.critter.core.protocol.SessionSource
 import local.critter.phone.bridge.NsdLocator
 import local.critter.phone.service.Alerts
 import local.critter.phone.service.BridgeService
+import local.critter.phone.service.receiverMayOpenCard
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.folderBranch
@@ -19,6 +22,7 @@ import local.critter.phone.ui.stateIcon
 import local.critter.phone.ui.stateLabel
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
@@ -103,5 +107,53 @@ class PresentationTest {
         assertTrue(NsdLocator.namesMatch("Xuan's MacBook", "xuan's macbook"))
         assertTrue(NsdLocator.namesMatch("Xuan's MacBook (2)", "Xuan's MacBook"))
         assertTrue(!NsdLocator.namesMatch("Other Mac", "Xuan's MacBook"))
+    }
+
+    /** Android 12+ quietly drops an activity start from a notification button's receiver; it is not even tried. */
+    @Test
+    fun receiverOpensCardsOnlyBeforeAndroid12() {
+        assertTrue(receiverMayOpenCard(30))
+        assertFalse(receiverMayOpenCard(31))
+        assertFalse(receiverMayOpenCard(36))
+    }
+
+    @Test
+    fun requestTextShowsTheCommand() {
+        val input = BridgeJson.parseToJsonElement("""{"command":"./gradlew test"}""") as JsonObject
+        val permission = BridgePending("r1", "s1", PendingKind.permission, toolName = "Bash", summary = "运行测试", input = input, createdAt = 0)
+        assertEquals("./gradlew test", Alerts.requestText(permission, session()))
+        // A question shows the session's folder ("/Users/me/proj/" -> "proj"), as before.
+        assertEquals("proj", Alerts.requestText(pending(PendingKind.question), session()))
+        // A permission without a command or path falls back to the folder too.
+        assertEquals("proj", Alerts.requestText(pending(PendingKind.permission), session()))
+    }
+
+    /** The lock screen's version names the session and nothing else: no command, no path. */
+    @Test
+    fun publicTitleHidesTheCommand() {
+        assertEquals("proj 需要你确认", Alerts.publicTitle(session()))
+        assertEquals("会话 需要你确认", Alerts.publicTitle(null))
+    }
+
+    /**
+     * The lock screen's version of a request (and of a waiting notice) names the session and nothing else: not the
+     * command, not what it is doing, not its folder.
+     */
+    @Test
+    fun lockScreenTextNeverShowsTheCommand() {
+        val input = BridgeJson.parseToJsonElement("""{"command":"rm -rf /tmp/secret"}""") as JsonObject
+        val permission = BridgePending("r1", "s1", PendingKind.permission, toolName = "Bash", summary = "运行 rm -rf /tmp/secret", input = input, createdAt = 0)
+        val busy = session(cwd = "/tmp/secret").copy(detail = "运行 rm -rf /tmp/secret")
+        // Unlocked, the notification shows the command...
+        assertEquals("rm -rf /tmp/secret", Alerts.requestText(permission, busy))
+        // ...locked, only who is waiting.
+        val locked = Alerts.lockScreenText(busy)
+        assertEquals("proj 需要你确认", locked.title)
+        assertEquals("解锁后查看内容", locked.text)
+        for (part in listOf(locked.title, locked.text)) {
+            assertFalse("rm -rf" in part, part)
+            assertFalse("secret" in part, part)
+        }
+        assertEquals("会话 需要你确认", Alerts.lockScreenText(null).title)
     }
 }
