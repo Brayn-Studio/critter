@@ -214,7 +214,7 @@ fun HomeScreen(
                     opening = opening,
                 )
             } else {
-                EmptyMeadow(library, time, offline)
+                EmptyMeadow(library, time)
             }
             MeadowHeader(
                 macName = macName,
@@ -398,14 +398,14 @@ private fun HeaderButton(icon: String, label: String, onClick: () -> Unit) {
     }
 }
 
-/** No sessions: one Critter asleep in the grass (the phone's own skin, or the sprout). */
+/** No sessions: one Critter asleep in the grass (the phone's own skin, or the sprout), greyed like an idle one. */
 @Composable
-private fun EmptyMeadow(library: SkinLibrary, time: SkyTime, offline: Boolean) {
+private fun EmptyMeadow(library: SkinLibrary, time: SkyTime) {
     Box(Modifier.fillMaxSize()) {
         PetStage(
             manifest = library.manifest(EMPTY_SKIN), state = PetState.idle, activity = null,
             modifier = Modifier.fillMaxSize(), cell = 3.dp, time = time,
-            groundInset = MeadowHeight - MeadowGround, bright = !offline, asleep = true,
+            groundInset = MeadowHeight - MeadowGround, bright = false, asleep = true,
         )
         MeadowTag("睡着了", skyColors(time), Modifier.align(Alignment.TopCenter).offset(y = MeadowGround + 5.dp))
     }
