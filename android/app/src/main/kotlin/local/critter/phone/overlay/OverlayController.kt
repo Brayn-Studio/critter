@@ -22,6 +22,7 @@ import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import local.critter.core.flock.FlockModel
 import local.critter.core.logic.SessionOrder
+import local.critter.core.motion.MotionCues
 import local.critter.core.overlay.Edge
 import local.critter.core.overlay.OverlayGeometry
 import local.critter.core.overlay.Rect
@@ -61,9 +62,14 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
     private var shelfPivot = 0f
     private var hiddenForFullscreen = false
 
-    /** The board is on screen ([setBoardShown]); and the pile has sunk out of sight for it. */
+    /**
+     * The board is on screen ([setBoardShown]). [hiddenForBoard] is the intent that follows from it, set at once:
+     * the pile is out of sight, or on its way there while [sinkingForBoard] (the vanish is only the animation, so a
+     * rebuild in the middle cannot leave a fresh pile showing over the board).
+     */
     private var boardShown = false
     private var hiddenForBoard = false
+    private var sinkingForBoard = false
 
     /** The night mode the content was built for; the View colors follow it. */
     private var night = context.isNight()
@@ -225,7 +231,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         ids.forEachIndexed { i, id -> view.critters.hop(id, i * HOP_STAGGER_MS) }
         view.pivotY = shelfPivot
         view.animate()
-            .setStartDelay((ids.size - 1).coerceAtLeast(0) * HOP_STAGGER_MS + HOP_MS)
+            .setStartDelay((ids.size - 1).coerceAtLeast(0) * HOP_STAGGER_MS + hopMs())
             .scaleY(SHELF_FOLDED)
             .setDuration(COLLAPSE_MS)
             .setInterpolator(AccelerateInterpolator())
@@ -264,24 +270,23 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
     fun setBoardShown(shown: Boolean) {
         if (shown == boardShown) return
         boardShown = shown
-        if (!attached) {
-            hiddenForBoard = shown
-            return
-        }
+        hiddenForBoard = shown
+        sinkingForBoard = false
+        if (!attached) return
         if (shown) {
             collapseNow()
             val critters = pile?.critters
-            if (critters == null) {
-                hiddenForBoard = true
-                applyVisibility()
-                return
+            if (critters != null) {
+                // Still on screen while it sinks; a rebuild meanwhile ends the sink (its Critters go) and the new
+                // pile starts hidden.
+                sinkingForBoard = true
+                critters.sinkAll {
+                    sinkingForBoard = false
+                    applyVisibility()
+                }
             }
-            critters.sinkAll {
-                hiddenForBoard = true
-                applyVisibility()
-            }
+            applyVisibility()
         } else {
-            hiddenForBoard = false
             applyVisibility()
             pile?.critters?.riseAll()
         }
@@ -298,6 +303,12 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             place()
         }
     }
+
+    /**
+     * How long one hop lasts ([MotionCues.hopMs]): the shelf folds once the last one has landed. The skins on screen
+     * share one tick (the library only lets skins on the same tick join), so the first session's skin speaks for all.
+     */
+    private fun hopMs(): Long = MotionCues.hopMs(repo.skins.library.value.manifest(sessions().firstOrNull()?.skin ?: skinName()))
 
     /** Reduce motion: the settings switch or the system's animation scale at 0. */
     private fun reduceMotion(): Boolean =
@@ -338,6 +349,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         } else {
             val view = PileView(context, unit)
             view.listener = pileListener
+            view.faceInward(edge)
             pile = view
             size = view.widthPx to view.heightPx
             root.addView(view, FrameLayout.LayoutParams(view.widthPx, view.heightPx))
@@ -394,7 +406,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
     }
 
     private fun contentShown(): Boolean {
-        if (hiddenForBoard) return false
+        if (hiddenForBoard && !sinkingForBoard) return false
         if (hiddenForFullscreen && settings.overlayHideInFullscreen) return false
         if (settings.overlayAutoHide && online && sessions().isEmpty()) return false
         return true
@@ -476,6 +488,8 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             val placement = OverlayGeometry.snap(params.x, params.y, w, h, screen())
             edge = placement.edge
             topY = placement.y
+            // Snapped to the other side, maybe: the calm Critters look into the screen from there.
+            pile?.faceInward(edge)
             place()
             remember()
         }
@@ -495,9 +509,6 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         const val COLLAPSE_MS = 200L
         const val FADE_MS = 150L
         const val HOP_STAGGER_MS = 55L
-
-        /** About one hop ([local.critter.core.motion.MotionCues.hop], six ticks): the shelf folds once the last has landed. */
-        const val HOP_MS = 360L
 
         /** The shelf's height while folded, as a share of its own. */
         const val SHELF_FOLDED = 0.3f

@@ -1,9 +1,12 @@
 package local.critter.phone
 
+import local.critter.core.motion.GazeZone
+import local.critter.core.overlay.Edge
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
 import local.critter.core.protocol.SessionSource
 import local.critter.phone.overlay.fitCounts
+import local.critter.phone.overlay.inwardGaze
 import local.critter.phone.overlay.pileCounts
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
@@ -44,5 +47,12 @@ class OverlayLookTest {
         assertEquals(listOf("q" to 1), fitCounts(all, 0f, tenEach))
         assertEquals(listOf("sun" to 4), fitCounts(listOf("sun" to 4, "z" to 1), 15f, tenEach))
         assertEquals(emptyList(), fitCounts(emptyList(), 0f, tenEach))
+    }
+
+    /** Design §8.4: on the right edge the calm Critters look left, into the screen; on the left edge, right. */
+    @Test
+    fun thePileLooksIntoTheScreen() {
+        assertEquals(GazeZone.left, inwardGaze(Edge.Right))
+        assertEquals(GazeZone.right, inwardGaze(Edge.Left))
     }
 }

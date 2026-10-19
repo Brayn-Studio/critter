@@ -105,6 +105,20 @@ class CritterView(context: Context) : View(context) {
      */
     var carryOnDrag: Boolean = false
 
+    /**
+     * Where the Critters look while no finger is down: the collapsed floating pile looks into the screen (design
+     * §8.4); null looks straight ahead. A finger still drives the gaze and hands it back when it lifts. The engine
+     * only lets idle and done Critters look, so busy ones keep their own animations.
+     */
+    var restingGaze: GazeZone? = null
+        set(value) {
+            if (field == value) return
+            field = value
+            clock.catchUp()
+            applyRestingGaze()
+            clock.poke()
+        }
+
     /** How many times [onDraw] ran; for the debug gallery and the power check. */
     var debugFrameCount: Int = 0
         private set
@@ -176,6 +190,7 @@ class CritterView(context: Context) : View(context) {
                 update(entry, slot)
             }
         }
+        applyRestingGaze()
         layoutDirty = true
         clock.poke()
     }
@@ -736,6 +751,13 @@ class CritterView(context: Context) : View(context) {
     private fun clearGaze() {
         for (id in gaze.keys) entries[id]?.actor?.setGaze(null)
         gaze.clear()
+        applyRestingGaze()
+    }
+
+    /** With no finger down, every Critter looks at [restingGaze] (a finger's gaze wins while it is down). */
+    private fun applyRestingGaze() {
+        if (press != null) return
+        for (e in entries.values) e.actor.setGaze(restingGaze)
     }
 
     /** After every tick's step: petting ends 0.7 s after the last rub, and the held Critter's swing settles. */

@@ -7,6 +7,7 @@ import android.view.Gravity
 import android.widget.FrameLayout
 import androidx.compose.ui.graphics.toArgb
 import local.critter.core.flock.FlockModel
+import local.critter.core.overlay.Edge
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.skin.SkinLibrary
 import local.critter.phone.critter.CritterTouchListener
@@ -90,6 +91,11 @@ class PileView(context: Context, private val unit: Int) : FrameLayout(context) {
     /** The front Critter hops (a session just started waiting). */
     fun notice() {
         leadId?.let { critters.notice(it) }
+    }
+
+    /** Snapped to [edge]: the calm Critters look into the screen ([inwardGaze]) while nobody touches them. */
+    fun faceInward(edge: Edge) {
+        critters.restingGaze = inwardGaze(edge)
     }
 
     private fun reachFor(count: Int) {

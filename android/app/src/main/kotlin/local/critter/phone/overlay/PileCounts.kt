@@ -1,6 +1,8 @@
 package local.critter.phone.overlay
 
 import androidx.compose.ui.graphics.Color
+import local.critter.core.motion.GazeZone
+import local.critter.core.overlay.Edge
 import local.critter.core.protocol.BridgeSession
 import local.critter.phone.ui.stateIcon
 import local.critter.phone.ui.theme.CritterColors
@@ -33,6 +35,13 @@ fun fitCounts(counts: List<Pair<String, Int>>, maxWidth: Float, width: (List<Pai
     }
     return entries
 }
+
+/**
+ * Where the collapsed pile's calm Critters rest their gaze (design §8.4 "贴右边时宠物朝左，贴左边朝右"): into the
+ * screen, away from the edge it is snapped to. The engine only lets idle and done Critters look; busy ones keep
+ * their animations.
+ */
+fun inwardGaze(edge: Edge): GazeZone = if (edge == Edge.Right) GazeZone.left else GazeZone.right
 
 /** A count icon's color, as on the mockup: the deep orange question mark, the sun, the check, the bang, a grey z. */
 fun countIconColor(icon: String, colors: CritterColors): Color = when (icon) {
