@@ -24,6 +24,8 @@ import local.critter.core.net.BridgeClient
 import local.critter.core.net.ConnState
 import local.critter.core.net.Credentials
 import local.critter.core.net.Endpoint
+import local.critter.core.net.PairFailure
+import local.critter.core.net.PairResult
 import local.critter.core.net.PrivateNetwork
 import local.critter.core.protocol.AnswerPayload
 import local.critter.core.protocol.BridgePending
@@ -330,11 +332,11 @@ class BridgeRepository(private val app: Application) {
     // --- pairing --------------------------------------------------------------------------------
 
     /**
-     * Pairs with the Mac in [uri]; true once approved on the Mac and stored. Progress is in [pairState]. A host
-     * outside the local network is refused before anything is sent (the screen says why).
+     * Pairs with the Mac in [uri]; null once approved on the Mac and stored, otherwise why not. Progress is in
+     * [pairState]. A host outside the local network is refused before anything is sent, as [PairFailure.Unreachable].
      */
-    suspend fun pair(uri: PairingUri): Boolean {
-        if (!PrivateNetwork.isAllowed(uri.host)) return false
+    suspend fun pair(uri: PairingUri): PairFailure? {
+        if (!PrivateNetwork.isAllowed(uri.host)) return PairFailure.Unreachable
         stopClient()
         val temp = BridgeClient(scope, object : Endpoint {
             override suspend fun resolve(): Pair<String, Int>? = null
@@ -342,7 +344,10 @@ class BridgeRepository(private val app: Application) {
         val progress = scope.launch { temp.state.collect { _pairState.value = it } }
         var success = false
         try {
-            val paired = temp.pair(uri, Build.MODEL ?: "Android") ?: return false
+            val paired = when (val result = temp.pair(uri, Build.MODEL ?: "Android")) {
+                is PairResult.Failed -> return result.why
+                is PairResult.Paired -> result.paired
+            }
             val p = Pairing(
                 host = uri.host,
                 port = uri.port,
@@ -358,7 +363,7 @@ class BridgeRepository(private val app: Application) {
             // Not with "保持后台连接" off: then there is no service, and no connection without it.
             if (BridgeService.shouldRun(this)) startClient()
             success = true
-            return true
+            return null
         } finally {
             progress.cancel()
             _pairState.value = ConnState.Idle

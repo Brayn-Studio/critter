@@ -14,16 +14,9 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawingPadding
-import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -31,16 +24,17 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
 import local.critter.core.protocol.PairingUri
+import local.critter.core.protocol.PetState
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.onboarding.OnboardingActivity
+import local.critter.phone.onboarding.StepPage
+import local.critter.phone.onboarding.StepStage
 import local.critter.phone.repository
 import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.board.BoardActivity
@@ -227,23 +221,17 @@ private fun LocalNetworkGate(content: @Composable () -> Unit) {
         content()
         return
     }
-    Column(
-        Modifier.fillMaxSize().safeDrawingPadding().padding(24.dp),
-        verticalArrangement = Arrangement.Center,
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        Text("需要访问本地网络", style = MaterialTheme.typography.headlineSmall)
-        Text(
-            "Critter 要通过局域网连接你的 Mac。没有这个权限就找不到它。",
-            modifier = Modifier.padding(vertical = 12.dp),
-        )
-        Button(onClick = { launcher.launch(LOCAL_NETWORK_PERMISSION) }) { Text("允许") }
-        if (asked) {
-            TextButton(onClick = {
-                context.startActivity(
-                    Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
-                )
-            }) { Text("去设置") }
-        }
-    }
+    StepPage(
+        position = null,
+        title = "需要访问本地网络",
+        body = "Critter 要通过局域网连接你的 Mac。没有这个权限就找不到它。",
+        primary = "允许",
+        onPrimary = { launcher.launch(LOCAL_NETWORK_PERMISSION) },
+        ghost = if (asked) "去设置" else null,
+        onGhost = {
+            context.startActivity(
+                Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")),
+            )
+        },
+    ) { StepStage("sprig", PetState.idle) }
 }

@@ -222,19 +222,68 @@ class BridgeClientTest {
         c.state.await { it is ConnState.AwaitingApproval }
         assertFalse(pairing.isCompleted, "pair() must wait for the user to approve on the Mac")
 
-        val paired = withTimeout(10_000) { pairing.await() }
-        assertNotNull(paired)
+        val result = withTimeout(10_000) { pairing.await() }
+        val paired = assertIs<PairResult.Paired>(result).paired
         assertEquals("tok-9", paired.token)
+        assertEquals("dev-9", paired.deviceId)
         assertTrue((System.nanoTime() - started) >= 1_500_000_000L)
         assertEquals(ConnState.Idle, c.state.value)
     }
 
-    @Test fun pairReturnsNullWhenTheMacDenies() = runBlocking {
-        val mac = mac().apply { expectConnection() }
-        mac.onFrame = { ws, _ -> ws.send("""{"reason":"rejected","type":"denied"}""") }
+    private fun FakeMac.uri() = PairingUri(host, port, fingerprint, "K7M2QX9P", "Test Mac")
+
+    /** The Mac answers `pair` with `denied` [reason] and closes, as the protocol doc says. */
+    private fun FakeMac.denyPair(reason: String) {
+        onFrame = { ws, text ->
+            if (type(text) == "pair") {
+                ws.send("""{"reason":"$reason","type":"denied"}""")
+                ws.close(1000, null)
+            }
+        }
+    }
+
+    @Test fun pairDeniedBadCodeSaysSo() = runBlocking {
+        val mac = mac().apply { expectConnection(); denyPair("badCode") }
         val c = client(CountingEndpoint { null }, "unused")
-        val uri = PairingUri(mac.host, mac.port, mac.fingerprint, "K7M2QX9P", "Test Mac")
-        assertNull(withTimeout(10_000) { c.pair(uri, "Pixel 9") })
+        assertEquals(PairResult.Failed(PairFailure.BadCode), withTimeout(10_000) { c.pair(mac.uri(), "Pixel 9") })
+    }
+
+    @Test fun pairDeniedRejectedSaysSo() = runBlocking {
+        val mac = mac().apply { expectConnection(); denyPair("rejected") }
+        val c = client(CountingEndpoint { null }, "unused")
+        assertEquals(PairResult.Failed(PairFailure.Rejected), withTimeout(10_000) { c.pair(mac.uri(), "Pixel 9") })
+        assertEquals(ConnState.Idle, c.state.value)
+    }
+
+    @Test fun pairTimesOutAsNoAnswer() = runBlocking {
+        val mac = mac().apply { expectConnection() } // never answers the pair frame
+        val c = client(CountingEndpoint { null }, "unused", pairTimeoutMs = 300)
+        assertEquals(PairResult.Failed(PairFailure.NoAnswer), withTimeout(10_000) { c.pair(mac.uri(), "Pixel 9") })
+        assertEquals("pair", type(mac.nextFrame()))
+    }
+
+    /** Nobody approved within the Mac's 300 s: it closes without `denied`, which is no answer, not a refusal. */
+    @Test fun pairPlainCloseIsNoAnswer() = runBlocking {
+        val mac = mac().apply { expectConnection() }
+        mac.onFrame = { ws, text -> if (type(text) == "pair") ws.close(1000, null) }
+        val c = client(CountingEndpoint { null }, "unused")
+        assertEquals(PairResult.Failed(PairFailure.NoAnswer), withTimeout(10_000) { c.pair(mac.uri(), "Pixel 9") })
+    }
+
+    @Test fun pairWithAnotherCertificateIsCertMismatch() = runBlocking {
+        val mac = mac().apply { expectConnection() }
+        val c = client(CountingEndpoint { null }, "unused")
+        val uri = mac.uri().copy(fingerprint = "0".repeat(64))
+        assertEquals(PairResult.Failed(PairFailure.CertMismatch), withTimeout(10_000) { c.pair(uri, "Pixel 9") })
+        assertTrue(mac.received.isEmpty(), "nothing may be sent to an unpinned peer")
+    }
+
+    @Test fun pairWithNobodyListeningIsUnreachable() = runBlocking {
+        val mac = mac()
+        val uri = mac.uri()
+        mac.shutdown()
+        val c = client(CountingEndpoint { null }, "unused")
+        assertEquals(PairResult.Failed(PairFailure.Unreachable), withTimeout(10_000) { c.pair(uri, "Pixel 9") })
     }
 
     /** Opening or closing the board changes the heartbeat for the next connection, without dropping this one. */

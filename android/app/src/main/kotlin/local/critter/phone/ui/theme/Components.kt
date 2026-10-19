@@ -101,7 +101,8 @@ private fun Modifier.minTouchTarget(): Modifier = layout { measurable, constrain
     layout(width, height) { placeable.place((width - placeable.width) / 2, (height - placeable.height) / 2) }
 }
 
-enum class ButtonKind { Primary, Secondary, Warning, Ghost }
+/** [Danger] is a secondary button with error-red text: 「取消配对」. */
+enum class ButtonKind { Primary, Secondary, Warning, Ghost, Danger }
 
 enum class ButtonSize(internal val height: Dp, internal val lip: Dp, internal val fontSize: TextUnit, internal val padding: Dp) {
     Small(34.dp, 3.dp, 13.5.sp, 12.dp),
@@ -133,6 +134,7 @@ fun PixelButton(
         kind == ButtonKind.Primary -> { fg = c.onBrand; face = c.brand; lipColor = c.brandDeep; shine = c.highlight }
         kind == ButtonKind.Warning -> { fg = c.state(PetState.waiting).fg; face = c.wait; lipColor = c.waitDeep; shine = c.highlight }
         ghost -> { fg = c.brand; face = Color.Transparent; lipColor = Color.Transparent }
+        kind == ButtonKind.Danger -> { fg = c.err; face = c.surface2; lipColor = c.shade }
         else -> { fg = c.ink; face = c.surface2; lipColor = c.shade }
     }
     Row(

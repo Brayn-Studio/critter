@@ -11,6 +11,7 @@ class BoardTriggerTest {
     private val open = BoardTrigger.Action.Open
     private val close = BoardTrigger.Action.Close
     private val none = BoardTrigger.Action.None
+    private val blocked = BoardTrigger.Action.Blocked
 
     private val landscape = Pose.Landscape
     private val upright = Pose.Upright
@@ -193,7 +194,7 @@ class BoardTriggerTest {
         t.onOrientation(landscape, true, 0)
         assertEquals(open, t.onTick(3_000))
         assertEquals(5_000L, t.nextDeadline())
-        assertEquals(none, t.onTick(5_000))
+        assertEquals(blocked, t.onTick(5_000))
         assertFalse(t.sensorWanted)
         t.onOrientation(landscape, true, 5_500)
         assertEquals(none, t.onOrientation(landscape, true, 9_000))
@@ -203,6 +204,28 @@ class BoardTriggerTest {
         t.onPower(true, 11_000)
         t.onOrientation(landscape, true, 11_000)
         assertEquals(open, t.onTick(14_000))
+    }
+
+    /** The 2 s tick after an opening the system never showed says so, once; the ticks after it are quiet. */
+    @Test fun openThatNeverShowsReportsBlocked() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onOrientation(landscape, true, 0)
+        assertEquals(open, t.onTick(3_000))
+        assertEquals(none, t.onTick(4_900))
+        assertEquals(blocked, t.onTick(5_000))
+        assertEquals(none, t.onTick(5_100))
+        assertEquals(none, t.onOrientation(landscape, true, 6_000))
+        assertNull(t.nextDeadline())
+    }
+
+    @Test fun openThatFailsOutrightReportsBlocked() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onOrientation(landscape, true, 0)
+        assertEquals(open, t.onTick(3_000))
+        assertEquals(blocked, t.onOpenFailed())
+        assertEquals(none, t.onTick(5_000))
     }
 
     @Test fun openThatShowsInTimeIsNotSuppressed() {

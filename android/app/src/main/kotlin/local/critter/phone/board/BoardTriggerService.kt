@@ -18,6 +18,7 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import local.critter.core.board.BoardTrigger
 import local.critter.core.board.BoardTrigger.Action
+import local.critter.phone.repository
 import local.critter.phone.ui.board.BoardActivity
 
 /**
@@ -27,6 +28,7 @@ import local.critter.phone.ui.board.BoardActivity
  * Everything runs on the main thread.
  */
 class BoardTriggerService(private val context: Context, private val enabled: () -> Boolean) {
+    private val settings = context.repository.settingsStore
     private val trigger = BoardTrigger()
     private val still = BoardTrigger.Stillness()
     private val handler = Handler(Looper.getMainLooper())
@@ -34,6 +36,9 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     private var started = false
     private var listening = false
     private var scheduledAt: Long? = null
+
+    /** An automatic opening went out and its board has not come up yet. */
+    private var autoOpening = false
 
     private val tick = Runnable {
         scheduledAt = null
@@ -109,6 +114,11 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
 
     private fun boardShown(shown: Boolean) {
         trigger.onBoardShown(shown)
+        if (shown && autoOpening) {
+            // It opened by itself after all: the settings' "blocked" notice no longer applies.
+            autoOpening = false
+            if (settings.settings.value.boardBlockedAt != null) settings.update { it.copy(boardBlockedAt = null) }
+        }
         update()
     }
 
@@ -121,25 +131,34 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         when (action) {
             Action.Open -> open()
             Action.Close -> context.sendBroadcast(Intent(ACTION_CLOSE_BOARD).setPackage(context.packageName))
+            Action.Blocked -> blocked()
             Action.None -> Unit
         }
+    }
+
+    /** Remembered for the settings, which say what to switch on (wall-clock time, for "上次插电时"). */
+    private fun blocked() {
+        autoOpening = false
+        settings.update { it.copy(boardBlockedAt = System.currentTimeMillis()) }
     }
 
     /**
      * Starting an activity from the background needs "display over other apps"; vivo and Xiaomi also need their
      * "background pop-up" switch, and without it the start fails silently. Either way the trigger stops asking for
-     * this charge: a missing permission up front, a silent refusal when the board is not up 2 s later.
+     * this charge: a missing permission up front, a silent refusal when the board is not up 2 s later. Both come
+     * back as [Action.Blocked], which the settings show.
      */
     private fun open() {
         if (!Settings.canDrawOverlays(context)) {
-            trigger.onOpenFailed()
+            perform(trigger.onOpenFailed())
             return
         }
         try {
             context.startActivity(BoardActivity.intent(context, auto = true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+            autoOpening = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "could not open the board", e)
-            trigger.onOpenFailed()
+            perform(trigger.onOpenFailed())
         }
     }
 

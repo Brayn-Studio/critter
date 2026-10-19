@@ -13,6 +13,17 @@ class PinMismatchException(val expected: String, val actual: String) :
     CertificateException("certificate fingerprint $actual does not match the pinned $expected")
 
 /**
+ * Whether a [PinMismatchException] is anywhere in this failure. Looks through causes and suppressed exceptions:
+ * with several addresses to try (IPv6 then IPv4), OkHttp reports the first failure and hangs the rest, such as
+ * the pin mismatch, off it as suppressed.
+ */
+internal fun Throwable?.hasPinMismatch(depth: Int = 0): Boolean {
+    if (this == null || depth > 8) return false
+    return this is PinMismatchException || cause.takeIf { it !== this }.hasPinMismatch(depth + 1) ||
+        suppressed.any { it.hasPinMismatch(depth + 1) }
+}
+
+/**
  * Trust exactly one certificate: the Mac's self-signed one, identified by the SHA-256 of its DER
  * encoding. No CA chain is validated, and host names are not checked because the pin already
  * fixes the peer's identity (the Mac's address changes whenever its network does).

@@ -157,11 +157,11 @@ class BridgeClient(
     }
 
     /**
-     * First-time pairing over a connection pinned to the fingerprint in [uri]. Returns once the user has
-     * approved on the Mac (up to [pairTimeoutMs]), or null if denied, timed out or unreachable.
+     * First-time pairing over a connection pinned to the fingerprint in [uri]. Returns [PairResult.Paired] once
+     * the user has approved on the Mac (up to [pairTimeoutMs]), otherwise why not ([pairFailureOf]).
      * The caller stores the returned credentials and [uri]'s fingerprint, then connects normally.
      */
-    suspend fun pair(uri: PairingUri, deviceName: String): ServerMessage.Paired? {
+    suspend fun pair(uri: PairingUri, deviceName: String): PairResult {
         _state.value = ConnState.Connecting
         val paired = CompletableDeferred<ServerMessage.Paired>()
         val link = open(
@@ -172,17 +172,24 @@ class BridgeClient(
             onOpen = { _state.value = ConnState.AwaitingApproval },
         ) { msg -> if (msg is ServerMessage.Paired) paired.complete(msg) }
         try {
-            val result = withTimeoutOrNull(pairTimeoutMs) {
-                // Whichever comes first: the approval, or the connection ending (denied, refused, closed).
-                val ended = CompletableDeferred<Unit>().also { gate ->
-                    link.ended.invokeOnCompletion { gate.complete(Unit) }
-                    paired.invokeOnCompletion { gate.complete(Unit) }
-                }
-                ended.await()
-                if (paired.isCompleted) paired.await() else null
+            // Whichever comes first: the approval, or the connection ending (denied, refused, closed).
+            val settled = withTimeoutOrNull(pairTimeoutMs) {
+                val gate = CompletableDeferred<Unit>()
+                link.ended.invokeOnCompletion { gate.complete(Unit) }
+                paired.invokeOnCompletion { gate.complete(Unit) }
+                gate.await()
             }
-            result?.let { _pairing.tryEmit(it) }
-            return result
+            if (paired.isCompleted) {
+                val approved = paired.await()
+                _pairing.tryEmit(approved)
+                return PairResult.Paired(approved)
+            }
+            val why = when (val end = if (settled != null) link.ended.await() else null) {
+                null -> pairFailureOf(null, null, timedOut = true, closedCleanly = false)
+                is End.Denied -> pairFailureOf(end.reason, null, timedOut = false, closedCleanly = false)
+                is End.Dropped -> pairFailureOf(null, end.cause, timedOut = false, closedCleanly = end.cause == null)
+            }
+            return PairResult.Failed(why)
         } finally {
             link.ws.cancel()
             _state.value = if (job?.isActive == true) _state.value else ConnState.Idle
@@ -311,15 +318,5 @@ class BridgeClient(
         DenyReason.protocol -> "协议版本不匹配，请更新 Critter"
         DenyReason.badCode, DenyReason.rejected -> "配对被拒绝"
         DenyReason.unknown -> "连接被电脑拒绝"
-    }
-
-    /**
-     * Looks through causes and suppressed exceptions: with several addresses to try (IPv6 then IPv4),
-     * OkHttp reports the first failure and hangs the rest, such as the pin mismatch, off it as suppressed.
-     */
-    private fun Throwable?.hasPinMismatch(depth: Int = 0): Boolean {
-        if (this == null || depth > 8) return false
-        return this is PinMismatchException || cause.takeIf { it !== this }.hasPinMismatch(depth + 1) ||
-            suppressed.any { it.hasPinMismatch(depth + 1) }
     }
 }
