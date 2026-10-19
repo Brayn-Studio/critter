@@ -88,10 +88,11 @@ class ColumnView(
             addRow(s, requests[s.id], top, petX)
         }
         critters.setActors(slots)
+        // The button is drawn 34 dp tall; its touch box is 44 dp, 5 dp more above and below.
         content.addView(
             closeButton(),
-            FrameLayout.LayoutParams(context.px(CLOSE_W_DP), context.px(CLOSE_H_DP), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
-                topMargin = headerH + sessions.size * itemHeight + context.px(CLOSE_GAP_DP)
+            FrameLayout.LayoutParams(context.px(CLOSE_W_DP), context.px(CLOSE_TOUCH_DP), Gravity.TOP or Gravity.CENTER_HORIZONTAL).apply {
+                topMargin = headerH + sessions.size * itemHeight + context.px(CLOSE_GAP_DP - (CLOSE_TOUCH_DP - CLOSE_H_DP) / 2)
             },
         )
         content.minimumHeight = headerH + sessions.size * itemHeight + footerHeight(density)
@@ -183,12 +184,15 @@ class ColumnView(
         return box
     }
 
-    /** A small secondary pixel button: 「收起」 with the up chevron; pressed, it sinks 3 dp in one step. */
+    /**
+     * A small secondary pixel button: 「收起」 with the up chevron, in a 44 dp touch box; pressed, it sinks 3 dp in
+     * one step (the box passes its pressed state to the face).
+     */
     private fun closeButton(): View {
         val up = PixelDrawable(colors.surface2.toArgb(), context.px(3f), context.px(3f), colors.shade.toArgb())
         val down = PixelDrawable(colors.surface2.toArgb(), context.px(3f), context.px(1f), colors.shade.toArgb())
         val sink = context.px(3f).toFloat()
-        return object : LinearLayout(context) {
+        val face = object : LinearLayout(context) {
             override fun setPressed(pressed: Boolean) {
                 super.setPressed(pressed)
                 background = if (pressed) down else up
@@ -204,6 +208,9 @@ class ColumnView(
                 OverlayLook.text(context, 13.5f, 900, colors.ink.toArgb()).apply { text = "收起" },
                 LinearLayout.LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply { marginStart = context.px(8f) },
             )
+        }
+        return FrameLayout(context).apply {
+            addView(face, FrameLayout.LayoutParams(LayoutParams.MATCH_PARENT, context.px(CLOSE_H_DP), Gravity.CENTER))
             setOnClickListener { onCollapse() }
         }
     }
@@ -216,6 +223,7 @@ class ColumnView(
         private const val HEADER_BOTTOM_DP = 6f
         private const val CLOSE_W_DP = 120f
         private const val CLOSE_H_DP = 34f
+        private const val CLOSE_TOUCH_DP = 44f
         private const val CLOSE_GAP_DP = 6f
         private const val CLOSE_BOTTOM_DP = 12f
 
