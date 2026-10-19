@@ -12,17 +12,21 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.em
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.theme.BoardColors
 import local.critter.phone.ui.theme.Nunito
@@ -35,6 +39,24 @@ import java.time.Instant
 import java.time.ZoneId
 
 // The pieces both board modes share: the clock and date lines, the dim meters and the mode button (mockup "看板").
+
+/** The board's lines are 1.7 times their text: the mockup's board sits outside `.app` and keeps the page's 15px/1.7. */
+const val BOARD_LINE = 1.7f
+
+/** The board's default text style ([BOARD_LINE]); the app's own is 1.5 (`.app { font: 15px/1.5 }`). */
+val BoardText = TextStyle(lineHeight = BOARD_LINE.em)
+
+/**
+ * One line of text [lineHeight] tall, with its glyphs where CSS puts them. The mockup's Silkscreen numbers are
+ * `line-height: 1`, shorter than the font itself (1.28 em), and Compose keeps a single line at least as tall as
+ * its font: the board's clock stood 8 dp low and pushed the date 15 dp down, into the first bubble. Here the text
+ * keeps its own height and is centered in the line, sticking out evenly above and below, as CSS's half-leading does.
+ */
+fun Modifier.cssLine(lineHeight: TextUnit): Modifier = layout { measurable, constraints ->
+    val text = measurable.measure(constraints.copy(minHeight = 0, maxHeight = Constraints.Infinity))
+    val height = lineHeight.roundToPx()
+    layout(text.width, height) { text.place(0, (height - text.height) / 2) }
+}
 
 /** "22:12". */
 fun boardClockText(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): String {

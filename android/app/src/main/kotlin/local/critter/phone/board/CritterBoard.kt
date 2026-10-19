@@ -61,6 +61,7 @@ import local.critter.phone.ui.board.boardClockText
 import local.critter.phone.ui.board.boardDateText
 import local.critter.phone.ui.board.boardPercent
 import local.critter.phone.ui.board.cardRequests
+import local.critter.phone.ui.board.cssLine
 import local.critter.phone.ui.board.offlineText
 import local.critter.phone.ui.doingText
 import local.critter.phone.ui.folderBranch
@@ -85,6 +86,12 @@ private const val PITCH_CELLS = 22
 private const val BUBBLE_CELLS = 20
 
 private const val BUBBLE_MAX_DP = 150f
+
+// The clock and date block at the top left (mockup `.bclock` at 20 and 52px/1, `.bdate` at 82).
+private val CLOCK_SIZE = 52.sp
+private val DATE_SIZE = 13.sp
+private val HEADER_TOP = 20.dp
+private val DATE_GAP = 10.dp
 
 /** How wide the pile's count tag may be, in cells: the pile (25) and the gap beside it (4). */
 private const val PILE_TAG_CELLS = 18 + PileSlots.EXTRA_CELLS + 4
@@ -186,13 +193,16 @@ fun CritterBoard(
             }
         }
 
-        Column(Modifier.padding(start = 30.dp, top = 20.dp)) {
-            Text(boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 52.sp, lineHeight = 52.sp, maxLines = 1)
+        Column(Modifier.padding(start = 30.dp, top = HEADER_TOP)) {
+            Text(
+                boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = CLOCK_SIZE, lineHeight = CLOCK_SIZE,
+                maxLines = 1, modifier = Modifier.cssLine(CLOCK_SIZE),
+            )
             // The offline line shares the date's row: a two-line bubble at 6 dp a cell reaches up to just under it.
-            Row(Modifier.padding(start = 2.dp, top = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Row(Modifier.padding(start = 2.dp, top = DATE_GAP), verticalAlignment = Alignment.CenterVertically) {
                 Text(
                     boardDateText(data.now),
-                    color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 13.sp, maxLines = 1,
+                    color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = DATE_SIZE, maxLines = 1,
                 )
                 if (!data.connected) {
                     Text(

@@ -17,6 +17,7 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ProvideTextStyle
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
@@ -94,8 +95,8 @@ class BoardActivity : ComponentActivity() {
         // Shown from now until onDestroy: a board whose screen went off is still the board on top.
         BoardTriggerService.boardShown(true)
         val repo = repository
-        // The board is always dark (design §5), whatever the phone's theme.
-        setContent { CritterTheme(dark = true) { Board(repo) } }
+        // The board is always dark (design §5), whatever the phone's theme, and its lines are the mockup's 1.7.
+        setContent { CritterTheme(dark = true) { ProvideTextStyle(BoardText) { Board(repo) } } }
     }
 
     override fun onStart() {

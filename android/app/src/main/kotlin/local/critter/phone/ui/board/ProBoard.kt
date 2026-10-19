@@ -151,7 +151,10 @@ fun ProBoard(
     ) {
         Column(Modifier.width(212.dp).fillMaxHeight(), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Column {
-                Text(boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 44.sp, lineHeight = 44.sp, maxLines = 1)
+                Text(
+                    boardClockText(data.now), color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 44.sp, lineHeight = 44.sp,
+                    maxLines = 1, modifier = Modifier.cssLine(44.sp),
+                )
                 Text(
                     boardDateText(data.now),
                     color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 13.sp, maxLines = 1,
@@ -215,7 +218,7 @@ private fun Gauge(title: String, window: RateWindow?, now: Long) {
             Text(
                 boardPercent(LimitsText.percent(window), 17.sp),
                 color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 22.sp, lineHeight = 22.sp, maxLines = 1,
-                modifier = Modifier.alignByBaseline(),
+                modifier = Modifier.alignByBaseline().cssLine(22.sp),
             )
         }
         BoardMeter(window?.usedPercentage, 20, 7.dp, Modifier.padding(top = 8.dp, bottom = 6.dp))
