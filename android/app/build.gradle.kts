@@ -41,6 +41,11 @@ android {
             isMinifyEnabled = false
             if (keystoreProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
         }
+        // Same applicationId and, with the keystore, the same key: `installDebug` replaces the release app on the
+        // phone in place and keeps its pairing and settings.
+        debug {
+            if (keystoreProps.isNotEmpty()) signingConfig = signingConfigs.getByName("release")
+        }
     }
 
     buildFeatures { compose = true }
