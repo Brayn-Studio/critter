@@ -36,9 +36,6 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.launch
-import local.critter.core.logic.AnswerDraft
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.ResultReason
@@ -192,6 +189,7 @@ class BoardActivity : ComponentActivity() {
             } else {
                 ProBoard(
                     data = data,
+                    library = library,
                     shift = shift,
                     onAllow = { answerPermission(repo, it, allow = true) },
                     onDeny = { answerPermission(repo, it, allow = false) },
@@ -211,20 +209,16 @@ class BoardActivity : ComponentActivity() {
         repo.settingsStore.update { it.copy(boardCritterMode = !it.boardCritterMode) }
     }
 
-    /** On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). */
+    /**
+     * On the lock screen the board may be showing, but nothing is sent before the user unlocks (spec §8.6). The
+     * answer goes out in the repository's scope, so the board closing meanwhile does not cancel it.
+     */
     private fun answerPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
-        withKeyguardDismissed { sendPermission(repo, request, allow) }
-    }
-
-    private fun sendPermission(repo: BridgeRepository, request: BridgePending, allow: Boolean) {
-        val draft = AnswerDraft(request)
-        if (allow) draft.allow() else draft.deny(null)
-        val payload = draft.payload() ?: return
-        if (!draft.markSubmitted()) return
-        lifecycleScope.launch {
-            val result = repo.answer(request.requestId, payload)
-            if (!result.ok && result.reason != ResultReason.resolved) {
-                Toast.makeText(this@BoardActivity, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+        withKeyguardDismissed {
+            repo.answerPermission(request, allow) { result ->
+                if (!result.ok && result.reason != ResultReason.resolved) {
+                    Toast.makeText(applicationContext, result.message ?: "没有发送出去", Toast.LENGTH_SHORT).show()
+                }
             }
         }
     }
