@@ -134,4 +134,26 @@ class PresentationTest {
         assertEquals("proj 需要你确认", Alerts.publicTitle(session()))
         assertEquals("会话 需要你确认", Alerts.publicTitle(null))
     }
+
+    /**
+     * The lock screen's version of a request (and of a waiting notice) names the session and nothing else: not the
+     * command, not what it is doing, not its folder.
+     */
+    @Test
+    fun lockScreenTextNeverShowsTheCommand() {
+        val input = BridgeJson.parseToJsonElement("""{"command":"rm -rf /tmp/secret"}""") as JsonObject
+        val permission = BridgePending("r1", "s1", PendingKind.permission, toolName = "Bash", summary = "运行 rm -rf /tmp/secret", input = input, createdAt = 0)
+        val busy = session(cwd = "/tmp/secret").copy(detail = "运行 rm -rf /tmp/secret")
+        // Unlocked, the notification shows the command...
+        assertEquals("rm -rf /tmp/secret", Alerts.requestText(permission, busy))
+        // ...locked, only who is waiting.
+        val locked = Alerts.lockScreenText(busy)
+        assertEquals("proj 需要你确认", locked.title)
+        assertEquals("解锁后查看内容", locked.text)
+        for (part in listOf(locked.title, locked.text)) {
+            assertFalse("rm -rf" in part, part)
+            assertFalse("secret" in part, part)
+        }
+        assertEquals("会话 需要你确认", Alerts.lockScreenText(null).title)
+    }
 }

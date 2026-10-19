@@ -61,7 +61,7 @@ object Alerts {
     private const val LARGE_ICON_CELL_PX = 4
 
     /** What the lock screen says instead of the command or the question. */
-    const val PUBLIC_TEXT = "解锁后查看内容"
+    private const val PUBLIC_TEXT = "解锁后查看内容"
 
     const val ACTION_ANSWER = "local.critter.phone.ANSWER"
     const val EXTRA_REQUEST_ID = "requestId"
@@ -90,6 +90,15 @@ object Alerts {
 
     /** The lock screen's title for a request: who is waiting, nothing about what for. */
     fun publicTitle(session: BridgeSession?): String = "${session?.name ?: "会话"} 需要你确认"
+
+    /** What the lock screen shows of a notification that waits for you. */
+    data class LockScreenText(val title: String, val text: String)
+
+    /**
+     * The public version of a request or waiting notification: the session's name and "解锁后查看内容", never the
+     * command, what it is doing or its folder (the notifications themselves are VISIBILITY_PRIVATE).
+     */
+    fun lockScreenText(session: BridgeSession?): LockScreenText = LockScreenText(publicTitle(session), PUBLIC_TEXT)
 
     fun createChannels(context: Context) {
         val nm = context.getSystemService(NotificationManager::class.java)
@@ -247,11 +256,12 @@ object Alerts {
             listOf(NotificationCompat.Action.Builder(0, "打开", open).build())
         }
         // On the lock screen: who is waiting, not the command (the buttons still ask to unlock first).
+        val locked = lockScreenText(session)
         val lockScreen = NotificationCompat.Builder(context, CH_WAITING)
             .setSmallIcon(R.drawable.ic_stat_critter)
             .setColor(Accent)
-            .setContentTitle(publicTitle(session))
-            .setContentText(PUBLIC_TEXT)
+            .setContentTitle(locked.title)
+            .setContentText(locked.text)
             .setLargeIcon(icon)
             .setContentIntent(open)
         actions.forEach { lockScreen.addAction(it) }
@@ -328,11 +338,12 @@ object Alerts {
         )
         val icon = largeIcon(context, session, PetState.waiting)
         // What it is doing may name a command too: the lock screen only says who.
+        val locked = lockScreenText(session)
         val lockScreen = NotificationCompat.Builder(context, CH_WAITING)
             .setSmallIcon(R.drawable.ic_stat_critter)
             .setColor(Accent)
-            .setContentTitle(publicTitle(session))
-            .setContentText(PUBLIC_TEXT)
+            .setContentTitle(locked.title)
+            .setContentText(locked.text)
             .setLargeIcon(icon)
             .setContentIntent(open)
             .build()
