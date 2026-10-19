@@ -74,8 +74,15 @@ class BoardLayoutTest {
         assertEquals(5, l.slots.size)
         assertNull(l.pileFrom)
         assertEquals(3f, l.scale)
-        assertEquals(listOf(21.0, 87.0, 153.0, 219.0, 285.0), l.slots.map { it.x })
+        // An equal 67.2 dp share each between the 12 dp margins, the 54 dp base box in the middle of it.
+        listOf(18.6, 85.8, 153.0, 220.2, 287.4).zip(l.slots.map { it.x }).forEach { (want, got) -> assertEquals(want, got, 0.01) }
         assertTrue(l.slots.all { it.y == 200.0 })
+    }
+
+    @Test fun placeRowSpreadsAFewAcrossTheMeadow() {
+        // Two sessions stand in the middle of each half (centres 96 and 264), not packed together in the middle.
+        assertEquals(listOf(69.0, 237.0), BoardLayout.placeRow(2, 360f, 200f, 3f, 12f, 5).slots.map { it.x })
+        assertEquals(listOf(153.0), BoardLayout.placeRow(1, 360f, 200f, 3f, 12f, 5).slots.map { it.x })
     }
 
     @Test fun placeRowPilesTheRest() {

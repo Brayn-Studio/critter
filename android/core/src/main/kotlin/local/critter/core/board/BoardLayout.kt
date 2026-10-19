@@ -46,7 +46,9 @@ object BoardLayout {
     /**
      * One row at a fixed [scale] (dp per cell), standing on [groundDp] (the home meadow): [place]'s rule without the
      * shrinking. At most [maxPerRow] slots, as many as fit between margins of [marginDp]; when there are more
-     * Critters than that, the last slot becomes the pile. The row is centred, the pile's extra width included.
+     * Critters than that, the last slot becomes the pile and the row is packed and centred, the pile's extra width
+     * included. When they all fit, they spread out evenly between the margins, as on the mockups' meadow: each gets
+     * an equal share of the width and stands in the middle of it (never closer than the packed row).
      */
     fun placeRow(count: Int, widthDp: Float, groundDp: Float, scale: Float, marginDp: Float, maxPerRow: Int): Layout {
         if (count <= 0) return Layout(scale, emptyList(), null)
@@ -54,9 +56,15 @@ object BoardLayout {
         while (capacity > 1 && rowWidth(capacity, scale, pile = count > capacity, marginDp) > widthDp) capacity--
         val slotCount = minOf(count, capacity)
         val pile = count > slotCount
-        val x0 = (widthDp - rowWidth(slotCount, scale, pile, margin = 0f)) / 2
-        val pitch = (CELLS + GAP_CELLS) * scale
-        val slots = List(slotCount) { Pt((x0 + it * pitch).toDouble(), groundDp.toDouble()) }
+        val packed = (CELLS + GAP_CELLS) * scale
+        val slots = if (pile) {
+            val x0 = (widthDp - rowWidth(slotCount, scale, pile, margin = 0f)) / 2
+            List(slotCount) { Pt((x0 + it * packed).toDouble(), groundDp.toDouble()) }
+        } else {
+            val share = maxOf(packed, (widthDp - 2 * marginDp) / slotCount)
+            val first = (widthDp - share * slotCount) / 2 + (share - CELLS * scale) / 2
+            List(slotCount) { Pt((first + it * share).toDouble(), groundDp.toDouble()) }
+        }
         return Layout(scale, slots, if (pile) slotCount - 1 else null)
     }
 
