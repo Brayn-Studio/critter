@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import local.critter.core.board.BoardTrigger
 import local.critter.core.board.BoardTrigger.Action
 import local.critter.phone.repository
+import local.critter.phone.service.Alerts
 import local.critter.phone.ui.board.BoardActivity
 
 /**
@@ -115,9 +116,12 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     private fun boardShown(shown: Boolean) {
         trigger.onBoardShown(shown)
         if (shown && autoOpening) {
-            // It opened by itself after all: the settings' "blocked" notice no longer applies.
+            // It opened by itself after all: the settings' "blocked" notice and the notification no longer apply.
             autoOpening = false
-            if (settings.settings.value.boardBlockedAt != null) settings.update { it.copy(boardBlockedAt = null) }
+            if (settings.settings.value.boardBlockedAt != null) {
+                settings.update { it.copy(boardBlockedAt = null) }
+                Alerts.boardUnblocked(context)
+            }
         }
         update()
     }
@@ -136,10 +140,14 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         }
     }
 
-    /** Remembered for the settings, which say what to switch on (wall-clock time, for "上次插电时"). */
+    /**
+     * Remembered for the settings, which say what to switch on (wall-clock time, for "上次插电时"), and told right
+     * away in a quiet notification with 「去设置」.
+     */
     private fun blocked() {
         autoOpening = false
         settings.update { it.copy(boardBlockedAt = System.currentTimeMillis()) }
+        Alerts.boardBlocked(context)
     }
 
     /**
