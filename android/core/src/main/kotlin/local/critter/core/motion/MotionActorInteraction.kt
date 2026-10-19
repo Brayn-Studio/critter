@@ -200,6 +200,31 @@ internal fun MotionActor.followPose(): String {
     return followLook ?: names.lookCenter
 }
 
+// MARK: - Carry
+
+/** Lifted and carried sideways (the board): the body is drawn [dxCells] cells from its anchor, y unchanged. */
+fun MotionActor.carry(dxCells: Double) {
+    offX = dxCells
+}
+
+/**
+ * Put down after a carry: walks back to its anchor with the follow walk (trotting while far), then
+ * stops and blinks. Under reduced motion it is home on the next tick. Ignored like `startFollow`
+ * while traveling, hidden or held under ground, where it is simply back at the anchor.
+ */
+fun MotionActor.walkHome() {
+    if (traveling || hidden || underground != null) {
+        offX = 0.0
+        offY = 0.0
+        return
+    }
+    cancelOnce()
+    gazeZone = null
+    following = true
+    followHold = false
+    followLook = null
+}
+
 // MARK: - Gaze
 
 fun MotionActor.setGaze(zone: GazeZone?) {

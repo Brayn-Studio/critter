@@ -3,6 +3,8 @@ package local.critter.phone.critter
 import android.content.Context
 import android.content.res.Configuration
 import android.graphics.Canvas
+import android.os.Handler
+import android.os.Looper
 import android.os.SystemClock
 import android.provider.Settings
 import android.view.MotionEvent
@@ -10,6 +12,7 @@ import android.view.View
 import local.critter.core.motion.ActorSnapshot
 import local.critter.core.motion.GazeZone
 import local.critter.core.motion.MotionActor
+import local.critter.core.motion.MotionCues
 import local.critter.core.motion.MotionDrag
 import local.critter.core.motion.MotionGaze
 import local.critter.core.motion.MotionRNG
@@ -17,14 +20,19 @@ import local.critter.core.motion.PileSeating
 import local.critter.core.motion.Pt
 import local.critter.core.motion.RubDetector
 import local.critter.core.motion.TickGrid
+import local.critter.core.motion.carry
 import local.critter.core.motion.enterState
+import local.critter.core.motion.holdUnderground
+import local.critter.core.motion.releaseUnderground
 import local.critter.core.motion.setActivity
 import local.critter.core.motion.setGaze
 import local.critter.core.motion.sleepNow
 import local.critter.core.motion.travel
 import local.critter.core.motion.unseat
 import local.critter.core.motion.wake
+import local.critter.core.motion.walkHome
 import local.critter.core.protocol.PetState
+import local.critter.core.skin.MotionClip
 import local.critter.core.skin.SkinManifest
 import kotlin.math.hypot
 import kotlin.math.roundToInt
@@ -59,6 +67,9 @@ interface CritterTouchListener {
 
     /** The finger's total movement in screen pixels since it touched down, while the Critter is held. */
     fun onDragBy(dxPx: Float, dyPx: Float) {}
+
+    /** With [CritterView.carryOnDrag]: the Critter was carried away from its place ([away]), or walked back to it. */
+    fun onCarry(sessionId: String, away: Boolean) {}
 }
 
 /**
@@ -79,12 +90,20 @@ class CritterView(context: Context) : View(context) {
         var lastRawX = downRawX
         var lastMove = 0.0
         var squeezed = false
+        var carrying = false
     }
 
     var listener: CritterTouchListener? = null
 
     /** A touch that lands on no Critter counts for the first one (the pile's label and counts belong to it). */
     var claimAllTouches = false
+
+    /**
+     * A drag carries the lifted Critter sideways inside the view, and once let go it lands and walks back to its
+     * place (the board, spec §8.7). Off, the Critter stays put and the window follows the finger instead
+     * ([CritterTouchListener.onDragBy], the floating pile).
+     */
+    var carryOnDrag: Boolean = false
 
     /** How many times [onDraw] ran; for the debug gallery and the power check. */
     var debugFrameCount: Int = 0
@@ -104,6 +123,17 @@ class CritterView(context: Context) : View(context) {
 
     private var press: Press? = null
     private var pettingId: String? = null
+
+    /** Carried Critters walking back to their place. */
+    private val homing = HashSet<String>()
+
+    // The staggered steps of the latest sink or rise; a newer one cancels them.
+    private val handler = Handler(Looper.getMainLooper())
+    private val staged = ArrayList<Runnable>()
+    private var showHideGeneration = 0
+    private var sinking: MutableSet<String>? = null
+    private var sinkDone: (() -> Unit)? = null
+
     private val rub = RubDetector()
     private var gaze = HashMap<String, GazeZone?>()
 
@@ -152,6 +182,66 @@ class CritterView(context: Context) : View(context) {
     fun notice(sessionId: String) {
         val notice = entries[sessionId]?.slot?.manifest?.interactions?.notice ?: return
         play(sessionId, notice)
+    }
+
+    /** Plays [clip] once on one Critter after [delayMs], if it is free by then; under reduce motion it keeps its still pose. */
+    fun playClip(sessionId: String, clip: MotionClip, delayMs: Long = 0) {
+        if (delayMs > 0) {
+            handler.postDelayed({ playClip(sessionId, clip) }, delayMs)
+            return
+        }
+        clock.catchUp()
+        val entry = entries[sessionId] ?: return
+        if (!reduceMotion && isFree(sessionId)) entry.actor.play(clip, null)
+        clock.poke()
+    }
+
+    /** The Critter looks up at you ([MotionCues.lookAtYou]): a sheet just settled over it. */
+    fun lookAtYou(sessionId: String) {
+        val skin = entries[sessionId]?.slot?.manifest ?: return
+        playClip(sessionId, MotionCues.lookAtYou(skin))
+    }
+
+    /** One small hop ([MotionCues.hop]) after [delayMs]: the floating shelf opening and closing. */
+    fun hop(sessionId: String, delayMs: Long = 0) {
+        val skin = entries[sessionId]?.slot?.manifest ?: return
+        playClip(sessionId, MotionCues.hop(skin), delayMs)
+    }
+
+    /**
+     * Every Critter in view sinks into the ground (`vanish`), [staggerMs] after the previous one, and stays
+     * there; then [onDone], unless [riseAll] or another sink came first. At once under reduce motion or out of
+     * sight. The desktop's `FlockChoreographer.playVanish`.
+     */
+    fun sinkAll(staggerMs: Long = 60, onDone: () -> Unit) {
+        val generation = newShowHide()
+        clock.catchUp()
+        val ids = entries.filterValues { !it.actor.hidden && it.actor.underground == null }.keys.toList()
+        sinking = ids.toMutableSet()
+        sinkDone = onDone
+        if (ids.isEmpty() || reduceMotion || !clock.isRunning) {
+            finishSink()
+            return
+        }
+        ids.forEachIndexed { i, id -> stage(i * staggerMs) { sinkOut(id, generation) } }
+    }
+
+    /**
+     * Every Critter in view comes up out of the ground, [staggerMs] after the previous one: `appear`, or with
+     * [join] the skin's `join` (it looks left and right on the way up). Those still above ground go under first;
+     * a sink in progress is called off. The desktop's `FlockChoreographer.playAppear`.
+     */
+    fun riseAll(staggerMs: Long = 90, join: Boolean = false) {
+        newShowHide()
+        clock.catchUp()
+        val ids = entries.filterValues { !it.actor.hidden }.keys.toList()
+        for (id in ids) entries[id]?.actor?.let { if (it.underground == null) it.holdUnderground(UNDERGROUND_CELLS) }
+        if (reduceMotion) {
+            for (id in ids) entries[id]?.actor?.releaseUnderground()
+        } else {
+            ids.forEachIndexed { i, id -> stage(i * staggerMs) { riseUp(id, join) } }
+        }
+        clock.poke()
     }
 
     /** Stops the clock without detaching (the screen went off); [setPaused] false resumes it. */
@@ -209,6 +299,8 @@ class CritterView(context: Context) : View(context) {
 
     private fun forget(id: String) {
         gaze.remove(id)
+        homing.remove(id)
+        sinkFinished(id)
         if (pettingId == id) pettingId = null
         val p = press
         if (p != null && (p.id == id || p.grabbedId == id)) press = null
@@ -257,7 +349,77 @@ class CritterView(context: Context) : View(context) {
         } else {
             if (!isAttachedToWindow || !windowShown) cancelPress()
             clock.stop()
+            // Nobody can watch it sink: done now.
+            finishSink()
         }
+    }
+
+    // ---- sink and rise -------------------------------------------------------------------------------------
+
+    /** Calls off the previous sink or rise (its steps, and a sink's `onDone`) and starts a new one. */
+    private fun newShowHide(): Int {
+        cancelStaged()
+        sinking = null
+        sinkDone = null
+        return ++showHideGeneration
+    }
+
+    /** Runs [step] after [delayMs] (now for 0), unless a newer sink or rise cancels it first. */
+    private fun stage(delayMs: Long, step: () -> Unit) {
+        if (delayMs <= 0) {
+            step()
+            return
+        }
+        val runnable = object : Runnable {
+            override fun run() {
+                staged.remove(this)
+                step()
+            }
+        }
+        staged += runnable
+        handler.postDelayed(runnable, delayMs)
+    }
+
+    private fun cancelStaged() {
+        for (r in staged) handler.removeCallbacks(r)
+        staged.clear()
+    }
+
+    private fun sinkOut(id: String, generation: Int) {
+        val actor = entries[id]?.actor ?: return sinkFinished(id)
+        if (actor.underground != null) return sinkFinished(id)
+        clock.catchUp()
+        actor.holdUnderground(UNDERGROUND_CELLS)
+        if (reduceMotion) {
+            sinkFinished(id)
+        } else {
+            actor.play(actor.skin.interactions.vanish) { if (generation == showHideGeneration) sinkFinished(id) }
+        }
+        clock.poke()
+    }
+
+    private fun sinkFinished(id: String) {
+        val left = sinking ?: return
+        if (left.remove(id) && left.isEmpty()) finishSink()
+    }
+
+    /** Ends the sink in progress (if any): whoever is still above ground goes under at once, then its `onDone`. */
+    private fun finishSink() {
+        val done = sinkDone ?: return
+        cancelStaged()
+        sinking = null
+        sinkDone = null
+        for (e in entries.values) if (!e.actor.hidden && e.actor.underground == null) e.actor.holdUnderground(UNDERGROUND_CELLS)
+        clock.poke()
+        done()
+    }
+
+    private fun riseUp(id: String, join: Boolean) {
+        val actor = entries[id]?.actor ?: return
+        clock.catchUp()
+        actor.releaseUnderground()
+        if (!reduceMotion) actor.play(if (join) actor.skin.interactions.join else actor.skin.interactions.appear)
+        clock.poke()
     }
 
     // ---- clock ---------------------------------------------------------------------------------------------
@@ -268,6 +430,7 @@ class CritterView(context: Context) : View(context) {
             for (e in entries.values) e.actor.step()
             interactionDidStep()
         }
+        if (homing.isNotEmpty()) reportHome()
         var changed = layoutDirty
         layoutDirty = false
         var next = TickGrid.maxSleepTicks
@@ -322,7 +485,7 @@ class CritterView(context: Context) : View(context) {
             val u = e.slot.scale
             val left = e.slot.x
             val ground = e.slot.y
-            if (x < left - slop || x > left + 18 * u + slop || y < ground - 12 * u - slop || y > ground + slop) continue
+            if (x < left - slop || x > left + BASE_COLUMNS * u + slop || y < ground - 12 * u - slop || y > ground + slop) continue
             val d = hypot(x - (left + 9 * u), y - (ground - 5 * u))
             if (d < bestDistance) {
                 bestDistance = d
@@ -380,13 +543,13 @@ class CritterView(context: Context) : View(context) {
             if (grabbed != null && pettingId == null) {
                 grabbed.lag = MotionDrag.lag(((e.rawX - p.lastRawX) / density).toDouble())
                 p.lastMove = t
-                listener?.onDragBy(e.rawX - p.downRawX, e.rawY - p.downRawY)
+                if (p.carrying) carryTo(p, e.rawX) else listener?.onDragBy(e.rawX - p.downRawX, e.rawY - p.downRawY)
             }
             p.lastRawX = e.rawX
         }
-        // Rubbing back and forth pets, even after the drag started lifting it.
+        // Rubbing back and forth pets, even after the drag started lifting it (not one carried across the view).
         // Screen coordinates: the view's own move with the window while it is dragged.
-        if (rub.move((e.rawX / density).toDouble(), t) && pettingId != p.id && isFree(p.id)) startPet(p)
+        if (!p.carrying && rub.move((e.rawX / density).toDouble(), t) && pettingId != p.id && isFree(p.id)) startPet(p)
         clock.poke()
     }
 
@@ -405,6 +568,40 @@ class CritterView(context: Context) : View(context) {
         p.grabbedId = p.id
         p.lastMove = now
         listener?.onDragStart(p.id)
+        if (carryOnDrag) {
+            p.carrying = true
+            listener?.onCarry(p.id, away = true)
+        }
+    }
+
+    /** The carried Critter follows the finger sideways, its base box kept inside the view. */
+    private fun carryTo(p: Press, rawX: Float) {
+        val e = entries[p.id] ?: return
+        val u = e.slot.scale
+        val min = -e.slot.x / u
+        val max = maxOf(min, (width - e.slot.x) / u - BASE_COLUMNS)
+        e.actor.carry(((rawX - p.downRawX) / u).coerceIn(min, max).toDouble())
+    }
+
+    /** Lets go of a carried Critter: it lands where it is (`drop`), then walks home; straight home under reduce motion. */
+    private fun putDown(id: String, actor: MotionActor) {
+        if (reduceMotion || !isFree(id)) {
+            sendHome(id, actor)
+            return
+        }
+        actor.play(actor.skin.interactions.drop) { if (entries[id]?.actor === actor) sendHome(id, actor) }
+    }
+
+    private fun sendHome(id: String, actor: MotionActor) {
+        actor.walkHome()
+        homing += id
+    }
+
+    /** Carried Critters that are back in their place: the place is theirs again. */
+    private fun reportHome() {
+        val home = homing.filter { entries[it]?.actor?.following != true }
+        homing.removeAll(home.toSet())
+        for (id in home) if (entries.containsKey(id)) listener?.onCarry(id, away = false)
     }
 
     private fun startPet(p: Press) {
@@ -431,7 +628,7 @@ class CritterView(context: Context) : View(context) {
                 actor.lift = 0
                 actor.lag = 0
                 actor.setMode(null)
-                if (isFree(p.id)) actor.play(actor.skin.interactions.drop)
+                if (p.carrying) putDown(p.id, actor) else if (isFree(p.id)) actor.play(actor.skin.interactions.drop)
             }
             clock.poke()
             listener?.onLongDragEnd(p.id)
@@ -457,6 +654,10 @@ class CritterView(context: Context) : View(context) {
             actor.lift = 0
             actor.lag = 0
             releaseMode(id)
+        }
+        if (p.carrying) {
+            entries[p.id]?.actor?.carry(0.0)
+            listener?.onCarry(p.id, away = false)
         }
         endPet()
         clearGaze()
@@ -529,5 +730,9 @@ class CritterView(context: Context) : View(context) {
         const val HIT_SLOP_DP = 6f
         const val HELD_LIFT_CELLS = 3
         const val LAG_SETTLE_DELAY_S = 0.12
+        const val BASE_COLUMNS = 18
+
+        /** How deep a sunk Critter is held: its whole body under the ground. */
+        const val UNDERGROUND_CELLS = 12
     }
 }
