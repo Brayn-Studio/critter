@@ -8,6 +8,7 @@ import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
+import android.os.SystemClock
 import android.provider.Settings
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -66,6 +67,7 @@ import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -161,7 +163,7 @@ fun PairingScreen(
     var attempt by remember { mutableStateOf<Job?>(null) }
     var error by remember { mutableStateOf<String?>(null) }
     // The camera keeps reading the code that just failed; it must not start the same attempt again and again.
-    var failedScan by remember { mutableStateOf<String?>(null) }
+    val guard = remember { ScanGuard() }
     val pairState by repo.pairState.collectAsState()
     val existing by repo.pairing.collectAsState()
     var linkToConfirm by remember { mutableStateOf<PairingUri?>(null) }
@@ -170,7 +172,7 @@ fun PairingScreen(
         if (busy) return
         if (!PrivateNetwork.isAllowed(uri.host)) {
             error = "地址 ${uri.host} 不在局域网里。Critter 只和同一个局域网里的 Mac 配对。"
-            failedScan = scanned
+            guard.failed(scanned, SystemClock.elapsedRealtime())
             return
         }
         busy = true
@@ -182,14 +184,14 @@ fun PairingScreen(
                 onPaired()
             } else {
                 error = pairFailureText(why)
-                failedScan = scanned
+                guard.failed(scanned, SystemClock.elapsedRealtime())
             }
         }
     }
 
     fun switchTo(next: Mode) {
         error = null
-        failedScan = null
+        guard.clear()
         mode = next
     }
 
@@ -248,11 +250,11 @@ fun PairingScreen(
             mode == Mode.Scan -> ScanPane(
                 position = position,
                 error = error,
-                ignore = failedScan,
+                guard = guard,
                 onLink = { uri, text -> pair(uri, text) },
                 onNotALink = { text ->
                     error = "这不是 Critter 的配对二维码。"
-                    failedScan = text
+                    guard.failed(text, SystemClock.elapsedRealtime())
                 },
                 onManual = { switchTo(Mode.Manual) },
                 onCancel = onCancel,
@@ -374,7 +376,7 @@ private class PetHandle {
 private fun ScanPane(
     position: StepPosition?,
     error: String?,
-    ignore: String?,
+    guard: ScanGuard,
     onLink: (PairingUri, String) -> Unit,
     onNotALink: (String) -> Unit,
     onManual: () -> Unit,
@@ -404,7 +406,7 @@ private fun ScanPane(
     var origin by remember { mutableStateOf(Offset.Zero) }
 
     fun onRead(text: String) {
-        if (flash || text == ignore) return
+        if (flash || guard.ignores(text, SystemClock.elapsedRealtime())) return
         val uri = PairingUri.parse(text)
         if (uri == null) {
             onNotALink(text)
@@ -717,7 +719,11 @@ private fun CodeCells(code: String, onChange: (String) -> Unit, error: Boolean) 
         ),
         textStyle = TextStyle(color = Color.Transparent),
         cursorBrush = SolidColor(Color.Transparent),
-        modifier = Modifier.fillMaxWidth().semantics { contentDescription = "Mac 上显示的 $CODE_LENGTH 位码" },
+        // The label, plus what has been typed read out character by character (a description alone hides the value).
+        modifier = Modifier.fillMaxWidth().semantics {
+            contentDescription = "Mac 上显示的 $CODE_LENGTH 位码"
+            stateDescription = if (code.isEmpty()) "未输入" else code.toList().joinToString(" ")
+        },
         decorationBox = { inner ->
             Box {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(5.dp)) {
