@@ -55,7 +55,27 @@ private let trickyCommands = [
         "[ -x '/other/critter-hook' ] && exec \(q) statusline || exit 0",
     ] {
         #expect(StatusLineInstaller.unwrap(edited, hookPath: hook) == .notWrapped, Comment(rawValue: edited))
+        #expect(StatusLineInstaller.unwrap(edited) == .notWrapped, Comment(rawValue: edited))
     }
+}
+
+/// Critter's wrapper is recognised whatever the hook's path, as long as it is a `critter-hook`;
+/// the same shape around some other program is not Critter's.
+@Test func unwrapRecognisesAnyHookPath() {
+    for path in ["/old/home/.critter/bin/critter-hook", "/Users/someone else/it's/critter-hook", hook] {
+        for original in trickyCommands {
+            #expect(StatusLineInstaller.unwrap(StatusLineInstaller.wrap(original: original, hookPath: path)) == .original(original))
+            #expect(StatusLineInstaller.unwrap(legacyWrap(original, hookPath: path)) == .original(original))
+        }
+        #expect(StatusLineInstaller.unwrap(StatusLineInstaller.wrap(original: nil, hookPath: path)) == .original(nil))
+        #expect(StatusLineInstaller.unwrap(legacyWrap(nil, hookPath: path)) == .original(nil))
+    }
+    for path in ["/usr/local/bin/other-tool", "/x/not-critter-hook", "critter-hook"] {
+        #expect(StatusLineInstaller.unwrap(StatusLineInstaller.wrap(original: "bash /x.sh", hookPath: path)) == .notWrapped)
+        #expect(StatusLineInstaller.unwrap(legacyWrap("bash /x.sh", hookPath: path)) == .notWrapped)
+    }
+    #expect(StatusLineInstaller.unwrap("bash x.sh") == .notWrapped)
+    #expect(StatusLineInstaller.unwrap("") == .notWrapped)
 }
 
 @Test func wrappedCommandRunsTheOriginalThroughTheShell() throws {
@@ -230,6 +250,28 @@ private func runCLI(_ sub: String, env: [String: String], now: Int64 = 42) -> Ho
         #expect(result.stdout.contains("不是有效的 UTF-8"))
         #expect(try Data(contentsOf: paths.claudeSettingsFile) == bytes)
         #expect(!FileManager.default.fileExists(atPath: paths.backupDir.path))
+    }
+}
+
+/// A wrapper made for another hook path (the home folder moved, an older install) is rewrapped
+/// for this one -- one layer, around the same original -- not wrapped a second time.
+@Test func wrapperForAnotherHookPathIsReplacedNotNested() throws {
+    let old = "/old/home/.critter/bin/critter-hook"
+    for original in ["bash /x.sh", "it's"] as [String?] + [nil] {
+        for wrapper in [StatusLineInstaller.wrap(original: original, hookPath: old), legacyWrap(original, hookPath: old)] {
+            let settings = "{\n  \"model\": \"opus\",\n  \"statusLine\": {\"type\": \"command\", \"command\": \(literal(wrapper))}\n}\n"
+            let installed = try StatusLineInstaller.install(settings: settings, hookPath: hook)
+            #expect(installed == settings.replacingOccurrences(of: literal(wrapper), with: literal(StatusLineInstaller.wrap(original: original, hookPath: hook))))
+            #expect(try StatusLineInstaller.install(settings: installed, hookPath: hook) == installed)
+            // Undoing it gives back the original, whichever path the wrapper had.
+            let restored = try StatusLineInstaller.uninstall(settings: settings, hookPath: hook)
+            #expect(restored == (try StatusLineInstaller.uninstall(settings: installed, hookPath: hook)))
+            if let original {
+                #expect(restored == settings.replacingOccurrences(of: literal(wrapper), with: literal(original)))
+            } else {
+                #expect(restored == "{\n  \"model\": \"opus\"\n}\n")
+            }
+        }
     }
 }
 
