@@ -141,9 +141,7 @@ public struct PendingStore: Sendable {
         }
         try createPrivateDirectory(paths.answersDir)
         let temp = paths.answersDir.appendingPathComponent(".\(file.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
-        guard FileManager.default.createFile(
-            atPath: temp.path, contents: try JSONEncoder().encode(answer), attributes: [.posixPermissions: 0o600]
-        ) else { throw CocoaError(.fileWriteUnknown) }
+        try createNewFile(try JSONEncoder().encode(answer), at: temp, permissions: 0o600)
         defer { unlink(temp.path) }
         guard link(temp.path, file.path) == 0 else {
             let code = errno

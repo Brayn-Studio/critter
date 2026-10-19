@@ -149,3 +149,35 @@ private func rec(_ sessionId: String, _ state: PetState, t: Int64) -> SessionRec
     // instead it must block until the in-flight update's 0.1s critical section finishes.
     #expect(deleteDuration > 0.05)
 }
+
+private func mode(_ url: URL) -> Int? {
+    (try? FileManager.default.attributesOfItem(atPath: url.path))?[.posixPermissions] as? Int
+}
+
+/// A write that cannot be renamed into place (the target is a directory) fails, and the temp
+/// file it wrote aside is gone -- whichever step failed.
+@Test func atomicWriteNeverLeavesATempFile() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("critter-atomic-\(UUID().uuidString)")
+    let target = dir.appendingPathComponent("taken.json")
+    try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+    for permissions in [nil, 0o600] as [Int?] {
+        #expect(throws: (any Error).self) { try atomicWrite(Data("x".utf8), to: target, permissions: permissions) }
+        #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["taken.json"])
+    }
+}
+
+/// The file has its mode from the moment it appears, and keeps it when it replaces a looser one.
+/// (The temp file is created with that mode rather than chmod-ed afterwards; that part is the
+/// implementation's to keep -- a test can't see the temp file between its creation and the rename.)
+@Test func atomicWriteCreatesWithTheFinalMode() throws {
+    let dir = FileManager.default.temporaryDirectory.appendingPathComponent("critter-atomic-\(UUID().uuidString)")
+    try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+    let file = dir.appendingPathComponent("secret.json")
+    try atomicWrite(Data("a".utf8), to: file, permissions: 0o600)
+    #expect(mode(file) == 0o600)
+    try FileManager.default.setAttributes([.posixPermissions: 0o644], ofItemAtPath: file.path)
+    try atomicWrite(Data("b".utf8), to: file, permissions: 0o600)
+    #expect(mode(file) == 0o600)
+    #expect(try Data(contentsOf: file) == Data("b".utf8))
+    #expect(try FileManager.default.contentsOfDirectory(atPath: dir.path) == ["secret.json"])
+}
