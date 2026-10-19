@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.em
 import local.critter.core.protocol.PetState
 import local.critter.phone.R
 
@@ -134,7 +135,9 @@ private val CritterTypography = Typography().run {
         displayLarge = displayLarge.nunito(), displayMedium = displayMedium.nunito(), displaySmall = displaySmall.nunito(),
         headlineLarge = headlineLarge.nunito(), headlineMedium = headlineMedium.nunito(), headlineSmall = headlineSmall.nunito(),
         titleLarge = titleLarge.nunito(), titleMedium = titleMedium.nunito(), titleSmall = titleSmall.nunito(),
-        bodyLarge = bodyLarge.nunito(), bodyMedium = bodyMedium.nunito(), bodySmall = bodySmall.nunito(),
+        // bodyLarge is every plain Text's default style. Its line height is relative, 1.5 times the text's own size
+        // as in the mockups' `.app { font: 15px/1.5 }`; M3's fixed 24 sp made 11–13 sp lines twice as tall.
+        bodyLarge = bodyLarge.nunito().copy(lineHeight = 1.5.em), bodyMedium = bodyMedium.nunito(), bodySmall = bodySmall.nunito(),
         labelLarge = labelLarge.nunito(), labelMedium = labelMedium.nunito(), labelSmall = labelSmall.nunito(),
     )
 }
