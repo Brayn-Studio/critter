@@ -25,7 +25,7 @@ class DebugPairReceiver : BroadcastReceiver() {
         val pending = goAsync()
         CoroutineScope(Dispatchers.Default).launch {
             try {
-                Log.i("CritterDebug", "DEBUG_PAIR result: ${repo.pair(uri)}")
+                Log.i("CritterDebug", "DEBUG_PAIR result: ${repo.pair(uri) ?: "paired"}")
             } finally {
                 pending.finish()
             }

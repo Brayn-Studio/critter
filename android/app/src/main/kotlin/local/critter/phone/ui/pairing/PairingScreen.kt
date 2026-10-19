@@ -47,6 +47,7 @@ import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import kotlinx.coroutines.launch
+import local.critter.core.net.PairFailure
 import local.critter.core.net.PrivateNetwork
 import local.critter.core.protocol.PairingUri
 import local.critter.phone.bridge.BridgeRepository
@@ -90,9 +91,9 @@ fun PairingScreen(
         busy = true
         error = null
         scope.launch {
-            val ok = repo.pair(uri)
+            val why = repo.pair(uri)
             busy = false
-            if (ok) onPaired() else error = "没有配对成功。请确认电脑上的 Critter 已打开手机连接、二维码没过期，并且手机和电脑在同一个 Wi-Fi。"
+            if (why == null) onPaired() else error = pairFailureText(why)
         }
     }
 
@@ -332,3 +333,13 @@ private fun ManualPane(
 }
 
 private fun hostAndPort(host: String, port: Int) = if (':' in host) "[$host]:$port" else "$host:$port"
+
+/** What the pairing screen says when a pairing attempt fails (design §8.2). */
+fun pairFailureText(why: PairFailure): String = when (why) {
+    PairFailure.BadCode -> "这个码不对，或者已经过期了。在 Mac 的「添加手机」里点「重新生成」再试。"
+    PairFailure.Rejected -> "Mac 上点了「拒绝」。要配对的话重新扫码，这次点「允许」。"
+    PairFailure.Protocol -> "这台 Mac 上的 Critter 版本和手机不一致，把两边都更新到最新再试。"
+    PairFailure.CertMismatch -> "这台 Mac 的证书和二维码里的不一样，已经停下。确认扫的是你自己的 Mac。"
+    PairFailure.NoAnswer -> "Mac 上一直没人点「允许」。回到 Mac 前，重新扫一次码。"
+    PairFailure.Unreachable -> "连不上这台 Mac。确认手机和电脑在同一个 Wi‑Fi，并且 Mac 上开着「允许手机连接」。"
+}
