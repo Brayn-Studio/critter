@@ -95,7 +95,7 @@ Question:
 {"id":"c3","payload":{"answers":{"Which database?":"PostgreSQL"}},"requestId":"req-3","type":"answer"}
 ```
 
-Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
+Plan, approve is `{"decision":"approve"}`; revise needs a `message` that is non-empty after trimming whitespace (Claude Code gets the trimmed text):
 
 ```json
 {"id":"c4","payload":{"decision":"revise","message":"Split step 2"},"requestId":"req-4","type":"answer"}
@@ -105,11 +105,11 @@ Plan, approve is `{"decision":"approve"}`; revise needs a non-empty `message`:
 
 ### AskUserQuestion answers
 
-`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. The keys must be exactly the request's questions -- **every question answered**, none added -- and every value must be non-empty and at most 4000 characters (after trimming whitespace). A partial answer gets `invalid`.
+`payload.answers` maps the **full question text** (the `question` field of each entry in the request's `input.questions`) to the answer string. The keys must be exactly the request's questions -- **every question answered**, none added -- and every value must be non-empty and at most 4000 characters (after trimming whitespace). A partial answer gets `invalid`. Claude Code gets the trimmed values -- the same text that was checked.
 
 - Single-select: the value is the **option label** that was chosen.
 - Free text ("Other"): the value is the **text itself**.
-- Multi-select (`multiSelect: true`): the value is the chosen **option labels joined with `", "`** (comma and one space), in the options' order, e.g. `"A, B"`. Verified against a real Claude Code 2.1.302 session on 2026-10-19: Claude reported receiving exactly `A, B`. The Mac passes the string through unchanged.
+- Multi-select (`multiSelect: true`): the value is the chosen **option labels joined with `", "`** (comma and one space), in the options' order, e.g. `"A, B"`. Verified against a real Claude Code 2.1.302 session on 2026-10-19: Claude reported receiving exactly `A, B`. The Mac passes the string through unchanged apart from trimming whitespace at its ends.
 
 ### seen
 

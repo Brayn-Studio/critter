@@ -8,7 +8,8 @@ public enum AskDecision {
     public static let untruncatedKeys: Set<String> = ["command", "plan", "question", "file_path", "notebook_path", "url"]
     /// How a multi-select question's chosen option labels are joined into its one answer
     /// string: "A, B". Verified against Claude Code 2.1.302 (spec section 13): Claude received
-    /// both labels. The Mac passes the string through unchanged; phones build it.
+    /// both labels. The Mac passes the string through unchanged (but for trimming its ends);
+    /// phones build it.
     public static let multiSelectSeparator = ", "
     static let displayLimit = 4096
     static let maxAnswerLength = 4000
@@ -65,14 +66,15 @@ public enum AskDecision {
                 decision = ["behavior": "deny", "message": message.isEmpty ? defaultDenyMessage : message]
             }
         case .question:
+            // Trimmed, as they were checked: what goes out is what was measured.
             var updated = toolInput
-            updated["answers"] = answer.answers
+            updated["answers"] = answer.answers?.mapValues { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             decision = ["behavior": "allow", "updatedInput": updated]
         case .plan:
             if answer.decision == "approve" {
                 decision = ["behavior": "allow", "updatedInput": toolInput]
             } else {
-                decision = ["behavior": "deny", "message": answer.message ?? ""]
+                decision = ["behavior": "deny", "message": (answer.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
             }
         }
         let root: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]

@@ -93,6 +93,24 @@ nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSeria
     #expect(decision(out)["message"] == .string("改名为 x"))
 }
 
+/// What is checked is what goes out: answers are trimmed in the output too, so padding can't
+/// carry an answer past the 4000-character limit.
+@Test func answersAreTrimmedInTheOutput() throws {
+    let out = try #require(AskDecision.output(kind: .question, toolInput: questionInput, answer: AnswerPayload(answers: ["Pick a number": "  好  "])))
+    #expect(decision(out)["updatedInput"]?["answers"] == .object(["Pick a number": .string("好")]))
+
+    let pad = String(repeating: " ", count: 10)
+    let longest = String(repeating: "好", count: 4000)
+    let padded = try #require(AskDecision.output(kind: .question, toolInput: questionInput, answer: AnswerPayload(answers: ["Pick a number": pad + longest + pad])))
+    #expect(decision(padded)["updatedInput"]?["answers"] == .object(["Pick a number": .string(longest)]))
+    #expect(AskDecision.output(kind: .question, toolInput: questionInput, answer: AnswerPayload(answers: ["Pick a number": pad + longest + "好" + pad])) == nil)
+}
+
+@Test func planReviseMessageIsTrimmed() throws {
+    let out = try #require(AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "revise", message: "  改一下  \n")))
+    #expect(decision(out)["message"] == .string("改一下"))
+}
+
 @Test func wrongDecisionForKindIsRejected() {
     #expect(AskDecision.output(kind: .permission, toolInput: bashInput, answer: AnswerPayload(decision: "approve")) == nil)
     #expect(AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "allow")) == nil)
