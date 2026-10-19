@@ -2,9 +2,12 @@ package local.critter.phone
 
 import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
+import local.critter.phone.ui.detail.letterPath
 import local.critter.phone.ui.detail.sayFeedback
 import org.junit.jupiter.api.Test
+import kotlin.math.abs
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class SayFeedbackTest {
     private fun result(ok: Boolean, reason: ResultReason? = null, message: String? = null) =
@@ -20,4 +23,15 @@ class SayFeedbackTest {
     @Test fun failedShowsTheReason() = assertEquals("socket 连不上", sayFeedback(result(false, ResultReason.failed, "socket 连不上")))
 
     @Test fun failedWithoutAReasonStillSaysSo() = assertEquals("发送失败", sayFeedback(result(false, ResultReason.failed)))
+
+    @Test
+    fun letterArcsAndLands() {
+        val path = letterPath(300f to 300f, 150f to 60f)
+        assertEquals(7, path.size)
+        assertEquals(150f to 60f, path.last())
+        for ((x, y) in path) assertTrue(abs(x % 3f) == 0f && abs(y % 3f) == 0f, "($x, $y) is off the 3-unit grid")
+        // Halfway along (the 4th of 7 steps) the letter is about 60 above the straight line.
+        val straightY = 300f + (60f - 300f) * 4 / 7
+        assertEquals(60f, straightY - path[3].second, 3f)
+    }
 }

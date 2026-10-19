@@ -53,6 +53,7 @@
             android:launchMode="singleTop"
             android:showWhenLocked="true"
             android:taskAffinity=""
+            android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Critter.Sheet" />
 
         <!-- Not over the lock screen: it shows a session's folder and model and sends "发一句". -->

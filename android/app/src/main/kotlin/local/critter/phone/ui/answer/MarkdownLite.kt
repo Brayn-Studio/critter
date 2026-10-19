@@ -11,6 +11,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -109,10 +110,14 @@ internal fun parseInline(s: String): List<Span> {
     return spans
 }
 
+/** [text] rendered as [parseMarkdownLite] blocks; code (inline and fenced) sits on [codeBackground]. */
 @Composable
-fun MarkdownLite(text: String, modifier: Modifier = Modifier) {
+fun MarkdownLite(
+    text: String,
+    modifier: Modifier = Modifier,
+    codeBackground: Color = MaterialTheme.colorScheme.surfaceVariant,
+) {
     val blocks = remember(text) { parseMarkdownLite(text) }
-    val codeBackground = MaterialTheme.colorScheme.surfaceVariant
     Column(modifier) {
         blocks.forEach { block ->
             when (block) {
@@ -158,13 +163,13 @@ fun MarkdownLite(text: String, modifier: Modifier = Modifier) {
     }
 }
 
-private fun styled(spans: List<Span>, codeBackground: androidx.compose.ui.graphics.Color): AnnotatedString =
+private fun styled(spans: List<Span>, codeBackground: Color): AnnotatedString =
     buildAnnotatedString {
         spans.forEach { span ->
             val style = SpanStyle(
                 fontWeight = if (span.bold) FontWeight.Bold else null,
                 fontFamily = if (span.code) FontFamily.Monospace else null,
-                background = if (span.code) codeBackground else androidx.compose.ui.graphics.Color.Unspecified,
+                background = if (span.code) codeBackground else Color.Unspecified,
             )
             withStyle(style) { append(span.text) }
         }

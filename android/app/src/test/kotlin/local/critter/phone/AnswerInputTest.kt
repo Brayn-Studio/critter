@@ -1,15 +1,21 @@
 package local.critter.phone
 
 import kotlinx.serialization.json.JsonObject
+import local.critter.core.protocol.AnswerPayload
 import local.critter.core.protocol.BridgeJson
+import local.critter.core.protocol.ResultReason
+import local.critter.core.protocol.ServerMessage
+import local.critter.phone.ui.answer.AnswerOutcome
 import local.critter.phone.ui.answer.MdBlock
 import local.critter.phone.ui.answer.Span
+import local.critter.phone.ui.answer.answerOutcome
 import local.critter.phone.ui.answer.parseInline
 import local.critter.phone.ui.answer.parseMarkdownLite
 import local.critter.phone.ui.answer.parseQuestions
 import local.critter.phone.ui.answer.permissionBody
 import local.critter.phone.ui.answer.planText
 import local.critter.phone.ui.answer.submitsOnPick
+import local.critter.phone.ui.answer.successLabel
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -88,5 +94,24 @@ class AnswerInputTest {
         val line = "12345678901234567890. 很长的序号"
         assertEquals(listOf(MdBlock.Paragraph(listOf(Span(line)))), parseMarkdownLite(line))
         assertEquals(listOf(MdBlock.Numbered(3, listOf(Span("ok")))), parseMarkdownLite("3. ok"))
+    }
+
+    @Test
+    fun answerOutcomeMapsTheMacReceipt() {
+        fun result(ok: Boolean, reason: ResultReason? = null, message: String? = null) =
+            ServerMessage.Result("1", ok, reason, message)
+        assertEquals(AnswerOutcome.Sent, answerOutcome(result(true)))
+        assertEquals(AnswerOutcome.HandledElsewhere, answerOutcome(result(false, ResultReason.resolved)))
+        assertEquals(AnswerOutcome.Failed("socket 断了"), answerOutcome(result(false, ResultReason.failed, "socket 断了")))
+        assertEquals(AnswerOutcome.Failed("没有发送出去，再试一次"), answerOutcome(result(false, ResultReason.failed)))
+    }
+
+    @Test
+    fun aYesGetsASuccessBeatANoDoesNot() {
+        assertEquals("已允许", successLabel(AnswerPayload(decision = "allow")))
+        assertEquals("已批准", successLabel(AnswerPayload(decision = "approve")))
+        assertEquals("已提交", successLabel(AnswerPayload(answers = mapOf("Which?" to "A"))))
+        assertNull(successLabel(AnswerPayload(decision = "deny", message = "不要")))
+        assertNull(successLabel(AnswerPayload(decision = "revise", message = "先写测试")))
     }
 }
