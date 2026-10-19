@@ -1,5 +1,7 @@
 package local.critter.phone.ui.theme
 
+import android.content.Context
+import android.graphics.Typeface
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Typography
@@ -12,8 +14,11 @@ import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontLoadingStrategy
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.em
@@ -116,11 +121,35 @@ fun CritterColors.state(s: PetState): StateColors = when (s) {
     PetState.idle, PetState.unknown -> StateColors(idle, idleBg, ink3)
 }
 
-private fun nunito(weight: Int) =
-    Font(R.font.nunito, FontWeight(weight), variationSettings = FontVariation.Settings(FontVariation.weight(weight)))
+/**
+ * One weight of the variable Nunito. Loaded through a plain resource font, the 'wght' axis made the Latin letters
+ * heavy but the typeface still said 400, so the system font that Chinese falls back to was always the regular
+ * one. Here the font is told its weight and the typeface keeps that style for the fallback too.
+ */
+private class NunitoFont(override val weight: FontWeight) :
+    AndroidFont(FontLoadingStrategy.Blocking, NunitoLoader, FontVariation.Settings()) {
+    override val style: FontStyle = FontStyle.Normal
+    override fun toString() = "Nunito(${weight.weight})"
+}
 
-/** Body text and titles (a variable font; Chinese falls back to the system font). */
-val Nunito: FontFamily = FontFamily(nunito(400), nunito(600), nunito(700), nunito(800), nunito(900))
+private object NunitoLoader : AndroidFont.TypefaceLoader {
+    override fun loadBlocking(context: Context, font: AndroidFont): Typeface {
+        val weight = font.weight.weight
+        val nunito = android.graphics.fonts.Font.Builder(context.resources, R.font.nunito)
+            .setWeight(weight)
+            .setFontVariationSettings("'wght' $weight")
+            .build()
+        return Typeface.CustomFallbackBuilder(android.graphics.fonts.FontFamily.Builder(nunito).build())
+            .setStyle(android.graphics.fonts.FontStyle(weight, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT))
+            .setSystemFallback("sans-serif")
+            .build()
+    }
+
+    override suspend fun awaitLoad(context: Context, font: AndroidFont): Typeface = loadBlocking(context, font)
+}
+
+/** Body text and titles (a variable font; Chinese falls back to the system font, at the same weight). */
+val Nunito: FontFamily = FontFamily(listOf(400, 600, 700, 800, 900).map { NunitoFont(FontWeight(it)) })
 
 /** Numbers: the clock, percentages, counts, the pairing code. */
 val Silkscreen: FontFamily = FontFamily(
