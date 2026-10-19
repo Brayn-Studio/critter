@@ -168,7 +168,10 @@ public enum HookCommand {
         hookParentPid: Int32,
         processes: ProcessInspecting
     ) {
-        guard let input = try? JSONDecoder().decode(HookInput.self, from: stdin) else { return }
+        // Parsed once: the payload that makes the `HookInput` also carries `tool_input` exactly as
+        // `critter-hook ask` saw it, which its request's `matchKey` was computed from.
+        guard let root = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any],
+              let input = HookInput(json: root) else { return }
 
         let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
         let located = ClaudeProcessLocator.locate(
@@ -193,10 +196,9 @@ public enum HookCommand {
         logIfEnabled(paths: paths, sessionId: input.sessionId, event: input.hookEventName, suffix: describe(taken), now: now)
 
         // Phone-companion bookkeeping. Best effort: nothing here may disturb the state write above.
-        let toolInput = (try? JSONSerialization.jsonObject(with: stdin)).flatMap { ($0 as? [String: Any])?["tool_input"] }
         PendingResolution.apply(
             event: input.hookEventName, sessionId: input.sessionId, toolName: input.toolName,
-            toolInput: toolInput, store: PendingStore(paths: paths)
+            toolInput: root["tool_input"], store: PendingStore(paths: paths)
         )
         switch input.hookEventName {
         case "SessionStart":

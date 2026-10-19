@@ -113,6 +113,40 @@ private func tmpEnv() -> (paths: CritterPaths, env: [String: String]) {
     #expect(!FileManager.default.fileExists(atPath: paths.sessionsDir.path))
 }
 
+/// The event hook parses its stdin once, with `JSONSerialization`, and builds `HookInput` from
+/// that: it must come out exactly as decoding would make it -- including which payloads fail.
+@Test func hookInputFromParsedPayloadMatchesTheDecoder() throws {
+    struct Fields: Equatable {
+        var strings: [String?]
+        var toolInput: JSONValue?
+    }
+    func fields(_ input: HookInput?) -> Fields? {
+        input.map {
+            Fields(
+                strings: [$0.sessionId, $0.cwd, $0.transcriptPath, $0.hookEventName, $0.source, $0.reason, $0.prompt, $0.toolName,
+                          $0.notificationType, $0.message, $0.lastAssistantMessage, $0.errorType, $0.errorMessage, $0.commandName],
+                toolInput: $0.toolInput
+            )
+        }
+    }
+    let payloads = [
+        #"{"session_id":"s1","cwd":"/x","transcript_path":"/t.jsonl","hook_event_name":"PostToolUse","tool_name":"Bash","tool_input":{"command":"ls","timeout":120000,"flag":true,"list":[1,2.5,null,"x"],"nested":{"a":null}},"tool_response":{"stdout":"…"}}"#,
+        #"{"session_id":"s1","cwd":"/x","hook_event_name":"Stop","last_assistant_message":"全部完成。","source":null,"tool_input":null}"#,
+        #"{"session_id":"s1","cwd":"/x","hook_event_name":"Notification","notification_type":"idle_prompt","message":"waiting","reason":"r","prompt":"p","error_type":"e","error_message":"m","command_name":"c"}"#,
+        #"{"session_id":"s1","cwd":"/x","hook_event_name":"Stop","message":42}"#,       // wrong type: both fail
+        #"{"session_id":"s1","hook_event_name":"Stop"}"#,                              // missing cwd
+        #"{"session_id":null,"cwd":"/x","hook_event_name":"Stop"}"#,
+        #"{"session_id":7,"cwd":"/x","hook_event_name":"Stop"}"#,
+        #"{"session_id":"s1","cwd":"/x","hook_event_name":"PreToolUse","tool_input":"just a string"}"#,
+    ]
+    for payload in payloads {
+        let data = Data(payload.utf8)
+        let decoded = try? JSONDecoder().decode(HookInput.self, from: data)
+        let root = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(fields(HookInput(json: root)) == fields(decoded), Comment(rawValue: payload))
+    }
+}
+
 @Test func unknownSubcommandPrintsNothing() {
     let (_, env) = tmpEnv()
     let fake = FakeLauncher()

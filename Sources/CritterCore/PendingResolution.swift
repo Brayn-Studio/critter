@@ -6,13 +6,16 @@ public enum PendingResolution {
     /// the `matchKey` of the request no longer matches; for these, any request of the tool goes.
     private static let looseMatchTools: Set<String> = ["AskUserQuestion", "ExitPlanMode"]
 
-    public static func apply(event: String, sessionId: String, toolName: String?, toolInput: Any?, store: PendingStore) {
+    /// Runs on every event hook, so with no request waiting (the usual case, and always with the
+    /// phone feature off) it stops at one directory listing: `toolInput` isn't even looked at,
+    /// no match key is computed and no file is read.
+    public static func apply(event: String, sessionId: String, toolName: String?, toolInput: @autoclosure () -> Any?, store: PendingStore) {
         switch event {
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
-            guard let toolName else { return }
+            guard let toolName, store.hasRequests else { return }
             store.removeMatching(
                 sessionId: sessionId, toolName: toolName,
-                matchKey: MatchKey.compute(toolName: toolName, toolInput: toolInput)
+                matchKey: MatchKey.compute(toolName: toolName, toolInput: toolInput())
             )
             if looseMatchTools.contains(toolName) {
                 for request in store.readAll() where request.sessionId == sessionId && request.toolName == toolName {
@@ -20,6 +23,7 @@ public enum PendingResolution {
                 }
             }
         case "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd":
+            guard store.hasRequests else { return }
             store.removeAll(sessionId: sessionId)
         default:
             break

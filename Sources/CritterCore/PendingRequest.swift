@@ -91,6 +91,12 @@ public struct PendingStore: Sendable {
         try atomicWrite(JSONEncoder().encode(request), to: file, permissions: 0o600)
     }
 
+    /// Whether any request file is there at all (without reading one). False when the
+    /// directory doesn't exist, which this never creates.
+    public var hasRequests: Bool {
+        !files(in: paths.pendingDir).isEmpty
+    }
+
     /// Every decodable request; corrupt files and hidden temp files are skipped.
     public func readAll() -> [PendingRequest] {
         files(in: paths.pendingDir).compactMap { try? JSONDecoder().decode(PendingRequest.self, from: (try? Data(contentsOf: $0)) ?? Data()) }
