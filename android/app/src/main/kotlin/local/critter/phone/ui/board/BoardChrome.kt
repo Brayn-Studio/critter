@@ -13,6 +13,9 @@ import androidx.compose.ui.unit.dp
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
 import kotlinx.coroutines.delay
 import kotlin.random.Random
 
@@ -35,13 +38,21 @@ fun boardBrightness(base: Float, idleMs: Long): Float =
 fun randomShift(random: Random): Pair<Int, Int> =
     random.nextInt(-BURN_IN_MAX_DP, BURN_IN_MAX_DP + 1) to random.nextInt(-BURN_IN_MAX_DP, BURN_IN_MAX_DP + 1)
 
-/** The layout offset to apply to the whole content area; it jumps (no animation) every 3 minutes. */
+/**
+ * The layout offset to apply to the whole content area; it jumps (no animation) every 3 minutes, counted only
+ * while the board is started (nothing burns in while it is out of sight).
+ */
 @Composable
-fun rememberBurnInShift(): State<Pair<Dp, Dp>> = produceState(0.dp to 0.dp) {
-    while (true) {
-        delay(BURN_IN_SHIFT_EVERY_MS)
-        val (x, y) = randomShift(Random.Default)
-        value = x.dp to y.dp
+fun rememberBurnInShift(): State<Pair<Dp, Dp>> {
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    return produceState(0.dp to 0.dp, lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(BURN_IN_SHIFT_EVERY_MS)
+                val (x, y) = randomShift(Random.Default)
+                value = x.dp to y.dp
+            }
+        }
     }
 }
 
