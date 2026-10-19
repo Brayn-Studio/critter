@@ -124,15 +124,25 @@ class CritterView(context: Context) : View(context) {
     private var press: Press? = null
     private var pettingId: String? = null
 
-    /** Carried Critters walking back to their place. */
+    /** Critters carried away from their place, from the lift until they are back ([CritterTouchListener.onCarry]). */
+    private val away = HashSet<String>()
+
+    /** Those of them walking back. */
     private val homing = HashSet<String>()
 
-    // The staggered steps of the latest sink or rise; a newer one cancels them.
     private val handler = Handler(Looper.getMainLooper())
+
+    /** Clips waiting for their delay ([playClip]); dropped when the view is detached. */
+    private val delayedClips = ArrayList<Runnable>()
+
+    // The staggered steps of the latest sink or rise; a newer one cancels them.
     private val staged = ArrayList<Runnable>()
     private var showHideGeneration = 0
     private var sinking: MutableSet<String>? = null
     private var sinkDone: (() -> Unit)? = null
+
+    /** Held under ground by [riseAll] and not released yet. */
+    private var rising: MutableSet<String>? = null
 
     private val rub = RubDetector()
     private var gaze = HashMap<String, GazeZone?>()
@@ -187,7 +197,14 @@ class CritterView(context: Context) : View(context) {
     /** Plays [clip] once on one Critter after [delayMs], if it is free by then; under reduce motion it keeps its still pose. */
     fun playClip(sessionId: String, clip: MotionClip, delayMs: Long = 0) {
         if (delayMs > 0) {
-            handler.postDelayed({ playClip(sessionId, clip) }, delayMs)
+            val runnable = object : Runnable {
+                override fun run() {
+                    delayedClips.remove(this)
+                    playClip(sessionId, clip)
+                }
+            }
+            delayedClips += runnable
+            handler.postDelayed(runnable, delayMs)
             return
         }
         clock.catchUp()
@@ -236,8 +253,9 @@ class CritterView(context: Context) : View(context) {
         clock.catchUp()
         val ids = entries.filterValues { !it.actor.hidden }.keys.toList()
         for (id in ids) entries[id]?.actor?.let { if (it.underground == null) it.holdUnderground(UNDERGROUND_CELLS) }
+        rising = ids.toMutableSet()
         if (reduceMotion) {
-            for (id in ids) entries[id]?.actor?.releaseUnderground()
+            finishRise()
         } else {
             ids.forEachIndexed { i, id -> stage(i * staggerMs) { riseUp(id, join) } }
         }
@@ -300,10 +318,13 @@ class CritterView(context: Context) : View(context) {
     private fun forget(id: String) {
         gaze.remove(id)
         homing.remove(id)
+        rising?.remove(id)
         sinkFinished(id)
         if (pettingId == id) pettingId = null
         val p = press
         if (p != null && (p.id == id || p.grabbedId == id)) press = null
+        // Gone (or rebuilt at home) while carried or walking back: it is not away any more.
+        if (away.remove(id)) listener?.onCarry(id, away = false)
     }
 
     // ---- lifetime -----------------------------------------------------------------------------------------
@@ -320,7 +341,10 @@ class CritterView(context: Context) : View(context) {
         cancelPress()
         windowShown = false
         aggregatedShown = false
-        updateRunning()
+        updateRunning() // finishes a sink
+        finishRise()
+        for (r in delayedClips) handler.removeCallbacks(r)
+        delayedClips.clear()
         super.onDetachedFromWindow()
     }
 
@@ -361,6 +385,7 @@ class CritterView(context: Context) : View(context) {
         cancelStaged()
         sinking = null
         sinkDone = null
+        rising = null
         return ++showHideGeneration
     }
 
@@ -414,7 +439,17 @@ class CritterView(context: Context) : View(context) {
         done()
     }
 
+    /** Ends the rise in progress (if any): whoever is still held comes up at once, without the animation. */
+    private fun finishRise() {
+        val left = rising ?: return
+        cancelStaged()
+        rising = null
+        for (id in left) entries[id]?.actor?.releaseUnderground()
+        clock.poke()
+    }
+
     private fun riseUp(id: String, join: Boolean) {
+        rising?.remove(id)
         val actor = entries[id]?.actor ?: return
         clock.catchUp()
         actor.releaseUnderground()
@@ -570,6 +605,7 @@ class CritterView(context: Context) : View(context) {
         listener?.onDragStart(p.id)
         if (carryOnDrag) {
             p.carrying = true
+            away += p.id
             listener?.onCarry(p.id, away = true)
         }
     }
@@ -601,7 +637,7 @@ class CritterView(context: Context) : View(context) {
     private fun reportHome() {
         val home = homing.filter { entries[it]?.actor?.following != true }
         homing.removeAll(home.toSet())
-        for (id in home) if (entries.containsKey(id)) listener?.onCarry(id, away = false)
+        for (id in home) if (away.remove(id)) listener?.onCarry(id, away = false)
     }
 
     private fun startPet(p: Press) {
@@ -657,7 +693,7 @@ class CritterView(context: Context) : View(context) {
         }
         if (p.carrying) {
             entries[p.id]?.actor?.carry(0.0)
-            listener?.onCarry(p.id, away = false)
+            if (away.remove(p.id)) listener?.onCarry(p.id, away = false)
         }
         endPet()
         clearGaze()

@@ -49,9 +49,9 @@ class PixelDrawable(
         val s = min(stepPx, min(b.width(), b.height()) / 4)
         if (hi != null && s > 0) {
             val p = paintOf(hi)
-            for ((cx, cy) in HIGHLIGHT_CELLS) {
-                val x = (b.left + cx * s).toFloat()
-                val y = (b.top + cy * s).toFloat()
+            for (i in HIGHLIGHT_X.indices) {
+                val x = (b.left + HIGHLIGHT_X[i] * s).toFloat()
+                val y = (b.top + HIGHLIGHT_Y[i] * s).toFloat()
                 canvas.drawRect(x, y, x + s, y + s, p)
             }
         }
@@ -79,8 +79,9 @@ class PixelDrawable(
     override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 
     private companion object {
-        /** (2s, s), (3s, s), (s, 2s), in steps. */
-        val HIGHLIGHT_CELLS = listOf(2 to 1, 3 to 1, 1 to 2)
+        /** (2s, s), (3s, s), (s, 2s), in steps; arrays, so drawing allocates nothing. */
+        val HIGHLIGHT_X = intArrayOf(2, 3, 1)
+        val HIGHLIGHT_Y = intArrayOf(1, 1, 2)
     }
 }
 

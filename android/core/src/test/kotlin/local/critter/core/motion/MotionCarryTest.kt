@@ -28,6 +28,23 @@ class MotionCarryTest {
     }
 
     @Test
+    fun carryPersistsAcrossTicks() {
+        val a = sprig()
+        a.setMode(a.skin.interactions.held)
+        a.lift = 3
+        a.carry(10.0)
+        repeat(30) {
+            a.step()
+            assertEquals(10, a.snapshot().offsetX, "tick $it")
+        }
+        assertFalse(a.following)
+        a.setMode(null)
+        a.walkHome()
+        repeat(8) { a.step() }
+        assertEquals(0, a.snapshot().offsetX)
+    }
+
+    @Test
     fun reducedMotionSnapsHome() {
         val a = sprig(reduceMotion = true)
         a.carry(10.0)

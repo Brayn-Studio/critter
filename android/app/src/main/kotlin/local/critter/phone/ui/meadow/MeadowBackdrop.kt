@@ -17,8 +17,7 @@ import local.critter.phone.ui.look.SkyTime
 import local.critter.phone.ui.look.meadowCells
 import local.critter.phone.ui.look.skyTimeAt
 import local.critter.phone.ui.rememberMinuteClock
-import local.critter.phone.ui.theme.Critter
-import local.critter.phone.ui.theme.DarkCritterColors
+import local.critter.phone.ui.theme.LocalDarkTheme
 import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.max
@@ -53,7 +52,7 @@ private fun meadowImage(width: Int, height: Int, ground: Int, cell: Int, time: S
 /** The sky for now: from the hour on the clock (it changes on the hour), always night in the dark theme. */
 @Composable
 fun currentSkyTime(): SkyTime {
-    val dark = Critter.colors == DarkCritterColors
+    val dark = LocalDarkTheme.current
     val clock = rememberMinuteClock()
     val hour by remember { derivedStateOf { Instant.ofEpochMilli(clock.value).atZone(ZoneId.systemDefault()).hour } }
     return skyTimeAt(hour, dark)

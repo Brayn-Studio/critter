@@ -95,6 +95,9 @@ private val InkOnWait = Color(0xFF2A2140)
 
 val LocalCritterColors = staticCompositionLocalOf { LightCritterColors }
 
+/** Whether [CritterTheme] is dark (the meadow is always night then). */
+val LocalDarkTheme = staticCompositionLocalOf { false }
+
 object Critter {
     val colors: CritterColors
         @Composable @ReadOnlyComposable get() = LocalCritterColors.current
@@ -157,7 +160,7 @@ private fun CritterColors.scheme(dark: Boolean) = if (dark) {
 @Composable
 fun CritterTheme(dark: Boolean = isSystemInDarkTheme(), content: @Composable () -> Unit) {
     val colors = if (dark) DarkCritterColors else LightCritterColors
-    CompositionLocalProvider(LocalCritterColors provides colors) {
+    CompositionLocalProvider(LocalCritterColors provides colors, LocalDarkTheme provides dark) {
         MaterialTheme(colorScheme = colors.scheme(dark), typography = CritterTypography, content = content)
     }
 }

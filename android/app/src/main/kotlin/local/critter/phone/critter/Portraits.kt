@@ -24,7 +24,8 @@ import kotlin.math.max
 /**
  * Still pictures of a Critter in its state's representative pose (what reduce motion shows), for the places
  * where pets don't move: list tiles, the pro board, notifications. 20×20 cells: the base box starts at
- * column 1 and stands on the bottom row. Built once per look and kept in a small LRU. Main thread only.
+ * column 1 and stands on the bottom row. Built once per look and kept in a small LRU. Thread-safe (a
+ * notification may be built off the main thread): it draws with atlases of its own, not the views' [AtlasPool].
  */
 object Portraits {
     private const val CELLS = 20
@@ -46,7 +47,9 @@ object Portraits {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<Key, Entry>?) = size > CACHE_SIZE
     }
     private val renderer = CritterRenderer()
+    private val atlases = HashMap<String, SpriteAtlas>()
 
+    @Synchronized
     fun still(
         manifest: SkinManifest,
         state: PetState,
@@ -57,7 +60,9 @@ object Portraits {
         dimStrength: Double = 0.5,
     ): Bitmap {
         val u = max(1, cellPx)
-        val key = Key(manifest.name, state, activity, u, asleep, dim, dimStrength)
+        // Quantized like AtlasPool; it only matters when dimmed.
+        val strength = if (dim) Math.round(dimStrength.coerceIn(0.0, 1.0) * 20) / 20.0 else 0.0
+        val key = Key(manifest.name, state, activity, u, asleep, dim, strength)
         cache[key]?.let { if (it.manifest === manifest) return it.bitmap }
         val actor = MotionActor(manifest, MotionRNG(seed = 1), reduceMotion = true)
         actor.setActivity(activity)
@@ -65,10 +70,16 @@ object Portraits {
         if (asleep) actor.sleepNow()
         actor.tint = if (dim) Tint.dim else null
         val bitmap = Bitmap.createBitmap(CELLS * u, CELLS * u, Bitmap.Config.ARGB_8888)
-        val atlas = AtlasPool.get(manifest, dimStrength)
+        val atlas = atlas(manifest, strength)
         renderer.draw(Canvas(bitmap), actor.snapshot(), atlas, gx = u.toFloat(), gy = (CELLS * u).toFloat(), u = u.toFloat(), seatRow = null)
         cache[key] = Entry(manifest, bitmap)
         return bitmap
+    }
+
+    private fun atlas(manifest: SkinManifest, strength: Double): SpriteAtlas {
+        val name = "${manifest.name}@$strength"
+        atlases[name]?.let { if (it.skin === manifest) return it }
+        return SpriteAtlas(manifest, strength).also { atlases[name] = it }
     }
 }
 

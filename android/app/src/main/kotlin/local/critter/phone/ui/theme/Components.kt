@@ -31,6 +31,7 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -48,6 +49,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.semantics.Role
@@ -83,6 +85,21 @@ private val LitCellLip = Color.Black.copy(alpha = 0.14f)
 
 /** The switch knob's bottom row while on, the same ink tint in both themes. */
 private val KnobLipOn = LightCritterColors.ink.copy(alpha = 0.22f)
+
+/** The smallest touch target (global constraint). */
+private val MinTouch = 44.dp
+
+/**
+ * At least [MinTouch] wide and tall to touch: the rest of the chain (the drawn widget) keeps its own size, centered
+ * in the larger box. Put the click, toggle or select modifier before it, so it covers the whole box.
+ */
+private fun Modifier.minTouchTarget(): Modifier = layout { measurable, constraints ->
+    val placeable = measurable.measure(constraints)
+    val min = MinTouch.roundToPx()
+    val width = maxOf(placeable.width, min).coerceAtMost(constraints.maxWidth)
+    val height = maxOf(placeable.height, min).coerceAtMost(constraints.maxHeight)
+    layout(width, height) { placeable.place((width - placeable.width) / 2, (height - placeable.height) / 2) }
+}
 
 enum class ButtonKind { Primary, Secondary, Warning, Ghost }
 
@@ -120,13 +137,14 @@ fun PixelButton(
     }
     Row(
         modifier
+            .clickable(source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
+            .minTouchTarget()
             .height(size.height)
-            .graphicsLayer { translationY = if (down) 3.dp.toPx() else 0f }
+            .graphicsLayer { translationY = if (down) wholePx(3.dp) else 0f }
             .then(
                 if (ghost) Modifier
                 else Modifier.pixelSurface(face, step = 3.dp, lip = if (down) 1.dp else size.lip, lipColor = lipColor, highlight = shine),
             )
-            .clickable(source, indication = null, enabled = enabled, role = Role.Button, onClick = onClick)
             .padding(start = if (ghost) 4.dp else size.padding, end = if (ghost) 4.dp else size.padding, bottom = if (ghost) 0.dp else size.lip),
         horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         verticalAlignment = Alignment.CenterVertically,
@@ -158,7 +176,7 @@ fun StateChip(state: PetState, text: String = stateLabel(state), modifier: Modif
     }
     Row(
         modifier
-            .graphicsLayer { translationY = if (lifted) -3.dp.toPx() else 0f }
+            .graphicsLayer { translationY = if (lifted) -wholePx(3.dp) else 0f }
             .pixelSurface(
                 colors.bg, step = 2.dp, lip = 2.dp,
                 lipColor = if (state == PetState.waiting) c.waitDeep else colors.fg.copy(alpha = 0.18f),
@@ -188,13 +206,14 @@ fun PixelSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, contentDes
     )
     Box(
         modifier
+            .toggleable(checked, interactionSource = null, indication = null, role = Role.Switch, onValueChange = onCheckedChange)
+            .semantics { this.contentDescription = contentDescription }
+            .minTouchTarget()
             .size(46.dp, 28.dp)
             .pixelSurface(
                 if (checked) c.brand else c.surface2, step = 3.dp, lip = 3.dp,
                 lipColor = if (checked) c.brandDeep else c.shade, recessed = true,
-            )
-            .toggleable(checked, interactionSource = null, indication = null, role = Role.Switch, onValueChange = onCheckedChange)
-            .semantics { this.contentDescription = contentDescription },
+            ),
     ) {
         Box(
             Modifier
@@ -205,36 +224,59 @@ fun PixelSwitch(checked: Boolean, onCheckedChange: (Boolean) -> Unit, contentDes
     }
 }
 
-/** A recessed row of choices; the chosen one stands up out of it. */
+/**
+ * A recessed row of choices; the chosen one stands up out of it. The well is drawn 38 dp tall, centered in a
+ * [MinTouch]-tall row, and every choice takes touches over the row's full height.
+ */
 @Composable
 fun PixelSegmented(options: List<String>, selected: Int, onSelect: (Int) -> Unit, modifier: Modifier = Modifier) {
     val c = Critter.colors
-    Row(
-        modifier
-            .pixelSurface(c.surface2, step = 3.dp, lip = 2.dp, lipColor = c.shade, recessed = true)
-            .padding(3.dp)
-            .selectableGroup(),
-        horizontalArrangement = Arrangement.spacedBy(3.dp),
-    ) {
-        options.forEachIndexed { i, label ->
-            val on = i == selected
-            Box(
-                Modifier
-                    .weight(1f)
-                    .heightIn(min = 32.dp)
-                    .then(if (on) Modifier.pixelSurface(c.surface, step = 2.dp, lip = 3.dp, lipColor = c.shade) else Modifier)
-                    .selectable(on, interactionSource = null, indication = null, role = Role.Tab, onClick = { onSelect(i) })
-                    .padding(horizontal = 10.dp),
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(
-                    label, color = if (on) c.ink else c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W800,
-                    fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
-                )
+    Box(modifier) {
+        Box(
+            Modifier
+                .matchParentSize()
+                .padding(vertical = SEGMENT_INSET)
+                .pixelSurface(c.surface2, step = 3.dp, lip = 2.dp, lipColor = c.shade, recessed = true),
+        )
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .heightIn(min = MinTouch)
+                .padding(horizontal = 3.dp)
+                .selectableGroup(),
+            horizontalArrangement = Arrangement.spacedBy(3.dp),
+        ) {
+            options.forEachIndexed { i, label ->
+                val on = i == selected
+                Box(
+                    Modifier
+                        .weight(1f)
+                        .heightIn(min = MinTouch)
+                        .selectable(on, interactionSource = null, indication = null, role = Role.Tab, onClick = { onSelect(i) })
+                        .padding(vertical = SEGMENT_INSET + 3.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Box(
+                        Modifier
+                            .fillMaxWidth()
+                            .heightIn(min = 32.dp)
+                            .then(if (on) Modifier.pixelSurface(c.surface, step = 2.dp, lip = 3.dp, lipColor = c.shade) else Modifier)
+                            .padding(horizontal = 10.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            label, color = if (on) c.ink else c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W800,
+                            fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+/** Transparent room above and below the segmented well: (44 − 38) / 2. */
+private val SEGMENT_INSET = 3.dp
 
 /** Whole-pixel cells across the width, [gapPx] apart: `cell(index, left, width)` for each. */
 private inline fun DrawScope.forEachSegment(count: Int, gapPx: Float, cell: (Int, Float, Float) -> Unit) {
@@ -246,7 +288,10 @@ private inline fun DrawScope.forEachSegment(count: Int, gapPx: Float, cell: (Int
     }
 }
 
-/** A slider in [segments] cells; the value snaps to them. Drag or tap; the thumb wears the sun. */
+/**
+ * A slider in [segments] cells; the value snaps to them. Drag or tap; the thumb wears the sun. The drawn slider
+ * is 28 dp tall, centered in a [MinTouch]-tall touch area.
+ */
 @Composable
 fun PixelSlider(
     value: Float,
@@ -254,6 +299,7 @@ fun PixelSlider(
     range: ClosedFloatingPointRange<Float>,
     segments: Int = 10,
     modifier: Modifier = Modifier,
+    contentDescription: String? = null,
 ) {
     val c = Critter.colors
     val span = range.endInclusive - range.start
@@ -267,8 +313,9 @@ fun PixelSlider(
     BoxWithConstraints(
         modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(MinTouch)
             .semantics {
+                if (contentDescription != null) this.contentDescription = contentDescription
                 progressBarRangeInfo = ProgressBarRangeInfo(value, range, steps = segments - 1)
                 setProgress { target ->
                     pick(if (span <= 0f) 0 else ((target - range.start) / span * segments).roundToInt())
@@ -300,7 +347,7 @@ fun PixelSlider(
         val thumbX = (width * lit / segments - 12.dp).coerceIn(0.dp, width - 24.dp)
         Box(
             Modifier
-                .offset { IntOffset(thumbX.roundToPx(), 2.dp.roundToPx()) }
+                .offset { IntOffset(thumbX.roundToPx(), ((MinTouch - 24.dp) / 2).roundToPx()) }
                 .size(24.dp)
                 .pixelSurface(c.surface, step = 3.dp, lip = 3.dp, lipColor = c.shade, border = c.brand, borderWidth = 2.dp),
             contentAlignment = Alignment.Center,
@@ -352,6 +399,7 @@ fun PixelField(
     enabled: Boolean = true,
     minLines: Int = 1,
     maxLines: Int = 5,
+    contentDescription: String? = null,
 ) {
     val c = Critter.colors
     val source = remember { MutableInteractionSource() }
@@ -360,7 +408,7 @@ fun PixelField(
     BasicTextField(
         value = value,
         onValueChange = onValueChange,
-        modifier = modifier,
+        modifier = if (contentDescription == null) modifier else modifier.semantics { this.contentDescription = contentDescription },
         enabled = enabled,
         textStyle = style,
         minLines = minLines,
@@ -405,6 +453,7 @@ fun OptionCard(
     Box(
         modifier
             .fillMaxWidth()
+            .heightIn(min = MinTouch)
             .alpha(if (enabled) 1f else 0.5f)
             .pixelSurface(
                 if (selected) c.brandSoft else c.surface, step = 3.dp, lip = 3.dp,
@@ -488,20 +537,24 @@ fun WriteOwnCard(text: String, onClick: () -> Unit, modifier: Modifier = Modifie
     }
 }
 
-/** Reduce motion: the settings switch ([MotionPrefs.manual]) or the system's animation scale at 0; re-read on resume. */
+/**
+ * Reduce motion: the settings switch ([MotionPrefs.manualState], followed while composed) or the system's
+ * animation scale at 0 (re-read on resume; the system sends no change for it).
+ */
 @Composable
 fun rememberReduceMotion(): Boolean {
     val resolver = LocalContext.current.contentResolver
-    var reduce by remember { mutableStateOf(readReduceMotion(resolver)) }
+    val manual by MotionPrefs.manualState.collectAsState()
+    var systemOff by remember { mutableStateOf(systemAnimationsOff(resolver)) }
     LifecycleResumeEffect(resolver) {
-        reduce = readReduceMotion(resolver)
+        systemOff = systemAnimationsOff(resolver)
         onPauseOrDispose {}
     }
-    return reduce
+    return manual || systemOff
 }
 
-private fun readReduceMotion(resolver: ContentResolver): Boolean =
-    MotionPrefs.manual || Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
+private fun systemAnimationsOff(resolver: ContentResolver): Boolean =
+    Settings.Global.getFloat(resolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
 /** The pet engine's beat. */
 private const val TICK_MS = 60L
