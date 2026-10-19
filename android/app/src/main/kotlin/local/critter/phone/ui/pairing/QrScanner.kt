@@ -4,6 +4,7 @@ import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
+import androidx.camera.core.UseCase
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.runtime.Composable
@@ -15,6 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import com.google.zxing.BarcodeFormat
 import com.google.zxing.BinaryBitmap
@@ -31,12 +33,12 @@ fun QrScanner(onResult: (String) -> Unit, modifier: Modifier = Modifier) {
     val lifecycleOwner = LocalLifecycleOwner.current
     val latest by rememberUpdatedState(onResult)
     val analysisExecutor = remember { Executors.newSingleThreadExecutor() }
-    val provider = remember { arrayOfNulls<ProcessCameraProvider>(1) }
+    val camera = remember { BoundCamera() }
 
     DisposableEffect(Unit) {
         onDispose {
             // Leaving the screen must release the camera even though the activity lives on.
-            provider[0]?.unbindAll()
+            camera.release()
             analysisExecutor.shutdown()
         }
     }
@@ -47,7 +49,7 @@ fun QrScanner(onResult: (String) -> Unit, modifier: Modifier = Modifier) {
             val view = PreviewView(ctx).apply { scaleType = PreviewView.ScaleType.FILL_CENTER }
             val providerFuture = ProcessCameraProvider.getInstance(ctx)
             providerFuture.addListener({
-                val cameraProvider = providerFuture.get().also { provider[0] = it }
+                val cameraProvider = providerFuture.get()
                 val preview = Preview.Builder().build().also { it.surfaceProvider = view.surfaceProvider }
                 val analysis = ImageAnalysis.Builder()
                     .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
@@ -63,8 +65,7 @@ fun QrScanner(onResult: (String) -> Unit, modifier: Modifier = Modifier) {
                     if (text != null) ContextCompat.getMainExecutor(ctx).execute { latest(text) }
                 }
                 try {
-                    cameraProvider.unbindAll()
-                    cameraProvider.bindToLifecycle(lifecycleOwner, CameraSelector.DEFAULT_BACK_CAMERA, preview, analysis)
+                    camera.bind(cameraProvider, lifecycleOwner, preview, analysis)
                 } catch (_: Exception) {
                     // No back camera, or it is in use: the manual path is still there.
                 }
@@ -72,6 +73,30 @@ fun QrScanner(onResult: (String) -> Unit, modifier: Modifier = Modifier) {
             view
         },
     )
+}
+
+/**
+ * The use cases one scanner bound. The camera provider is shared by the whole process, so a scanner leaving
+ * releases only its own: when the onboarding closes onto the pairing screen behind it, the new scanner has
+ * already bound the camera by the time the old one is disposed.
+ */
+private class BoundCamera {
+    private var provider: ProcessCameraProvider? = null
+    private var useCases: Array<out UseCase> = emptyArray()
+    private var released = false
+
+    /** Does nothing once released: the provider can arrive after the screen has already gone. */
+    fun bind(provider: ProcessCameraProvider, owner: LifecycleOwner, vararg useCases: UseCase) {
+        if (released) return
+        provider.bindToLifecycle(owner, CameraSelector.DEFAULT_BACK_CAMERA, *useCases)
+        this.provider = provider
+        this.useCases = useCases
+    }
+
+    fun release() {
+        released = true
+        provider?.unbind(*useCases)
+    }
 }
 
 /** Decodes a QR code from the luminance (Y) plane of [image]; null if there is none in this frame. */
