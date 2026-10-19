@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -23,7 +24,9 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -50,6 +53,7 @@ import local.critter.phone.ui.theme.Silkscreen
 import local.critter.phone.ui.theme.pixelSurface
 import local.critter.phone.ui.theme.state
 import local.critter.phone.ui.theme.wholePx
+import kotlin.math.abs
 import kotlin.math.min
 
 /** dp per cell on the meadow (design §8.3). */
@@ -68,6 +72,12 @@ private const val TAG_GAP_DP = 4f
 
 /** Tags, bubbles and counts may reach this close to the meadow's sides (the Critters keep [MARGIN_DP]). */
 private const val EDGE_DP = 4f
+
+/** A name tag's text and its padding on each side; a bubble's. */
+private val TagStyle = TextStyle(fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 10.5.sp, lineHeight = 15.sp)
+private const val TAG_PAD_DP = 6f
+private val BubbleStyle = TextStyle(fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 11.5.sp, lineHeight = 1.3.em)
+private const val BUBBLE_PAD_DP = 9f
 
 /** Only the pile states that need a look are counted above it (as on the board). */
 private val COUNTED = setOf(PetState.waiting, PetState.error, PetState.done)
@@ -153,9 +163,23 @@ fun Meadow(
         val counts = if (pile.isEmpty()) emptyList() else FlockModel.merged(pile).counts.filter { it.state in COUNTED }
         // What stands above the heads: a bubble, or the pile's counts.
         val above = layout.slots.indices.map { i -> if (i < shown.size) bubbles[shown[i].id] != null else counts.isNotEmpty() }
+        // How wide each label would like to be (1 dp spare for rounding); a short one leaves its neighbour more room.
+        // The pile's counts are not measured: they take their full half.
+        val measurer = rememberTextMeasurer()
+        val base = LocalTextStyle.current
+        val tagTexts = layout.slots.indices.map { i -> if (i < shown.size) shown[i].name else "${pile.size} 个会话" }
+        val aboveTexts = layout.slots.indices.map { i -> if (i < shown.size) bubbles[shown[i].id] else null }
+        val tagWidths = remember(tagTexts, density, base) {
+            tagTexts.map { with(density) { measurer.measure(it, base.merge(TagStyle)).size.width.toDp().value } + 2 * TAG_PAD_DP + 1 }
+        }
+        val aboveWidths = remember(aboveTexts, density, base) {
+            aboveTexts.map { t ->
+                t?.let { with(density) { measurer.measure(it, base.merge(BubbleStyle)).size.width.toDp().value } + 2 * BUBBLE_PAD_DP + 1 } ?: Float.MAX_VALUE
+            }
+        }
         layout.slots.indices.forEach { i ->
-            val tagRoom = labelRoom(centers, i, widthDp, TAG_GAP_DP) { true }
-            val aboveRoom = labelRoom(centers, i, widthDp, 0f) { above[it] }
+            val tagRoom = labelRoom(centers, tagWidths, i, widthDp, TAG_GAP_DP) { true }
+            val aboveRoom = labelRoom(centers, aboveWidths, i, widthDp, 0f) { above[it] }
             val tagAt = Modifier.offset((centers[i] - tagRoom / 2).dp, ground + 5.dp).width(tagRoom.dp)
             val aboveAt = Modifier.offset(x = (centers[i] - aboveRoom / 2).dp).width(aboveRoom.dp)
             if (i < shown.size) {
@@ -183,14 +207,19 @@ private class RiseOnce {
 }
 
 /**
- * How wide a label centred on slot [i] may be: up to [gap] short of halfway to the nearest neighbour on each side
- * that has a label at the same height ([taken]), or out to [EDGE_DP] from the side when none does. Labels never
- * overlap; a longer text is cut short.
+ * How wide a label centred on slot [i] may be. Towards the nearest neighbour on each side with a label at the same
+ * height ([taken]) it may use the space between them, less [gap], that the neighbour's label leaves: a neighbour
+ * keeps half of it at most, less when its [natural] width needs less. With no neighbour it reaches [EDGE_DP] from
+ * the side. Labels stay centred and never overlap; a longer text is cut short.
  */
-private fun labelRoom(centers: List<Float>, i: Int, widthDp: Float, gap: Float, taken: (Int) -> Boolean): Float {
+private fun labelRoom(centers: List<Float>, natural: List<Float>, i: Int, widthDp: Float, gap: Float, taken: (Int) -> Boolean): Float {
     val c = centers[i]
-    val left = (i - 1 downTo 0).firstOrNull(taken)?.let { (c - centers[it] - gap) / 2 } ?: (c - EDGE_DP)
-    val right = (i + 1..centers.lastIndex).firstOrNull(taken)?.let { (centers[it] - c - gap) / 2 } ?: (widthDp - EDGE_DP - c)
+    fun half(j: Int): Float {
+        val space = abs(c - centers[j]) - gap
+        return space - min(natural[j] / 2, space / 2)
+    }
+    val left = (i - 1 downTo 0).firstOrNull(taken)?.let(::half) ?: (c - EDGE_DP)
+    val right = (i + 1..centers.lastIndex).firstOrNull(taken)?.let(::half) ?: (widthDp - EDGE_DP - c)
     return (2 * min(left, right)).coerceAtLeast(0f)
 }
 
@@ -199,9 +228,8 @@ private fun labelRoom(centers: List<Float>, i: Int, widthDp: Float, gap: Float, 
 internal fun MeadowTag(text: String, sky: SkyColors, modifier: Modifier = Modifier) {
     Text(
         text,
-        color = Color(sky.tagInk), fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 10.5.sp, lineHeight = 15.sp,
-        maxLines = 1, overflow = TextOverflow.Ellipsis,
-        modifier = modifier.background(Color(sky.tag), PixelShape(2.dp)).padding(horizontal = 6.dp),
+        color = Color(sky.tagInk), style = LocalTextStyle.current.merge(TagStyle), maxLines = 1, overflow = TextOverflow.Ellipsis,
+        modifier = modifier.background(Color(sky.tag), PixelShape(2.dp)).padding(horizontal = TAG_PAD_DP.dp),
     )
 }
 
@@ -212,11 +240,10 @@ private fun MeadowBubble(text: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
         Text(
             text,
-            color = c.state(PetState.waiting).fg, fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 11.5.sp,
-            lineHeight = 1.3.em, maxLines = 1, overflow = TextOverflow.Ellipsis,
+            color = c.state(PetState.waiting).fg, style = LocalTextStyle.current.merge(BubbleStyle), maxLines = 1, overflow = TextOverflow.Ellipsis,
             modifier = Modifier
                 .pixelSurface(c.wait, step = 3.dp, lip = 2.dp, lipColor = c.waitDeep)
-                .padding(start = 9.dp, end = 9.dp, top = 4.dp, bottom = 6.dp),
+                .padding(start = BUBBLE_PAD_DP.dp, end = BUBBLE_PAD_DP.dp, top = 4.dp, bottom = 6.dp),
         )
         StepTail(c.wait)
     }
