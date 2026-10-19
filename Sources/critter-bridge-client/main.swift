@@ -31,9 +31,37 @@ struct ClientState: Codable {
     var token: String
 }
 
+/// Settles which caller ends the program: a reply timer, a URLSession delegate and the main task
+/// can all decide to quit at once, and `exit` must not run on two threads together.
+final class ExitGate: @unchecked Sendable {
+    private let lock = NSLock()
+    private var claimed = false
+
+    /// True for the first caller only.
+    func claim() -> Bool {
+        lock.withLock {
+            defer { claimed = true }
+            return !claimed
+        }
+    }
+}
+
+let exitGate = ExitGate()
+
+/// Every way out of the program. The first call prints `message` (if any) to stderr and exits
+/// with `code`. Any later call, racing it from another thread, prints nothing and waits for that
+/// exit instead of returning -- callers count on `Never` (the pinning delegate must not go on to
+/// trust a certificate it has just refused).
+func finish(_ code: Int32, message: String? = nil) -> Never {
+    guard exitGate.claim() else {
+        while true { pause() }
+    }
+    if let message { FileHandle.standardError.write(Data((message + "\n").utf8)) }
+    exit(code)
+}
+
 func fail(_ message: String, status: Int32 = 1) -> Never {
-    FileHandle.standardError.write(Data("critter-bridge-client: \(message)\n".utf8))
-    exit(status)
+    finish(status, message: "critter-bridge-client: \(message)")
 }
 
 /// One line on stdout, unbuffered (so `watch > file.jsonl` is readable as it goes).
@@ -183,10 +211,10 @@ func pair(_ raw: String) async -> Never {
             let line: [String: Any] = ["type": "paired", "deviceId": deviceId, "macName": macName, "state": statePath.path]
             let data = (try? JSONSerialization.data(withJSONObject: line, options: [.sortedKeys, .withoutEscapingSlashes])) ?? Data()
             emit(String(decoding: data, as: UTF8.self))
-            exit(0)
+            finish(0)
         case .denied:
             emit(text)
-            exit(1)
+            finish(1)
         default:
             continue
         }
@@ -210,9 +238,9 @@ func watch(count: Int?) async -> Never {
         switch message {
         case .snapshot:
             snapshots += 1
-            if let count, snapshots >= count { exit(0) }
+            if let count, snapshots >= count { finish(0) }
         case .denied:
-            exit(1)
+            finish(1)
         default:
             continue
         }
@@ -230,13 +258,13 @@ func run(_ command: ClientMessage, id: String) async -> Never {
             await link.send(command)
         case .denied:
             emit(text)
-            exit(1)
+            finish(1)
         case .result(let replyId, let ok, _, _) where replyId == id:
             emit(text)
-            exit(ok ? 0 : 1)
+            finish(ok ? 0 : 1)
         case .skin(let replyId, _, let manifest) where replyId == id:
             emit(text)
-            exit(manifest == nil ? 1 : 0)
+            finish(manifest == nil ? 1 : 0)
         default:
             continue
         }
