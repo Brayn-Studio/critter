@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Android 12+: the splash screen is the dawn sky with Sprig in the middle (design §8.1). -->
+    <!-- Android 12+: the splash screen is the dawn sky color with the whole icon (sky, grass, Sprig) in a circle in the middle (design §8.1). -->
     <style name="Theme.Critter.Main" parent="@android:style/Theme.Material.Light.NoActionBar">
         <item name="android:windowBackground">#F4F2FA</item>
         <item name="android:windowSplashScreenBackground">#BFE3FF</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
     </style>
 </resources>

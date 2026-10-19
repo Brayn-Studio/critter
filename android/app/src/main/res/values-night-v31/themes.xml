@@ -1,9 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <!-- Dark mode on Android 12+: the night sky behind Sprig on the splash screen, then the dark background. -->
+    <!-- Dark mode on Android 12+: the night sky behind the icon (in its circle) on the splash screen, then the dark background. -->
     <style name="Theme.Critter.Main" parent="@android:style/Theme.Material.NoActionBar">
         <item name="android:windowBackground">#17142A</item>
         <item name="android:windowSplashScreenBackground">#1E1B3A</item>
-        <item name="android:windowSplashScreenAnimatedIcon">@drawable/ic_launcher_foreground</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@mipmap/ic_launcher</item>
     </style>
 </resources>
