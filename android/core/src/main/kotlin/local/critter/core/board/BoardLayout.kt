@@ -43,6 +43,23 @@ object BoardLayout {
         return Layout(scale, slots, if (pile) slotCount - 1 else null)
     }
 
-    private fun rowWidth(n: Int, scale: Float, pile: Boolean): Float =
-        ((CELLS + GAP_CELLS) * n - GAP_CELLS + (if (pile) PILE_EXTRA_CELLS else 0)) * scale + 2 * MARGIN_DP
+    /**
+     * One row at a fixed [scale] (dp per cell), standing on [groundDp] (the home meadow): [place]'s rule without the
+     * shrinking. At most [maxPerRow] slots, as many as fit between margins of [marginDp]; when there are more
+     * Critters than that, the last slot becomes the pile. The row is centred, the pile's extra width included.
+     */
+    fun placeRow(count: Int, widthDp: Float, groundDp: Float, scale: Float, marginDp: Float, maxPerRow: Int): Layout {
+        if (count <= 0) return Layout(scale, emptyList(), null)
+        var capacity = maxPerRow
+        while (capacity > 1 && rowWidth(capacity, scale, pile = count > capacity, marginDp) > widthDp) capacity--
+        val slotCount = minOf(count, capacity)
+        val pile = count > slotCount
+        val x0 = (widthDp - rowWidth(slotCount, scale, pile, margin = 0f)) / 2
+        val pitch = (CELLS + GAP_CELLS) * scale
+        val slots = List(slotCount) { Pt((x0 + it * pitch).toDouble(), groundDp.toDouble()) }
+        return Layout(scale, slots, if (pile) slotCount - 1 else null)
+    }
+
+    private fun rowWidth(n: Int, scale: Float, pile: Boolean, margin: Float = MARGIN_DP): Float =
+        ((CELLS + GAP_CELLS) * n - GAP_CELLS + (if (pile) PILE_EXTRA_CELLS else 0)) * scale + 2 * margin
 }

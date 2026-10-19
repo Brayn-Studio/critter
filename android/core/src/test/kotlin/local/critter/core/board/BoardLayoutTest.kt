@@ -66,4 +66,31 @@ class BoardLayoutTest {
         assertTrue(few >= many)
         assertEquals(3f, BoardLayout.place(6, 450f, 360f).scale)
     }
+
+    // The home meadow's row: 3 dp a cell on a 360 dp phone, the ground at 200 dp, 12 dp margins, at most 5 slots.
+
+    @Test fun placeRowFitsFiveOnAPhone() {
+        val l = BoardLayout.placeRow(5, 360f, 200f, 3f, 12f, 5)
+        assertEquals(5, l.slots.size)
+        assertNull(l.pileFrom)
+        assertEquals(3f, l.scale)
+        assertEquals(listOf(21.0, 87.0, 153.0, 219.0, 285.0), l.slots.map { it.x })
+        assertTrue(l.slots.all { it.y == 200.0 })
+    }
+
+    @Test fun placeRowPilesTheRest() {
+        for (count in listOf(7, 12)) {
+            val l = BoardLayout.placeRow(count, 360f, 200f, 3f, 12f, 5)
+            assertEquals(4, l.slots.size, "$count sessions")
+            assertEquals(3, l.pileFrom, "$count sessions")
+            assertEquals(3f, l.scale)
+            assertInside(l, 360f, 360f)
+        }
+    }
+
+    @Test fun placeRowEmpty() {
+        val l = BoardLayout.placeRow(0, 360f, 200f, 3f, 12f, 5)
+        assertTrue(l.slots.isEmpty())
+        assertNull(l.pileFrom)
+    }
 }
