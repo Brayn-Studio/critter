@@ -116,12 +116,21 @@ nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSeria
     #expect(AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "allow")) == nil)
 }
 
-@Test func matchKeyIgnoresKeyOrder() {
-    let a = MatchKey.compute(toolName: "Bash", toolInput: ["a": 1, "b": 2])
-    let b = MatchKey.compute(toolName: "Bash", toolInput: ["b": 2, "a": 1])
-    #expect(a == b)
-    #expect(a != MatchKey.compute(toolName: "Edit", toolInput: ["a": 1, "b": 2]))
+/// The key doesn't depend on the order of the tool input's keys, at any depth. Both orders come
+/// from JSON text, as the hooks get them (two dictionary literals in one process could simply
+/// iterate alike); array order and every value still count.
+@Test func matchKeyIgnoresKeyOrder() throws {
+    let forward = #"{"command":"ls -la","description":"List","timeout":120000,"run_in_background":false,"sandbox":true,"ratio":0.25,"nested":{"z":1,"a":[{"y":2,"b":"3"}],"m":null},"list":[3,1,2],"text":"中文/é \"q\"","zeta":"last"}"#
+    let backward = #"{"zeta":"last","text":"中文/é \"q\"","list":[3,1,2],"nested":{"m":null,"a":[{"b":"3","y":2}],"z":1},"ratio":0.25,"sandbox":true,"run_in_background":false,"timeout":120000,"description":"List","command":"ls -la"}"#
+    func key(_ text: String, tool: String = "Bash") throws -> String {
+        MatchKey.compute(toolName: tool, toolInput: try JSONSerialization.jsonObject(with: Data(text.utf8)))
+    }
+    let a = try key(forward)
+    #expect(a == (try key(backward)))
     #expect(a.count == 64)
+    #expect(a != (try key(forward, tool: "Edit")))
+    #expect(a != (try key(forward.replacingOccurrences(of: "[3,1,2]", with: "[1,2,3]"))))
+    #expect(a != (try key(forward.replacingOccurrences(of: #""y":2"#, with: #""y":3"#))))
 }
 
 @Test func displayInputTruncatesLongContentButNotCommand() {
@@ -129,6 +138,39 @@ nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSeria
     let shown = AskDecision.displayInput(["content": long, "command": long])
     #expect(shown["content"] == .string(String(repeating: "x", count: 4096) + "…"))
     #expect(shown["command"] == .string(long))
+}
+
+/// 4096 characters stay as they are; 4097 are cut to 4096 plus "…".
+@Test func displayInputTruncationBoundary() {
+    let limit = String(repeating: "x", count: 4096)
+    let shown = AskDecision.displayInput(["content": limit, "other": limit + "y"])
+    #expect(shown["content"] == .string(limit))
+    #expect(shown["other"] == .string(limit + "…"))
+}
+
+/// Long strings are cut wherever they sit -- in nested objects and arrays -- by the key they are
+/// under; an array under a key that is shown in full is shown in full too.
+@Test func displayInputTruncatesNestedStrings() {
+    let long = String(repeating: "y", count: 5000)
+    let cut = JSONValue.string(String(repeating: "y", count: 4096) + "…")
+    let shown = AskDecision.displayInput([
+        "edits": [["old_string": long, "new_string": "n"]],
+        "meta": ["deep": ["text": long]],
+        "questions": [["question": long, "options": [["label": long]]]],
+    ])
+    #expect(shown["edits"] == .array([.object(["old_string": cut, "new_string": .string("n")])]))
+    #expect(shown["meta"]?["deep"]?["text"] == cut)
+    #expect(shown["questions"] == .array([.object(["question": .string(long), "options": .array([.object(["label": cut])])])]))
+}
+
+/// The cut falls between characters: one made of several Unicode scalars (a skin-toned
+/// emoji, a ZWJ sequence) is kept whole or left out whole.
+@Test func displayInputNeverSplitsACharacter() {
+    for character in ["👍🏽", "👩🏽‍💻", "🇨🇳", "é"] {
+        let text = String(repeating: "x", count: 4095) + character + character
+        let shown = AskDecision.displayInput(["content": text])
+        #expect(shown["content"] == .string(String(repeating: "x", count: 4095) + character + "…"), Comment(rawValue: character))
+    }
 }
 
 @Test func jsonValueKeepsBooleansApartFromNumbers() {

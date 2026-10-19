@@ -29,6 +29,8 @@ sourceSets {
 
 tasks.test {
     useJUnitPlatform()
+    // ProtocolDocExamplesTest reads the protocol doc's examples: a doc edit must rerun it, not hit the build cache.
+    inputs.file("../../docs/critter-bridge-protocol.md").withPathSensitivity(PathSensitivity.RELATIVE)
     testLogging {
         events("failed")
         exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL

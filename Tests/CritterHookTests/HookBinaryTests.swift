@@ -141,7 +141,12 @@ private func critterHookBinaryURL() throws -> URL {
     try stdinPipe.fileHandleForWriting.close()
     process.waitUntilExit()
 
-    #expect(Date().timeIntervalSince(started) < 1.0)
+    // What shows it didn't wait: it published no request for a phone (so had nothing to wait
+    // for), printed nothing and succeeded. The time limit is only a backstop -- far below the
+    // 590 s an actual wait would take, and loose enough for a busy machine running tests in parallel.
     #expect(process.terminationStatus == 0)
     #expect(stdoutPipe.fileHandleForReading.readDataToEndOfFile().isEmpty)
+    let pending = base.appendingPathComponent(".critter/pending")
+    #expect(((try? FileManager.default.contentsOfDirectory(atPath: pending.path)) ?? []).isEmpty)
+    #expect(Date().timeIntervalSince(started) < 5.0)
 }
