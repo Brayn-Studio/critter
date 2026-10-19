@@ -99,7 +99,7 @@ private final class Recorder: @unchecked Sendable {
     let hashed = Recorder()
     let registry = DeviceRegistry(file: dir.appendingPathComponent("devices.json"), log: { _ in }, hash: { token in
         hashed.add(token)
-        return DeviceRegistry.sha256Hex(token)
+        return Hex.sha256(Data(token.utf8))
     })
     let (record, token) = try registry.add(name: "Pixel", now: 5)
     let before = hashed.all.count

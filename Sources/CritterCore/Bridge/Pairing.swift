@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 /// A short-lived, single-use code the user types (or scans) on the phone to pair it.
@@ -102,7 +101,7 @@ public final class DeviceRegistry: @unchecked Sendable {
 
     /// `log` hears about a devices file that had to be set aside (see `load`).
     public convenience init(file: URL, log: @escaping @Sendable (String) -> Void = { _ in }) {
-        self.init(file: file, log: log, hash: Self.sha256Hex)
+        self.init(file: file, log: log, hash: { Hex.sha256(Data($0.utf8)) })
     }
 
     /// `hash` is how tokens are hashed; tests count its calls.
@@ -184,10 +183,6 @@ public final class DeviceRegistry: @unchecked Sendable {
     private func save(_ records: [DeviceRecord]) throws {
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try atomicWrite(JSONEncoder().encode(records), to: file, permissions: 0o600)
-    }
-
-    static func sha256Hex(_ token: String) -> String {
-        SHA256.hash(data: Data(token.utf8)).map { String(format: "%02x", $0) }.joined()
     }
 
     /// What an unknown device's token is compared with: a SHA-256 hex's length, matched by none.

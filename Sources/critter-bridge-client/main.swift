@@ -1,5 +1,4 @@
 import CritterCore
-import CryptoKit
 import Foundation
 
 // A developer's stand-in for the phone app: pairs with Critter's LAN bridge, prints what it
@@ -110,7 +109,7 @@ final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
             return
         }
         let der = SecCertificateCopyData(leaf) as Data
-        let seen = SHA256.hash(data: der).map { String(format: "%02x", $0) }.joined()
+        let seen = Hex.sha256(der)
         guard seen == fingerprint else {
             completionHandler(.cancelAuthenticationChallenge, nil)
             fail("certificate fingerprint \(seen) is not the paired one")

@@ -103,7 +103,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
         pendingStore = PendingStore(paths: paths)
         statusStore = StatusLineStore(paths: paths)
         inboxStore = InboxStore(paths: paths)
-        version = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "0.0.0"
+        version = AppVersion.current
         queue.async { [self] in
             // The settings list the paired phones even while the bridge is off.
             refreshDevices()
@@ -536,11 +536,8 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
             let flags = Int32(entry.pointee.ifa_flags)
             guard flags & IFF_UP != 0, flags & IFF_RUNNING != 0, flags & IFF_LOOPBACK == 0,
                   let sockaddr = entry.pointee.ifa_addr, sockaddr.pointee.sa_family == UInt8(AF_INET) else { continue }
-            var addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
-            var buffer = [CChar](repeating: 0, count: Int(INET_ADDRSTRLEN))
-            guard inet_ntop(AF_INET, &addr, &buffer, socklen_t(buffer.count)) != nil else { continue }
-            let address = String(decoding: buffer.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
-            guard PrivateNetwork.isAllowed(host: address) else { continue }
+            let addr = sockaddr.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+            guard let address = IPAddress.string(addr), PrivateNetwork.isAllowed(host: address) else { continue }
             let name = String(cString: entry.pointee.ifa_name)
             let rank = address.hasPrefix("169.254.") ? 3 : name == "en0" ? 0 : name.hasPrefix("en") ? 1 : 2
             if best == nil || rank < best!.rank { best = (rank, address) }

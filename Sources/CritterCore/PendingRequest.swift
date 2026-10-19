@@ -1,4 +1,3 @@
-import CryptoKit
 import Foundation
 
 public enum PendingKind: String, Codable, Sendable {
@@ -69,8 +68,7 @@ public enum MatchKey {
            let data = try? JSONSerialization.data(withJSONObject: toolInput, options: [.sortedKeys, .withoutEscapingSlashes]) {
             serialized = String(decoding: data, as: UTF8.self)
         }
-        let digest = SHA256.hash(data: Data((toolName + "\n" + serialized).utf8))
-        return digest.map { String(format: "%02x", $0) }.joined()
+        return Hex.sha256(Data((toolName + "\n" + serialized).utf8))
     }
 }
 
