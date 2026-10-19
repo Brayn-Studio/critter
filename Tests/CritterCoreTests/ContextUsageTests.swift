@@ -33,6 +33,28 @@ import Testing
     #expect(ContextUsage.lastUsage(inTranscriptTail: Data()) == nil)
 }
 
+/// A line whose usage adds up to 0 (a synthetic message, say) says nothing about the context:
+/// the turn before it does.
+@Test func zeroUsageLineFallsBackToAnEarlierTurn() {
+    let tail = """
+    cut
+    {"type":"assistant","message":{"model":"claude-opus-5-5","usage":{"input_tokens":1000,"cache_creation_input_tokens":200,"cache_read_input_tokens":34}}}
+    {"type":"assistant","message":{"model":"<synthetic>","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0,"output_tokens":0}}}
+
+    """
+    #expect(ContextUsage.lastUsage(inTranscriptTail: Data(tail.utf8)) == ContextEstimate(usedTokens: 1234, model: "claude-opus-5-5"))
+}
+
+@Test func allZeroGivesNil() {
+    let tail = """
+    cut
+    {"type":"assistant","message":{"model":"m1","usage":{"input_tokens":0,"output_tokens":12}}}
+    {"type":"assistant","message":{"model":"m2","usage":{"input_tokens":0,"cache_creation_input_tokens":0,"cache_read_input_tokens":0}}}
+
+    """
+    #expect(ContextUsage.lastUsage(inTranscriptTail: Data(tail.utf8)) == nil)
+}
+
 @Test func windowSizesByModel() {
     #expect(ContextUsage.windowSize(forModel: "claude-opus-5-5") == 1_000_000)
     #expect(ContextUsage.windowSize(forModel: "claude-sonnet-4-6") == 200_000)
