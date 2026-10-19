@@ -78,7 +78,9 @@ class ColumnView(
         content.removeAllViews()
         sessionIds = sessions.map { it.id }
         addHeader(sessions)
-        content.addView(critters, FrameLayout.LayoutParams(widthPx, sessions.size * itemHeight).apply { topMargin = headerH })
+        // The Critter view covers the header too, so the first row's marker and hop have room above it; it only
+        // takes the touches that land on a Critter.
+        content.addView(critters, FrameLayout.LayoutParams(widthPx, headerH + sessions.size * itemHeight))
         val petX = if (edge == Edge.Right) widthPx - outer - petW else outer
         val critterX = petX + (petW - 18 * unit) / 2
         val slots = ArrayList<CritterSlot>(sessions.size)
