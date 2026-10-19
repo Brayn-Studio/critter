@@ -133,19 +133,24 @@ private class NunitoFont(override val weight: FontWeight) :
 }
 
 private object NunitoLoader : AndroidFont.TypefaceLoader {
-    override fun loadBlocking(context: Context, font: AndroidFont): Typeface {
-        val weight = font.weight.weight
-        val nunito = android.graphics.fonts.Font.Builder(context.resources, R.font.nunito)
-            .setWeight(weight)
-            .setFontVariationSettings("'wght' $weight")
-            .build()
-        return Typeface.CustomFallbackBuilder(android.graphics.fonts.FontFamily.Builder(nunito).build())
-            .setStyle(android.graphics.fonts.FontStyle(weight, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT))
-            .setSystemFallback("sans-serif")
-            .build()
-    }
+    override fun loadBlocking(context: Context, font: AndroidFont): Typeface = nunitoTypeface(context, font.weight.weight)
 
     override suspend fun awaitLoad(context: Context, font: AndroidFont): Typeface = loadBlocking(context, font)
+}
+
+/**
+ * Nunito at [weight], with Chinese falling back to the system font at the same weight. Also for View code (the
+ * floating pile): a TextView's own `fontVariationSettings` would rebuild the typeface and lose that fallback.
+ */
+fun nunitoTypeface(context: Context, weight: Int): Typeface {
+    val nunito = android.graphics.fonts.Font.Builder(context.resources, R.font.nunito)
+        .setWeight(weight)
+        .setFontVariationSettings("'wght' $weight")
+        .build()
+    return Typeface.CustomFallbackBuilder(android.graphics.fonts.FontFamily.Builder(nunito).build())
+        .setStyle(android.graphics.fonts.FontStyle(weight, android.graphics.fonts.FontStyle.FONT_SLANT_UPRIGHT))
+        .setSystemFallback("sans-serif")
+        .build()
 }
 
 /** Body text and titles (a variable font; Chinese falls back to the system font, at the same weight). */

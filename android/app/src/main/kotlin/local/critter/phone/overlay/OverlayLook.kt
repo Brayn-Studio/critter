@@ -18,6 +18,7 @@ import local.critter.phone.ui.look.bitmap
 import local.critter.phone.ui.theme.CritterColors
 import local.critter.phone.ui.theme.DarkCritterColors
 import local.critter.phone.ui.theme.LightCritterColors
+import local.critter.phone.ui.theme.nunitoTypeface
 import kotlin.math.max
 import kotlin.math.roundToInt
 
@@ -35,12 +36,13 @@ internal fun Context.critterColors(): CritterColors = if (isNight()) DarkCritter
 internal fun Context.px(dp: Float): Int = max(1, (dp * resources.displayMetrics.density).roundToInt())
 
 internal object OverlayLook {
-    private var nunito: Typeface? = null
+    private val nunito = HashMap<Int, Typeface>()
     private var silkscreen: Typeface? = null
     private val icons = HashMap<Triple<String, Int, Int>, Bitmap>()
 
-    fun nunito(context: Context): Typeface? =
-        nunito ?: runCatching { context.resources.getFont(R.font.nunito) }.getOrNull().also { nunito = it }
+    /** Nunito at [weight], Chinese included ([nunitoTypeface]); made once per weight. */
+    fun nunito(context: Context, weight: Int): Typeface? =
+        nunito[weight] ?: runCatching { nunitoTypeface(context, weight) }.getOrNull()?.also { nunito[weight] = it }
 
     fun silkscreen(context: Context): Typeface? =
         silkscreen ?: runCatching { context.resources.getFont(R.font.silkscreen_regular) }.getOrNull().also { silkscreen = it }
@@ -49,10 +51,9 @@ internal object OverlayLook {
     fun icon(name: String, color: Int, cellPx: Int): Bitmap =
         icons.getOrPut(Triple(name, color, cellPx)) { PixelIcons.bitmap(name, color, cellPx) }
 
-    /** Text in Nunito at [weight] (a variable font), [sizeSp] sp, one line ending in "…". */
+    /** Text in Nunito at [weight] (Chinese too), [sizeSp] sp, one line ending in "…". */
     fun text(context: Context, sizeSp: Float, weight: Int, color: Int): TextView = TextView(context).apply {
-        typeface = nunito(context)
-        fontVariationSettings = "'wght' $weight"
+        typeface = nunito(context, weight)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, sizeSp)
         setTextColor(color)
         includeFontPadding = false
