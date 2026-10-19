@@ -87,3 +87,18 @@ private func permissions(_ url: URL) -> Int? {
     #expect(store.readAnswer(requestId: "ok") != nil)
     #expect(store.readAnswer(requestId: "orphan") == nil)
 }
+
+/// Directories made by someone else (or an older version) with the default mode are made
+/// private again before anything is written into them.
+@Test func existingLooseDirectoryIsTightened() throws {
+    let paths = tmpPaths()
+    for dir in [paths.pendingDir, paths.answersDir] {
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+        #expect(permissions(dir) == 0o755)
+    }
+    let store = PendingStore(paths: paths)
+    try store.write(request("r1"))
+    #expect(permissions(paths.pendingDir) == 0o700)
+    try store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "r1")
+    #expect(permissions(paths.answersDir) == 0o700)
+}

@@ -312,9 +312,7 @@ final class BridgeController: BridgeServices, @unchecked Sendable {
     /// New and answered requests, and fresh status-line data, change the snapshot too.
     private func startWatchers() {
         // Made private before the watcher would create it with the default permissions.
-        try? FileManager.default.createDirectory(
-            at: paths.pendingDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
+        try? PrivateDirectory.ensure(paths.pendingDir)
         watchers = [paths.pendingDir, paths.statusDir].map { dir in
             DirectoryWatcher(url: dir, queue: queue, debounce: 0) { [weak self] in self?.changed() }
         }

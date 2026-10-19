@@ -87,7 +87,7 @@ public struct PendingStore: Sendable {
         guard let file = paths.sessionScopedFile(in: paths.pendingDir, sessionId: request.requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
-        try createPrivateDirectory(paths.pendingDir)
+        try PrivateDirectory.ensure(paths.pendingDir)
         try atomicWrite(JSONEncoder().encode(request), to: file, permissions: 0o600)
     }
 
@@ -139,7 +139,7 @@ public struct PendingStore: Sendable {
         guard let file = paths.sessionScopedFile(in: paths.answersDir, sessionId: requestId) else {
             throw CocoaError(.fileWriteInvalidFileName)
         }
-        try createPrivateDirectory(paths.answersDir)
+        try PrivateDirectory.ensure(paths.answersDir)
         let temp = paths.answersDir.appendingPathComponent(".\(file.lastPathComponent).tmp-\(getpid())-\(Int.random(in: 0...Int.max))")
         try createNewFile(try JSONEncoder().encode(answer), at: temp, permissions: 0o600)
         defer { unlink(temp.path) }
@@ -171,11 +171,5 @@ public struct PendingStore: Sendable {
     private func files(in dir: URL) -> [URL] {
         let entries = (try? FileManager.default.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)) ?? []
         return entries.filter { !$0.lastPathComponent.hasPrefix(".") && $0.pathExtension == "json" }
-    }
-
-    private func createPrivateDirectory(_ dir: URL) throws {
-        try FileManager.default.createDirectory(
-            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
-        )
     }
 }

@@ -35,6 +35,20 @@ private func permissions(_ url: URL) -> Int? {
     #expect(permissions(paths.inboxDir) == 0o700)
 }
 
+/// An inbox directory that already exists with the default mode is made private before the
+/// token goes in.
+@Test func existingLooseInboxIsTightened() throws {
+    var (paths, env) = tmpEnv()
+    try FileManager.default.createDirectory(at: paths.inboxDir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o755])
+    #expect(permissions(paths.inboxDir) == 0o755)
+    env["CLAUDE_CODE_MESSAGING_SOCKET"] = "/tmp/cc-socks/abc.sock"
+    env["CLAUDE_CODE_MESSAGING_TOKEN"] = "tok"
+    fire("SessionStart", env: env)
+    #expect(InboxStore(paths: paths).read(sessionId: "s1")?.token == "tok")
+    #expect(permissions(paths.inboxDir) == 0o700)
+    #expect(permissions(paths.inboxDir.appendingPathComponent("s1.json")) == 0o600)
+}
+
 @Test func sessionStartWithoutEnvironmentWritesNothing() {
     var (paths, env) = tmpEnv()
     fire("SessionStart", env: env)

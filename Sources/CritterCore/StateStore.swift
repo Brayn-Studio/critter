@@ -45,6 +45,18 @@ func createNewFile(_ data: Data, at url: URL, permissions: Int? = nil) throws {
     written = true
 }
 
+/// Directories that hold secrets (pending requests, answers, inbox tokens): 0700.
+public enum PrivateDirectory {
+    /// Creates `dir` (and any missing parents) and leaves it 0700 -- also when it already
+    /// existed with a looser mode, which `createDirectory`'s attributes leave alone.
+    public static func ensure(_ dir: URL) throws {
+        try FileManager.default.createDirectory(
+            at: dir, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700]
+        )
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: dir.path)
+    }
+}
+
 /// Reads and writes `~/.critter/sessions/<id>.json` session records: atomically, guarded by a
 /// per-session `flock`, and never letting a stale event (lower `eventTime`) overwrite a newer one.
 public struct StateStore: Sendable {
