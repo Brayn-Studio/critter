@@ -18,6 +18,14 @@ HOOK="$CRITTER_HOME/bin/critter-hook"
 SETTINGS="$CLAUDE_CONFIG_DIR/settings.json"
 # Both wrapper forms contain "'<hook>' statusline"; slashes may be JSON-escaped, so match the name.
 still_wrapped() { [ -f "$SETTINGS" ] && grep -qF "critter-hook' statusline" "$SETTINGS"; }
+if [ ! -x "$HOOK" ] && still_wrapped; then
+  # The hook is gone (say ~/.critter was deleted by hand) but its wrapper isn't: build one from
+  # this checkout to undo it. Only if that fails too does the manual route below apply.
+  echo "==> critter-hook is missing; building it to restore the status line"
+  if (cd "$REPO" && swift build -c release --product critter-hook); then
+    HOOK="$REPO/.build/release/critter-hook"
+  fi
+fi
 if [ -x "$HOOK" ]; then
   "$HOOK" statusline-uninstall || true
 fi

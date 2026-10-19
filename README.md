@@ -126,7 +126,7 @@ make uninstall
 
 卸载会先把状态栏设置还原成接入前的样子，再移除插件、插件市场、`Critter.app`（并从 Launch Services 注销 `critter://`）、`/pet` 命令、`~/.critter` 和开机自启项（`~/Library/LaunchAgents/local.critter.pet.plist`）。
 
-如果状态栏设置还原不了（比如 `settings.json` 不是合法的 JSON），卸载会在第一步停下来，什么都不删，并打印现在的命令和手动还原的办法；`~/.critter/backup/` 里有 Critter 改动前的备份。改好后再运行一次 `make uninstall`。
+如果 `~/.critter/bin/critter-hook` 已经不在了（比如 `~/.critter` 被手动删了）而状态栏还包着，卸载会先在仓库里编译一份 `critter-hook`（`swift build -c release --product critter-hook`），用它还原。编译不出来，或者状态栏设置还原不了（比如 `settings.json` 不是合法的 JSON、不是有效的 UTF-8），卸载会在第一步停下来，什么都不删，并打印现在的命令和手动还原的办法；`~/.critter/backup/` 里有 Critter 改动前的备份。改好后再运行一次 `make uninstall`。
 
 **卸载后请重启仍然开着的 Claude Code 会话。** 这些会话启动时已经加载了插件的 hooks，卸载后它们还会继续触发；hooks 发现 `~/.critter/bin/critter-hook` 不在了会直接跳过，不会报错，但要重启会话才会彻底不再调用。
 
