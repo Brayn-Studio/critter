@@ -280,11 +280,26 @@ class BoardTriggerTest {
 
     @Test fun stillMeansNoAxisMovedHalfAUnitInOneAndAHalfSeconds() {
         val s = BoardTrigger.Stillness()
-        assertTrue(s.add(0, 9.7f, 0f, 1f))
-        assertTrue(s.add(500, 9.8f, 0.1f, 1.2f))
-        assertFalse(s.add(1_000, 9.0f, 0.1f, 1.2f))
-        // The jolt leaves the window after 1.5 s.
-        assertFalse(s.add(1_900, 9.0f, 0.1f, 1.2f))
-        assertTrue(s.add(2_100, 9.0f, 0.1f, 1.2f))
+        assertFalse(s.add(0, 9.7f, 0f, 1f))
+        assertTrue(s.add(1_500, 9.8f, 0.1f, 1.2f))
+        assertFalse(s.add(2_000, 9.0f, 0.1f, 1.2f))
+        // The reading at 1.5 s held until the jolt at 2 s: still in the window at 3.4 s, gone from it at 3.5 s.
+        assertFalse(s.add(3_400, 9.0f, 0.1f, 1.2f))
+        assertTrue(s.add(3_500, 9.0f, 0.1f, 1.2f))
+    }
+
+    /** One reading says nothing about movement: the phone may be swinging through landscape. */
+    @Test fun oneReadingIsNotStill() {
+        assertFalse(BoardTrigger.Stillness().add(10_000, 9.7f, 0f, 1f))
+        val s = BoardTrigger.Stillness()
+        s.add(0, 9.7f, 0f, 1f)
+        s.clear()
+        assertFalse(s.add(5_000, 9.7f, 0f, 1f), "cleared: a fresh start")
+    }
+
+    @Test fun stillAfterAFullWindow() {
+        val s = BoardTrigger.Stillness()
+        for (t in 0L..1_400L step 200) assertFalse(s.add(t, 9.7f, 0f, 1f), "at $t ms the readings cover less than 1.5 s")
+        assertTrue(s.add(1_600, 9.7f, 0f, 1f))
     }
 }

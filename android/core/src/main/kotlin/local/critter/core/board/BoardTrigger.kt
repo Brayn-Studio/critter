@@ -166,7 +166,11 @@ class BoardTrigger(
         return Action.None
     }
 
-    /** Whether the last 1.5 s of gravity readings stayed within 0.5 m/s² on every axis. */
+    /**
+     * Whether the last 1.5 s of gravity readings stayed within 0.5 m/s² on every axis. Only readings that cover the
+     * whole window count: a reading holds until the next one, so the window starts with the last reading at or
+     * before its beginning, and until there is one (the first 1.5 s after [clear]) the phone is not still.
+     */
     class Stillness(private val windowMs: Long = 1_500, private val tolerance: Float = 0.5f) {
         private val times = ArrayDeque<Long>()
         private val xs = ArrayDeque<Float>()
@@ -176,9 +180,12 @@ class BoardTrigger(
         /** Adds a reading and says whether the phone is still. */
         fun add(nowMs: Long, x: Float, y: Float, z: Float): Boolean {
             times.addLast(nowMs); xs.addLast(x); ys.addLast(y); zs.addLast(z)
-            while (times.isNotEmpty() && nowMs - times.first() >= windowMs) {
+            val start = nowMs - windowMs
+            // Older than the window's first reading: the next one already holds at its start.
+            while (times.size > 1 && times[1] <= start) {
                 times.removeFirst(); xs.removeFirst(); ys.removeFirst(); zs.removeFirst()
             }
+            if (times.first() > start) return false
             return range(xs) < tolerance && range(ys) < tolerance && range(zs) < tolerance
         }
 
