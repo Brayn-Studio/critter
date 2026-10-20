@@ -1,6 +1,5 @@
 package local.critter.phone.ui
 
-import androidx.compose.ui.graphics.Color
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgeContext
 import local.critter.core.protocol.BridgeSession
@@ -20,15 +19,6 @@ fun stateLabel(state: PetState): String = when (state) {
     PetState.unknown -> "未知"
 }
 
-/** A state's symbol color (design §5), for the View code; Compose screens use `Critter.colors.state()`. */
-fun stateColor(state: PetState): Color = when (state) {
-    PetState.running -> Color(0xFFE8A21E)
-    PetState.waiting -> Color(0xFFFF9F0A)
-    PetState.done -> Color(0xFF2FB457)
-    PetState.error -> Color(0xFFF0453A)
-    PetState.idle, PetState.unknown -> Color(0xFF8C85A3)
-}
-
 /** The pixel icon for a state, the same marks the desktop pet wears ([local.critter.phone.ui.look.PixelIcons]). */
 fun stateIcon(s: PetState): String = when (s) {
     PetState.waiting -> "q"
@@ -36,16 +26,6 @@ fun stateIcon(s: PetState): String = when (s) {
     PetState.done -> "check"
     PetState.error -> "bang"
     PetState.idle, PetState.unknown -> "z"
-}
-
-/** A one-character mark for the state block on the board. */
-fun stateGlyph(state: PetState): String = when (state) {
-    PetState.idle -> "z"
-    PetState.running -> "…"
-    PetState.waiting -> "!"
-    PetState.done -> "✓"
-    PetState.error -> "×"
-    PetState.unknown -> "?"
 }
 
 fun sourceLabel(source: SessionSource): String = when (source) {
@@ -69,9 +49,6 @@ fun folderName(cwd: String): String = cwd.trimEnd('/').substringAfterLast('/').i
 fun folderBranch(s: BridgeSession): String =
     listOfNotNull(folderName(s.cwd), s.branch?.takeIf { it.isNotBlank() }).joinToString(" · ")
 
-/** "proj · main · 终端". */
-fun placeLine(s: BridgeSession): String = "${folderBranch(s)} · ${sourceLabel(s.source)}"
-
 /** What the session is doing: the detail line, falling back to the activity, then the state name. */
 fun doingText(s: BridgeSession): String =
     s.detail?.takeIf { it.isNotBlank() } ?: s.activity?.takeIf { it.isNotBlank() } ?: stateLabel(s.state)
@@ -79,8 +56,6 @@ fun doingText(s: BridgeSession): String =
 /** "42%", with "≈" in front when the Mac only estimated it. */
 fun contextPercentText(c: BridgeContext): String =
     (if (c.estimated) "≈" else "") + "${c.usedPercent.roundToInt()}%"
-
-fun contextFraction(c: BridgeContext): Float = (c.usedPercent / 100.0).toFloat().coerceIn(0f, 1f)
 
 fun connText(state: ConnState): String = when (state) {
     ConnState.Idle -> "未连接"

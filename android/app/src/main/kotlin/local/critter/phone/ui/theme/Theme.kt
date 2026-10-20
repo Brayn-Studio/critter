@@ -25,9 +25,6 @@ import androidx.compose.ui.unit.em
 import local.critter.core.protocol.PetState
 import local.critter.phone.R
 
-/** The ring around a card that has a request waiting for you. */
-val WaitingOrange = Color(0xFFFF9F0A)
-
 /** The app's colors (design §5), one set per theme; read them with [Critter.colors]. */
 @Immutable
 data class CritterColors(

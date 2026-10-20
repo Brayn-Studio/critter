@@ -17,7 +17,6 @@ import local.critter.phone.ui.agoText
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.folderBranch
 import local.critter.phone.ui.folderName
-import local.critter.phone.ui.placeLine
 import local.critter.phone.ui.stateIcon
 import local.critter.phone.ui.stateLabel
 import org.junit.jupiter.api.Test
@@ -48,12 +47,6 @@ class PresentationTest {
         assertEquals("proj · main", folderBranch(session()))
         assertEquals("proj", folderBranch(session(branch = null)))
         assertEquals("proj", folderName("/Users/me/proj/"))
-    }
-
-    @Test
-    fun placeLineIsFolderBranchSource() {
-        assertEquals("proj · main · 终端", placeLine(session()))
-        assertEquals("proj", folderBranch(session(branch = null)))
     }
 
     @Test
