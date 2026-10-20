@@ -430,19 +430,28 @@ class BridgeRepository(private val app: Application) {
         }
     }
 
-    fun unpair() {
+    /**
+     * Forgets the Mac, in this repository's scope (leaving the screen does not cut it short), then runs [onDone] on
+     * the main thread. The pairing and the cache are deleted from disk before anything reports "unpaired": a process
+     * killed meanwhile comes back paired as it was, never unpaired on screen yet still paired on disk.
+     */
+    fun unpair(onDone: () -> Unit = {}) {
         stopClient()
         Alerts.withdrawAll(app, results = true)
         synchronized(cache) { unsaved = null }
-        _pairing.value = null
-        _snapshot.value = null
-        _lastUpdated.value = null
         // After stopClient's last cache write, and before any new pairing's save: [disk] keeps the order.
         scope.launch(disk) {
             pairingStore.clear()
             cache.clear()
+            _pairing.value = null
+            _snapshot.value = null
+            _lastUpdated.value = null
+            withContext(Dispatchers.Main) {
+                // Also stops a client that came up meanwhile for the pairing that is gone now.
+                BridgeService.sync(app, this@BridgeRepository)
+                onDone()
+            }
         }
-        BridgeService.sync(app, this)
     }
 
     // --- finding the Mac ------------------------------------------------------------------------
