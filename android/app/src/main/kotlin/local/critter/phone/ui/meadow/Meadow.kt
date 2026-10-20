@@ -15,7 +15,9 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateSetOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
@@ -86,7 +88,8 @@ private val COUNTED = setOf(PetState.waiting, PetState.error, PetState.done)
  * The home screen's meadow (mockup "首页"): [height] of sky and grass, the ground [ground] from the top, and the
  * sessions standing on it in one row ([BoardLayout.placeRow]) at 3 dp a cell, in one live [CritterView]. Each has
  * its name on a tag at its feet; one in [bubbles] wears an orange bubble with that text above its head. More than
- * fit merge into a pile with "n 个会话" below and the counts that need a look above. [asleep] (offline) puts them
+ * fit merge into a pile with "n 个会话" below and the counts that need a look above. One carried away from its
+ * place leaves its tag as its home and hides its bubble until it has walked back. [asleep] (offline) puts them
  * all to sleep, greyed like idle ones. With [opening], the first time there are Critters they pop up one by one.
  * A tap on a Critter is [onTap] with its session id. [modifier] gives it its width; [moon] places the night moon.
  */
@@ -130,6 +133,11 @@ fun Meadow(
         val key = slots.map { listOf(it.sessionId, it.state, it.activity, it.manifest.name, it.x, it.y, it.scale, it.dimStrength, it.seatRow, it.sleeping) }
         val tap by rememberUpdatedState(onTap)
         val rise = remember { RiseOnce() }
+        // Carried away from their place (CritterTouchListener.onCarry), until they have walked back, as on the
+        // board; a session that ended meanwhile is dropped.
+        val carried = remember { mutableStateSetOf<String>() }
+        val liveIds = sessions.mapTo(HashSet()) { it.id }
+        LaunchedEffect(liveIds) { carried.retainAll(liveIds) }
 
         MeadowBackdrop(time, ground, Modifier.matchParentSize(), moon = moon)
         AndroidView(
@@ -140,6 +148,9 @@ fun Meadow(
                     listener = object : CritterTouchListener {
                         override fun onTap(sessionId: String) = tap(sessionId)
                         override fun onLongDragEnd(sessionId: String) {}
+                        override fun onCarry(sessionId: String, away: Boolean) {
+                            if (away) carried.add(sessionId) else carried.remove(sessionId)
+                        }
                     }
                 }
             },
@@ -186,7 +197,7 @@ fun Meadow(
             if (i < shown.size) {
                 val s = shown[i]
                 Box(tagAt, contentAlignment = Alignment.TopCenter) { MeadowTag(s.name, sky) }
-                bubbles[s.id]?.let { text ->
+                bubbles[s.id]?.takeIf { s.id !in carried }?.let { text ->
                     // The tail's tip stays 5 dp below the head line; a larger font grows the bubble upwards.
                     Box(aboveAt.height((headTop + 5).dp), contentAlignment = Alignment.BottomCenter) { MeadowBubble(text) }
                 }
