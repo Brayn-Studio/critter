@@ -255,6 +255,54 @@ class BoardTriggerTest {
         assertEquals(none, t.onTick(10_000))
     }
 
+    /** From the Open until its board comes up: that board opened by itself. */
+    @Test fun awaitingOpenFromTheOpenUntilTheBoardComesUp() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onOrientation(landscape, true, 0)
+        assertFalse(t.awaitingOpen)
+        assertEquals(open, t.onTick(3_000))
+        assertTrue(t.awaitingOpen)
+        t.onBoardShown(true)
+        assertFalse(t.awaitingOpen)
+    }
+
+    /** Pulled within the 2 s: a board the user opens by hand later is not the one that was asked for. */
+    @Test fun awaitingOpenEndsWhenTheChargerIsPulled() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onOrientation(landscape, true, 0)
+        assertEquals(open, t.onTick(3_000))
+        assertEquals(none, t.onPower(false, 4_000))
+        assertFalse(t.awaitingOpen)
+        assertNull(t.nextDeadline())
+    }
+
+    @Test fun awaitingOpenEndsWhenTheOpenIsGivenUp() {
+        val timedOut = BoardTrigger()
+        timedOut.onPower(true, 0)
+        timedOut.onOrientation(landscape, true, 0)
+        assertEquals(open, timedOut.onTick(3_000))
+        assertEquals(blocked, timedOut.onTick(5_000))
+        assertFalse(timedOut.awaitingOpen)
+
+        val failed = BoardTrigger()
+        failed.onPower(true, 0)
+        failed.onOrientation(landscape, true, 0)
+        assertEquals(open, failed.onTick(3_000))
+        failed.onOpenFailed()
+        assertFalse(failed.awaitingOpen)
+    }
+
+    /** A board opened by hand was never asked for. */
+    @Test fun aBoardOpenedByHandWasNotAwaited() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        assertFalse(t.awaitingOpen)
+        t.onBoardShown(true)
+        assertFalse(t.awaitingOpen)
+    }
+
     @Test fun sensorWantedOnlyWhileChargingWithTheScreenOn() {
         val t = BoardTrigger()
         assertFalse(t.sensorWanted)

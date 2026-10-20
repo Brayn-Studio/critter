@@ -55,6 +55,12 @@ class BoardTrigger(
     private var openedAt: Long? = null
 
     /**
+     * An [Action.Open] went out and has neither come up nor been given up on (the 2 s timeout, a failed start, the
+     * charger pulled): a board that comes up now is the one it opened, not one the user opened by hand.
+     */
+    val awaitingOpen: Boolean get() = openedAt != null
+
+    /**
      * The gravity sensor is needed only while charging with the screen on (no readings arrive with it off), and
      * only to open a board or to close one that is up.
      */

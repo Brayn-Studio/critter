@@ -38,9 +38,6 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     private var listening = false
     private var scheduledAt: Long? = null
 
-    /** An automatic opening went out and its board has not come up yet. */
-    private var autoOpening = false
-
     private val tick = Runnable {
         scheduledAt = null
         perform(trigger.onTick(now()))
@@ -114,14 +111,14 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     }
 
     private fun boardShown(shown: Boolean) {
+        // The board the trigger asked for came up: it opened by itself after all, so the settings' "blocked" notice
+        // and the notification no longer apply. One the user opened by hand says nothing about that, and neither
+        // does an opening the trigger already gave up on (the charger pulled, the 2 s passed).
+        val opened = shown && trigger.awaitingOpen
         trigger.onBoardShown(shown)
-        if (shown && autoOpening) {
-            // It opened by itself after all: the settings' "blocked" notice and the notification no longer apply.
-            autoOpening = false
-            if (settings.settings.value.boardBlockedAt != null) {
-                settings.update { it.copy(boardBlockedAt = null) }
-                Alerts.boardUnblocked(context)
-            }
+        if (opened && settings.settings.value.boardBlockedAt != null) {
+            settings.update { it.copy(boardBlockedAt = null) }
+            Alerts.boardUnblocked(context)
         }
         update()
     }
@@ -145,7 +142,6 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
      * away in a quiet notification with 「去设置」.
      */
     private fun blocked() {
-        autoOpening = false
         settings.update { it.copy(boardBlockedAt = System.currentTimeMillis()) }
         Alerts.boardBlocked(context)
     }
@@ -163,7 +159,6 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         }
         try {
             context.startActivity(BoardActivity.intent(context, auto = true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-            autoOpening = true
         } catch (e: RuntimeException) {
             Log.w(TAG, "could not open the board", e)
             perform(trigger.onOpenFailed())
