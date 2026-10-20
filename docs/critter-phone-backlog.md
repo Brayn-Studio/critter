@@ -67,7 +67,7 @@
 - ~~event hook 每个事件都重新解析 stdin、列出 pending 目录并计算哈希，即使手机功能没开；应只对相关事件解析，pending 为空时直接返回。~~ **已完成**（`bda97e3`）：stdin 只解析一次，pending 为空时不算哈希、不读文件。
 - ~~目录只在创建时 chmod 0700；inbox token 在 chmod 前短暂是 0644（`PendingRequest`、`Inbox`）。~~ **已完成**（`21c5e12`、`37dbc68`）：每次写入都把目录设成 0700；文件从创建起就是最终权限。
 - ~~`DeviceRegistry.load` 把损坏的设备文件当成空列表，下一次添加会覆盖它；未知设备 id 提前返回，时间差能看出 id 是否存在。~~ **已完成**（`5825a4f`）：损坏的文件改名留在旁边，挪不走就不写；未知 id 也照样算哈希、做等时比较。
-- ~~「发一句」的长度 Mac 按字符数、手机按 UTF-16 计，且不 trim 就转发；`ResultReason.expired` 定义了但从不产生。~~ 长度和 `expired`：**已完成**（`e468f96`；手机端 `8360c35`）：Mac 也按 UTF-16 计 4000；过了 `expiresAt` 的作答回 `expired`，手机收到后关掉卡片并显示 Mac 的话。不 trim 就转发：已不复现：`BridgeController.swift:500` 转发前已经 `trimmingCharacters(in: .whitespacesAndNewlines)`（现在在 `BridgeController+Services.swift`）。
+- ~~「发一句」的长度 Mac 按字符数、手机按 UTF-16 计，且不 trim 就转发；`ResultReason.expired` 定义了但从不产生。~~ 长度和 `expired`：**已完成**（`e468f96`；手机端 `8360c35`）：Mac 也按 UTF-16 计 4000；过了 `expiresAt` 的作答回 `expired`，手机收到后关掉卡片并显示 Mac 的话。不过 hook 每 0.2 秒查一次（`AskCommand.swift:38`），过了 `expiresAt` 就自己删掉请求（`AskCommand.swift:104`），所以过期后才到的作答多数回的是 `resolved`（“已在电脑上处理”）；`expired` 只覆盖删掉之前那不到 0.2 秒（或 hook 卡住、等 Mac 清理的时候）。两种情况卡片都会关掉。不 trim 就转发：已不复现：`BridgeController.swift:500` 转发前已经 `trimmingCharacters(in: .whitespacesAndNewlines)`（现在在 `BridgeController+Services.swift`）。
 - ~~配对「允许」来得太晚时可能批准另一台手机（客户端编号每次 `BridgeServer` 重启从头算）。~~ 已不复现：`5030481` 起 `lastClientNumber` 不再重置，编号跨 `BridgeServer` 唯一（`BridgeController.swift:64-66`、`222-225`）。
 - ~~`BridgeController` 有 468 行，混了生命周期、快照组装和缓存、配对和 `getifaddrs`，可拆出 SnapshotAssembler 和 LANAddress；SHA-256 十六进制、`inet_ntop`、版本字符串的代码有重复；开发用客户端从两个线程退出。~~ **已完成**（`13b8973`、`2c95918`、`76c017f`）：拆出 `SnapshotAssembler`、`LANAddress` 和 `BridgeController+Services.swift`，`BridgeController.swift` 现在 383 行；`Hex`、`IPAddress`、`AppVersion` 各一份；开发用客户端只从一个 `finish()` 退出。
 - ~~缺测试或测试偏弱：`matchKeyIgnoresKeyOrder`、`statusLineRejectsBadSessionId`、超长输入截断、`binaryAskWithoutAppExitsFast` 的 1 秒时限在并行测试下不稳；没有测试把协议文档里的示例和解码器对上。~~ **已完成**（`2269e32`）：几处测试补强；`binaryAskWithoutAppExitsFast` 改查“没有发布请求”，时限放宽到 5 秒；Mac 和手机两边都有测试把协议文档的每个 JSON 示例过一遍解码器。
@@ -102,7 +102,11 @@ vivo V2121A，debug 版（与正式版同一签名、同一份数据），调试
 
 ### 仍开着
 
-- **Mac 新版装上后的往返测试**（plan 5 Task 9 Step 4）：等用户来做。装新版会替换正在运行的 Critter.app 和 `~/.critter/bin/critter-hook`，所有 Claude Code 会话都在用它们。
+- **Mac 新版装上后的往返测试**（plan 5 Task 9 Step 4）：还没做，等用户来做。上面的真机检查连的是之前装好的旧版 Critter.app 和 `~/.critter/bin/critter-hook`，本轮 Mac 端的改动（拆 `BridgeController`、`DeviceRegistry`、新 hook 等）还没跟手机真正往返过。用户要：`make install` 装上新的 Critter.app 和 critter-hook；手机连上（或重新配对），确认连接和快照正常；回答一个请求（最好权限、问题、计划各一个）；发一条「发一句」；再看一个会话的状态栏输出和一次 PostToolUse 撤回。装新版会替换正在运行的 Critter.app 和 `~/.critter/bin/critter-hook`，所有 Claude Code 会话都在用它们。
 - **没在真机上做的检查**：充电横放约 3 秒自动打开（要实际把手机横过来；`BoardTriggerTest.gravityReadingsOpenTheBoardAfterThreeSeconds` 覆盖）；真正锁屏后补发通知（手机有锁屏密码，用关掉悬浮球代替）；真实来电（用不算用户动作的启动代替）；取消配对后马上杀进程（重新配对要在 Mac 上点「允许」，靠 `36d5c3f` 的代码审查）；`expired` 关卡片（只有 Mac 自己的过期请求才会回 `expired`，不能拿真实请求试；`AnswerInputTest` 覆盖）。
 - **前端优化轮**：字体 1.3 时第一只的“等你确认”气泡压住“已连接”约 6 dp；看板因配置变化重建的一瞬间悬浮球冒出来再钻回去；单色主题图标没在真机上验证。
 - 看板开着时从通知栏点通知打开卡片，仍算用户离开看板（这是用户自己的操作）；这时息屏会关掉看板并停掉本次充电的自动打开。
+- 首页列表和看板上作答回 `expired` 时，只弹通用提示（显示 Mac 的话），不去掉也不标出这个请求，要等下一份快照（`HomeScreen.kt:213`、`BoardActivity.kt:256`；批次 F 评审 M6）。前端优化轮。
+- 悬浮堆（或代替它的看板）在视线里时，只有请求会推迟到它离开视线后补发；这时来的“请在电脑上处理”等待提醒和做完、出错通知直接丢掉，不补发（`BridgeService.kt:94-99`；批次 F 评审 M7）。
+- 「正在发送…」（同一个请求的作答已经在发，`InFlight`）用的是失败的样式（批次 F 评审 M7）。前端优化轮。
+- 看板只是被自己盖上来的窗口（来电等）挡住，用户再从那个窗口按 Home 离开时，看板收不到离开的提示，留在后台；`BoardTriggerService` 仍当它开着，本次充电不再自动打开，重力传感器也一直开到拔电或竖着 3 秒（最终评审 Minor 4）。修起来不一定值得。
