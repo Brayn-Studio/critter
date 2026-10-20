@@ -46,6 +46,30 @@ class SkinTest {
         assertEquals(m, again)
     }
 
+    /**
+     * JSON has one number type: a tool may write a whole number as `60.0`. Swift's decoder takes it for an Int, so
+     * the Mac would show the skin; the phone must not fall back to clawd. A fraction is still no integer.
+     */
+    @Test
+    fun wholeNumberDoublesReadAsInts() {
+        val text = bundledSkinJson("clawd")
+            .replace("\"tickMs\": 60,", "\"tickMs\": 60.0,")
+            .replace("[\"base\", 40],", "[\"base\", 40.0],")
+            .replace("[\"base\", 10, 0, -1]", "[\"base\", 1e1, 0.0, -1.0]")
+            .replace("\"every\": [60, 160],", "\"every\": [60.0, 160],")
+            .replace("[\"blink\", 6],", "[\"blink\", 6.0],")
+        val m = assertNotNull(SkinLoader.decode(text))
+        assertEquals(60, m.tickMs)
+        assertEquals(listOf(ClipKey("base", 40), ClipKey("base", 10, 0, -1)), m.clips["idle"])
+        assertEquals(listOf(60, 160), m.states["idle"]?.fidget?.every)
+        assertEquals(WeightedClip("blink", 6), m.states["idle"]?.fidget?.pick?.first())
+        assertEquals(builtin(), m)
+
+        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("\"tickMs\": 60,", "\"tickMs\": 60.5,")))
+        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"base\", 40],", "[\"base\", 3.5],")))
+        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"blink\", 6],", "[\"blink\", 6.25],")))
+    }
+
     @Test
     fun titleIsOptional() {
         assertNull(builtin().title)

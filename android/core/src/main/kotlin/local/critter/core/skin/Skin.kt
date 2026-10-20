@@ -10,11 +10,15 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import local.critter.core.motion.GazeZone
 import local.critter.core.protocol.PetState
+import kotlin.math.abs
+import kotlin.math.floor
 
 /** The five states a manifest must define (the protocol's `unknown` is not one of them). */
 val SKIN_STATES: List<PetState> = PetState.entries.filter { it != PetState.unknown }
@@ -496,12 +500,29 @@ object SkinLoader {
     /** The manifest in `json`, or null if it doesn't decode or fails `SkinValidator`. */
     fun decode(json: String): SkinManifest? {
         val manifest = try {
-            SkinJson.decodeFromString(SkinManifest.serializer(), json)
+            SkinJson.decodeFromJsonElement(SkinManifest.serializer(), wholeNumbersAsIntegers(SkinJson.parseToJsonElement(json)))
         } catch (_: SerializationException) {
             return null
         } catch (_: IllegalArgumentException) {
             return null
         }
         return manifest.takeIf { SkinValidator.validate(it).isEmpty() }
+    }
+
+    /**
+     * JSON has one number type, and Swift's decoder reads a whole number written as `60.0` or `6e1` into an Int, so
+     * the Mac shows such a skin. Here they become integer literals before decoding; a fraction stays one (and is
+     * no Int), and a `Double` field takes an integer literal just the same.
+     */
+    private fun wholeNumbersAsIntegers(e: JsonElement): JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.mapValues { wholeNumbersAsIntegers(it.value) })
+        is JsonArray -> JsonArray(e.map(::wholeNumbersAsIntegers))
+        is JsonNull -> e
+        is JsonPrimitive -> {
+            val c = e.content
+            val whole = if (e.isString || c.none { it == '.' || it == 'e' || it == 'E' }) null
+            else c.toDoubleOrNull()?.takeIf { it == floor(it) && abs(it) < 1e15 }
+            if (whole != null) JsonPrimitive(whole.toLong()) else e
+        }
     }
 }
