@@ -1,6 +1,7 @@
 package local.critter.core.motion
 
 import local.critter.core.builtin
+import local.critter.core.withState
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.ClipKey
 import local.critter.core.skin.SKIN_STATES
@@ -361,9 +362,7 @@ class MotionStateTest {
         a.hidden = false
         assertTrue(a.snapshot().accessory != null && a.snapshot().badge != null)
 
-        val skin = builtin()
-        skin.states["idle"]!!.accessory = "q"
-        skin.states["idle"]!!.sleep!!.after = 5
+        val skin = builtin().withState("idle") { it.copy(accessory = "q", sleep = it.sleep!!.copy(after = 5)) }
         val b = makeActor(skin)
         b.enterState(PetState.idle, quiet = true)
         assertNotNull(b.snapshot().accessory)

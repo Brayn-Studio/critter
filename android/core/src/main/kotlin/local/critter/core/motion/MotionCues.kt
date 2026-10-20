@@ -9,7 +9,7 @@ object MotionCues {
     /** "Looks at you" when a sheet settles: the notice hop, then a held look up with a blink (about 1.7 s). */
     fun lookAtYou(skin: SkinManifest): MotionClip {
         val n = skin.interactions
-        val notice = skin.clips[n.notice].orEmpty().map { it.copy() }
+        val notice = skin.clips[n.notice].orEmpty()
         return notice + listOf(
             ClipKey(n.lookUp, 12),
             ClipKey(n.blinkPose, 2),

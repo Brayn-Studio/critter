@@ -6,6 +6,10 @@ import local.critter.core.builtin
 import local.critter.core.bundledSkin
 import local.critter.core.bundledSkinJson
 import local.critter.core.mutated
+import local.critter.core.withAccessory
+import local.critter.core.withFirstParticle
+import local.critter.core.withPart
+import local.critter.core.withState
 import java.io.File
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -68,6 +72,25 @@ class SkinTest {
         assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("\"tickMs\": 60,", "\"tickMs\": 60.5,")))
         assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"base\", 40],", "[\"base\", 3.5],")))
         assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"blink\", 6],", "[\"blink\", 6.25],")))
+    }
+
+    /**
+     * One manifest object is handed to every Critter that wears the skin (the library caches it), so nothing may be
+     * able to change it in place: no setters anywhere in it. A changed manifest is a copy.
+     */
+    @Test
+    fun manifestsAreNotSharedMutably() {
+        val types = listOf(
+            SkinManifest::class, SkinPart::class, ClipKey::class, Span::class, ParticleSpec::class, EffectSpec::class,
+            AccessorySpec::class, WeightedClip::class, FidgetSpec::class, SleepSpec::class, ImpatientSpec::class,
+            BadgeSpec::class, VariantSpec::class, GazePoses::class, StateSpec::class, InteractionNames::class,
+            PropSpec::class,
+        )
+        for (t in types) {
+            val setters = t.java.declaredMethods.filter { it.name.startsWith("set") && it.parameterCount == 1 }
+            assertTrue(setters.isEmpty(), "${t.simpleName}: ${setters.map { it.name }}")
+        }
+        assertEquals(SkinLoader.decode(bundledSkinJson("sprig")), SkinLoader.decode(bundledSkinJson("sprig")))
     }
 
     @Test
@@ -156,9 +179,8 @@ class SkinTest {
     fun portraitIsTheBasePoseOrElseLookCenter() {
         val m = builtin()
         assertEquals(SkinRenderer.grid(m, "base"), SkinRenderer.portrait(m))
-        m.poses.remove("base")
-        m.interactions.lookCenter = "look_l"
-        assertEquals(SkinRenderer.grid(m, "look_l"), SkinRenderer.portrait(m))
+        val noBase = m.copy(poses = m.poses - "base", interactions = m.interactions.copy(lookCenter = "look_l"))
+        assertEquals(SkinRenderer.grid(noBase, "look_l"), SkinRenderer.portrait(noBase))
     }
 
     @Test
@@ -209,104 +231,119 @@ class SkinTest {
 
     // MARK: - Validator
 
-    @Test fun validatorRejectsSchema1() = assertFalse(mutated { it.schema = 1 }.isEmpty())
+    @Test fun validatorRejectsSchema1() = assertFalse(mutated { it.copy(schema = 1) }.isEmpty())
 
-    @Test fun validatorCatchesMissingState() = assertFalse(mutated { it.states.remove("waiting") }.isEmpty())
+    @Test fun validatorCatchesMissingState() = assertFalse(mutated { it.copy(states = it.states - "waiting") }.isEmpty())
+
+    private fun SkinManifest.withIdleClip(vararg keys: ClipKey) = copy(clips = clips + ("idle" to keys.toList()))
 
     @Test
     fun validatorCatchesUnknownPoseInClip() =
-        assertFalse(mutated { it.clips["idle"] = listOf(ClipKey(pose = "nope", ticks = 1)) }.isEmpty())
+        assertFalse(mutated { it.withIdleClip(ClipKey(pose = "nope", ticks = 1)) }.isEmpty())
 
     @Test
     fun validatorCatchesZeroTickKey() =
-        assertFalse(mutated { it.clips["idle"] = listOf(ClipKey(pose = "base", ticks = 0)) }.isEmpty())
+        assertFalse(mutated { it.withIdleClip(ClipKey(pose = "base", ticks = 0)) }.isEmpty())
 
     @Test
     fun validatorCatchesUnknownEffect() =
-        assertFalse(mutated { it.clips["idle"] = listOf(ClipKey(pose = "base", ticks = 1, effect = "nope")) }.isEmpty())
+        assertFalse(mutated { it.withIdleClip(ClipKey(pose = "base", ticks = 1, effect = "nope")) }.isEmpty())
 
     @Test
     fun validatorReportsReservedEffectNameAsUnknown() {
-        assertFalse(mutated { it.clips["idle"] = listOf(ClipKey(pose = "base", ticks = 1, effect = "@seat")) }.isEmpty())
-        assertFalse(mutated { it.effects["@seat"] = it.effects["dust"]!! }.isEmpty())
+        assertFalse(mutated { it.withIdleClip(ClipKey(pose = "base", ticks = 1, effect = "@seat")) }.isEmpty())
+        assertFalse(mutated { it.copy(effects = it.effects + ("@seat" to it.effects.getValue("dust"))) }.isEmpty())
     }
 
     @Test
     fun validatorCatchesUnknownPartInPose() =
-        assertFalse(mutated { it.poses["base"] = listOf("body", "nope") }.isEmpty())
+        assertFalse(mutated { it.copy(poses = it.poses + ("base" to listOf("body", "nope"))) }.isEmpty())
 
     @Test
     fun validatorCatchesRaggedPartRows() =
-        assertFalse(mutated { it.parts["body"]!!.rows = listOf("####", "##") }.isEmpty())
+        assertFalse(mutated { m -> m.withPart("body") { it.copy(rows = listOf("####", "##")) } }.isEmpty())
 
     @Test
-    fun validatorCatchesCharacterNotInPalette() = assertFalse(mutated { it.palette.remove("o") }.isEmpty())
+    fun validatorCatchesCharacterNotInPalette() = assertFalse(mutated { it.copy(palette = it.palette - "o") }.isEmpty())
 
     @Test
-    fun validatorCatchesMissingVariantLoop() =
-        assertFalse(mutated { it.states["running"]!!.variants!!["think"]!!.loop = "nope" }.isEmpty())
+    fun validatorCatchesMissingVariantLoop() = assertFalse(
+        mutated { m ->
+            m.withState("running") { s ->
+                val variants = s.variants!!
+                s.copy(variants = variants + ("think" to variants.getValue("think").copy(loop = "nope")))
+            }
+        }.isEmpty(),
+    )
 
     @Test
-    fun validatorCatchesUnknownInteractionClip() = assertFalse(mutated { it.interactions.notice = "nope" }.isEmpty())
+    fun validatorCatchesUnknownInteractionClip() =
+        assertFalse(mutated { it.copy(interactions = it.interactions.copy(notice = "nope")) }.isEmpty())
 
     @Test
     fun validatorCatchesUnknownGlyphInEffect() =
-        assertFalse(mutated { it.effects["dust"]!!.particles!![0].glyph = "nope" }.isEmpty())
+        assertFalse(mutated { m -> m.withFirstParticle("dust") { it.copy(glyph = "nope") } }.isEmpty())
 
     @Test
     fun validatorBoundsTheTitle() {
-        assertEquals(listOf("title must be 1…40 characters"), mutated { it.title = "" })
-        assertEquals(listOf("title must be 1…40 characters"), mutated { it.title = "芽".repeat(41) })
-        assertTrue(mutated { it.title = "芽".repeat(40) }.isEmpty())
+        assertEquals(listOf("title must be 1…40 characters"), mutated { it.copy(title = "") })
+        assertEquals(listOf("title must be 1…40 characters"), mutated { it.copy(title = "芽".repeat(41)) })
+        assertTrue(mutated { it.copy(title = "芽".repeat(40)) }.isEmpty())
     }
 
     @Test
     fun validatorCatchesUnknownGazePose() {
-        val m = bundledSkin("sprig")
-        assertNotNull(m.states["done"]?.gaze)
-        m.states["done"]!!.gaze!!.right = "nope"
+        val sprig = bundledSkin("sprig")
+        assertNotNull(sprig.states["done"]?.gaze)
+        val m = sprig.withState("done") { it.copy(gaze = it.gaze!!.copy(right = "nope")) }
         assertEquals(listOf("state done gaze references unknown pose nope"), SkinValidator.validate(m))
     }
 
     @Test
     fun validatorPinsTheGridTo18By10() {
         // The renderer, layout, hover and gaze all draw an 18×10 box with the ground on row 10.
-        assertTrue(mutated { it.grid = listOf(20, 10) }.any { "grid" in it })
-        assertTrue(mutated { it.grid = listOf(18, 12) }.any { "grid" in it })
-        assertTrue(mutated { it.grid = listOf(18) }.any { "grid" in it })
+        assertTrue(mutated { it.copy(grid = listOf(20, 10)) }.any { "grid" in it })
+        assertTrue(mutated { it.copy(grid = listOf(18, 12)) }.any { "grid" in it })
+        assertTrue(mutated { it.copy(grid = listOf(18)) }.any { "grid" in it })
     }
 
     @Test
     fun validatorBoundsEveryNumber() {
         // Each would overflow or hog the CPU at runtime; out of range, the skin is rejected
         // instead, so clawd is used.
-        val cases: List<Pair<String, (SkinManifest) -> Unit>> = listOf(
-            "tickMs" to { m -> m.tickMs = 1 },
-            "tickMs" to { m -> m.tickMs = 100_000 },
-            "part body at" to { m -> m.parts["body"]!!.at = listOf(Int.MAX_VALUE, 0) },
-            "part body" to { m -> m.parts["body"]!!.rows = listOf("#".repeat(65)) },
-            "glyph dot" to { m -> m.glyphs["dot"] = List(65) { "#" } },
-            "clip idle key ticks" to { m -> m.clips["idle"] = listOf(ClipKey(pose = "base", ticks = Int.MAX_VALUE)) },
-            "clip idle key dy" to { m -> m.clips["idle"] = listOf(ClipKey(pose = "base", ticks = 1, dx = 0, dy = Int.MIN_VALUE)) },
-            "clip idle key dx" to { m -> m.clips["idle"] = listOf(ClipKey(pose = "base", ticks = 1, dx = 1_000, dy = 0)) },
-            "particle life" to { m -> m.effects["dust"]!!.particles!![0].life = Span(1.0, 1e12) },
-            "particle count" to { m -> m.effects["dust"]!!.particles!![0].count = 1_000_000 },
-            "particle x" to { m -> m.effects["dust"]!!.particles!![0].x = Span(-1e300, 0.0) },
-            "particle vy" to { m -> m.effects["dust"]!!.particles!![0].vy = Span(1e300) },
-            "particle ay" to { m -> m.effects["dust"]!!.particles!![0].ay = Double.NaN },
-            "particle sway" to { m -> m.effects["dust"]!!.particles!![0].sway = 1e9 },
-            "accessory spinner box" to { m -> m.accessories["spinner"]!!.box = Int.MAX_VALUE },
-            "accessory spinner periodMs" to { m -> m.accessories["spinner"]!!.periodMs = 0 },
-            "accessory q bobEvery" to { m -> m.accessories["q"]!!.bobEvery = Int.MAX_VALUE },
-            "accessory check twinkleEvery" to { m -> m.accessories["check"]!!.twinkleEvery = -1 },
-            "fidget.every" to { m -> m.states["idle"]!!.fidget!!.every = listOf(1, Int.MAX_VALUE) },
-            "fidget weight" to { m -> m.states["idle"]!!.fidget!!.pick[0].weight = Int.MAX_VALUE },
-            "sleep.after" to { m -> m.states["idle"]!!.sleep!!.after = Int.MAX_VALUE },
-            "impatient.after" to { m -> m.states["waiting"]!!.impatient!!.after = Int.MIN_VALUE },
-            "badge x" to { m -> m.states["waiting"]!!.badge!!.x = Int.MAX_VALUE },
-            "badge hopEvery" to { m -> m.states["waiting"]!!.badge!!.hopEvery = Int.MAX_VALUE },
-            "badge impatientHopEvery" to { m -> m.states["waiting"]!!.badge!!.impatientHopEvery = 0 },
-            "stillDy" to { m -> m.states["error"]!!.stillDy = Int.MIN_VALUE },
+        val cases: List<Pair<String, (SkinManifest) -> SkinManifest>> = listOf(
+            "tickMs" to { m -> m.copy(tickMs = 1) },
+            "tickMs" to { m -> m.copy(tickMs = 100_000) },
+            "part body at" to { m -> m.withPart("body") { it.copy(at = listOf(Int.MAX_VALUE, 0)) } },
+            "part body" to { m -> m.withPart("body") { it.copy(rows = listOf("#".repeat(65))) } },
+            "glyph dot" to { m -> m.copy(glyphs = m.glyphs + ("dot" to List(65) { "#" })) },
+            "clip idle key ticks" to { m -> m.withIdleClip(ClipKey(pose = "base", ticks = Int.MAX_VALUE)) },
+            "clip idle key dy" to { m -> m.withIdleClip(ClipKey(pose = "base", ticks = 1, dx = 0, dy = Int.MIN_VALUE)) },
+            "clip idle key dx" to { m -> m.withIdleClip(ClipKey(pose = "base", ticks = 1, dx = 1_000, dy = 0)) },
+            "particle life" to { m -> m.withFirstParticle("dust") { it.copy(life = Span(1.0, 1e12)) } },
+            "particle count" to { m -> m.withFirstParticle("dust") { it.copy(count = 1_000_000) } },
+            "particle x" to { m -> m.withFirstParticle("dust") { it.copy(x = Span(-1e300, 0.0)) } },
+            "particle vy" to { m -> m.withFirstParticle("dust") { it.copy(vy = Span(1e300)) } },
+            "particle ay" to { m -> m.withFirstParticle("dust") { it.copy(ay = Double.NaN) } },
+            "particle sway" to { m -> m.withFirstParticle("dust") { it.copy(sway = 1e9) } },
+            "accessory spinner box" to { m -> m.withAccessory("spinner") { it.copy(box = Int.MAX_VALUE) } },
+            "accessory spinner periodMs" to { m -> m.withAccessory("spinner") { it.copy(periodMs = 0) } },
+            "accessory q bobEvery" to { m -> m.withAccessory("q") { it.copy(bobEvery = Int.MAX_VALUE) } },
+            "accessory check twinkleEvery" to { m -> m.withAccessory("check") { it.copy(twinkleEvery = -1) } },
+            "fidget.every" to { m -> m.withState("idle") { it.copy(fidget = it.fidget!!.copy(every = listOf(1, Int.MAX_VALUE))) } },
+            "fidget weight" to { m ->
+                m.withState("idle") { s ->
+                    val fidget = s.fidget!!
+                    val pick = fidget.pick
+                    s.copy(fidget = fidget.copy(pick = listOf(pick[0].copy(weight = Int.MAX_VALUE)) + pick.drop(1)))
+                }
+            },
+            "sleep.after" to { m -> m.withState("idle") { it.copy(sleep = it.sleep!!.copy(after = Int.MAX_VALUE)) } },
+            "impatient.after" to { m -> m.withState("waiting") { it.copy(impatient = it.impatient!!.copy(after = Int.MIN_VALUE)) } },
+            "badge x" to { m -> m.withState("waiting") { it.copy(badge = it.badge!!.copy(x = Int.MAX_VALUE)) } },
+            "badge hopEvery" to { m -> m.withState("waiting") { it.copy(badge = it.badge!!.copy(hopEvery = Int.MAX_VALUE)) } },
+            "badge impatientHopEvery" to { m -> m.withState("waiting") { it.copy(badge = it.badge!!.copy(impatientHopEvery = 0)) } },
+            "stillDy" to { m -> m.withState("error") { it.copy(stillDy = Int.MIN_VALUE) } },
         )
         for ((field, change) in cases) {
             val problems = mutated(change)
@@ -318,16 +355,14 @@ class SkinTest {
 
     @Test
     fun loaderFallsBackOnInvalidSkin() {
-        val invalid = builtin()
-        invalid.states.remove("waiting")
+        val invalid = builtin().let { it.copy(states = it.states - "waiting") }
         assertNull(SkinLoader.decode(json.encodeToString(SkinManifest.serializer(), invalid)))
         assertNull(SkinLoader.decode("not json"))
     }
 
     @Test
     fun loaderFindsValidSkin() {
-        val custom = builtin()
-        custom.name = "custom"
+        val custom = builtin().copy(name = "custom")
         val loaded = SkinLoader.decode(json.encodeToString(SkinManifest.serializer(), custom))
         assertEquals("custom", loaded?.name)
     }
@@ -336,15 +371,13 @@ class SkinTest {
     fun loaderFirstValidSourceWins() {
         // The Swift test searches two directories; here the library's sources: a pushed manifest
         // that is invalid is skipped for the valid bundled one.
-        val invalid = builtin()
-        invalid.states.remove("waiting")
+        val invalid = builtin().let { it.copy(states = it.states - "waiting") }
         val library = SkinLibrary(
             assetReader = { if (it == "skins/clawd/manifest.json") bundledSkinJson("clawd") else null },
             pushed = mapOf("clawd" to json.encodeToString(SkinManifest.serializer(), invalid)),
         )
         assertEquals("clawd", library.manifest("clawd").name)
-        val valid = builtin()
-        valid.name = "second-wins"
+        val valid = builtin().copy(name = "second-wins")
         val pushedFirst = SkinLibrary(
             assetReader = { bundledSkinJson("clawd") },
             pushed = mapOf("clawd" to json.encodeToString(SkinManifest.serializer(), valid)),
@@ -367,7 +400,7 @@ class SkinTest {
     /** The desktop's rule (random-pets spec): one clock per row, at the default skin's tick; others don't join. */
     @Test
     fun onlySkinsOnTheClockSkinsTickJoinTheRow() {
-        val slow = builtin().apply { name = "slow"; tickMs = 100 }
+        val slow = builtin().copy(name = "slow", tickMs = 100)
         val slowJson = json.encodeToString(SkinManifest.serializer(), slow)
         val reader = { path: String -> path.takeIf { it.startsWith("skins/") }?.let { runCatching { bundledSkinJson(it.split('/')[1]) }.getOrNull() } }
 
@@ -390,8 +423,7 @@ class SkinTest {
 
     @Test
     fun unknownOrInvalidSkinFallsBackToClawd() {
-        val broken = builtin()
-        broken.states.remove("waiting")
+        val broken = builtin().let { it.copy(states = it.states - "waiting") }
         val library = SkinLibrary(
             assetReader = { path -> path.takeIf { it.startsWith("skins/") }?.let { runCatching { bundledSkinJson(it.split('/')[1]) }.getOrNull() } },
             pushed = mapOf("broken" to json.encodeToString(SkinManifest.serializer(), broken), "garbage" to "{"),
