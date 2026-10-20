@@ -393,8 +393,11 @@ class BridgeRepository(private val app: Application) {
             pairingStore.save(p)
             _pairing.value = p
             BridgeService.sync(app, this)
-            // A running service only re-delivers onStartCommand; the client must be restarted here (idempotent).
-            // Not with "保持后台连接" off: then there is no service, and no connection without it.
+            // A running service only re-delivers onStartCommand; the client must be restarted here. Restarted, not
+            // just started: one may have come up for the old pairing meanwhile (the app came back to the front
+            // while the Mac was asking), pinned to the old certificate. Not with "保持后台连接" off: then there is
+            // no service, and no connection without it.
+            stopClient()
             if (BridgeService.shouldRun(this)) startClient()
             success = true
             return null
