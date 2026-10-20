@@ -5,7 +5,6 @@ import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
 import android.os.Bundle
-import android.os.PowerManager
 import androidx.core.content.ContextCompat
 import local.critter.phone.board.BoardTriggerService
 import android.view.MotionEvent
@@ -67,6 +66,13 @@ class BoardActivity : ComponentActivity() {
     /** True when the trigger asked the board to go (unplugged, or the phone stood up); that is not a manual exit. */
     private var closedByTrigger = false
 
+    /**
+     * The user sent the board away (home, recents: [onUserLeaveHint]) since it was last in front. Not an incoming
+     * call or another window coming up over it by itself, nor the screen going off. A card the board opens also
+     * gives the hint, but it floats over the board, which only pauses; back in front ([onResume]) clears it.
+     */
+    private var leftByHand = false
+
     private val receiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             when (intent.action) {
@@ -126,17 +132,27 @@ class BoardActivity : ComponentActivity() {
         super.onDestroy()
     }
 
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        leftByHand = true
+    }
+
+    override fun onResume() {
+        super.onResume()
+        leftByHand = false
+    }
+
     override fun onStop() {
         if (counted) {
             counted = false
             repository.boardVisible(false)
         }
-        // Leaving by hand (back, home) keeps the board from opening again on this charge. The screen going off
-        // is not leaving. A card opened from the board floats over it (translucent): the board only pauses.
-        val byHand = isFinishing || getSystemService(PowerManager::class.java).isInteractive
+        // Left by hand: back (finishing), or home and recents. That keeps the board from opening again on this
+        // charge, and a board sent away is closed rather than kept alive out of sight until the charger is pulled.
+        // The screen going off, an incoming call or any other window over the board is neither: it stays as it is.
+        val byHand = isFinishing || leftByHand
         if (!closedByTrigger && byHand && !isChangingConfigurations) BoardTriggerService.manualExit()
-        // Left by hand (home, recents): gone, rather than kept alive out of sight until the charger is pulled.
-        if (byHand && !isFinishing && !isChangingConfigurations) finish()
+        if (leftByHand && !isFinishing && !isChangingConfigurations) finish()
         super.onStop()
     }
 
