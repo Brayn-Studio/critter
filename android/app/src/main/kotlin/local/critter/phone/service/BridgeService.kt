@@ -45,10 +45,13 @@ class BridgeService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        // Must be called promptly after startForegroundService, even if we are about to stop.
+        // Must be called promptly after startForegroundService, even if we are about to stop. Every screen's start
+        // comes through here (ensureConnected), so this posts the line as it stands: the status collector below
+        // only posts changes and would leave a fixed "未连接" up while connected.
+        val (title, text) = statusText(repo.state.value, repo.live.value, repo.pairing.value?.macName)
         startForeground(
             Alerts.STATUS_ID,
-            Alerts.statusNotification(this, "未连接", null),
+            Alerts.statusNotification(this, title, text),
             ServiceInfo.FOREGROUND_SERVICE_TYPE_CONNECTED_DEVICE,
         )
         if (!shouldRun(repo)) {
