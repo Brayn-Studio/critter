@@ -29,6 +29,20 @@ class PairingUriTest {
         assertEquals("Xuan's MacBook", uri.name)
     }
 
+    /**
+     * The Mac percent-encodes everything but `A-Z a-z 0-9 - . _ ~` (Swift `PairingURI.string`), so its links carry a
+     * plus as `%2B`. A literal "+" (a link typed or made by hand) is a plus, as Swift's `URLComponents` reads it, not
+     * the space of form encoding.
+     */
+    @Test fun plusInTheNameStaysAPlus() {
+        val link = "critter-pair://192.168.1.20:47823?fp=$fp&code=K7M2QX9P&name="
+        assertEquals("A+B", PairingUri.parse(link + "A+B")?.name)
+        assertEquals("A+B", PairingUri.parse(link + "A%2BB")?.name)
+        assertEquals("A B", PairingUri.parse(link + "A%20B")?.name)
+        assertEquals("C++ Mac", PairingUri.parse(link + "C++%20Mac")?.name)
+        assertTrue(PairingUri("192.168.1.20", 47823, fp, "K7M2QX9P", "A+B").toString().endsWith("&name=A%2BB"))
+    }
+
     @Test fun pairingUriRejectsGarbage() {
         assertNull(PairingUri.parse("http://x"))
         assertNull(PairingUri.parse("critter-pair://1.2.3.4:5?fp=zz&code=A&name=n"))
