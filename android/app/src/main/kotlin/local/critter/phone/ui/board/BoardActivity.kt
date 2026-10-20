@@ -132,9 +132,11 @@ class BoardActivity : ComponentActivity() {
             repository.boardVisible(false)
         }
         // Leaving by hand (back, home) keeps the board from opening again on this charge. The screen going off
-        // is not leaving.
+        // is not leaving. A card opened from the board floats over it (translucent): the board only pauses.
         val byHand = isFinishing || getSystemService(PowerManager::class.java).isInteractive
         if (!closedByTrigger && byHand && !isChangingConfigurations) BoardTriggerService.manualExit()
+        // Left by hand (home, recents): gone, rather than kept alive out of sight until the charger is pulled.
+        if (byHand && !isFinishing && !isChangingConfigurations) finish()
         super.onStop()
     }
 
