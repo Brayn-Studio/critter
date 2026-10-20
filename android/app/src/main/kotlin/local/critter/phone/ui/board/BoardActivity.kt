@@ -68,8 +68,8 @@ class BoardActivity : ComponentActivity() {
 
     /**
      * The user sent the board away (home, recents: [onUserLeaveHint]) since it was last in front. Not an incoming
-     * call or another window coming up over it by itself, nor the screen going off. A card the board opens also
-     * gives the hint, but it floats over the board, which only pauses; back in front ([onResume]) clears it.
+     * call or another window coming up over it by itself, nor the screen going off. A card the board opens itself
+     * gives no hint ([OWN_CARD]): it floats over the board, which only pauses. Back in front ([onResume]) clears it.
      */
     private var leftByHand = false
 
@@ -213,7 +213,7 @@ class BoardActivity : ComponentActivity() {
                 },
         ) {
             if (settings.boardCritterMode) {
-                CritterBoard(data, library, shift) { SessionTap.handle(this@BoardActivity, repo, it) }
+                CritterBoard(data, library, shift) { SessionTap.handle(this@BoardActivity, repo, it, OWN_CARD) }
             } else {
                 ProBoard(
                     data = data,
@@ -221,7 +221,9 @@ class BoardActivity : ComponentActivity() {
                     shift = shift,
                     onAllow = { answerPermission(repo, it, allow = true) },
                     onDeny = { answerPermission(repo, it, allow = false) },
-                    onOpen = { startActivity(AnswerActivity.intent(this@BoardActivity, it.requestId)) },
+                    onOpen = {
+                        startActivity(AnswerActivity.intent(this@BoardActivity, it.requestId).addFlags(OWN_CARD))
+                    },
                 )
             }
             BoardModeButton(
@@ -253,6 +255,13 @@ class BoardActivity : ComponentActivity() {
 
     companion object {
         private const val EXTRA_AUTO = "auto"
+
+        /**
+         * Added to every card the board starts itself (answer card, details), so opening one is not the user leaving
+         * the board ([onUserLeaveHint]): the screen going off or a call while the card is up must not close the
+         * board and keep it from opening again on this charge.
+         */
+        private const val OWN_CARD = Intent.FLAG_ACTIVITY_NO_USER_ACTION
 
         fun intent(context: Context, auto: Boolean = false): Intent =
             Intent(context, BoardActivity::class.java).putExtra(EXTRA_AUTO, auto)

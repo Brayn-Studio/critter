@@ -13,7 +13,8 @@ import local.critter.phone.ui.detail.DetailActivity
  * is marked seen and shows its details; any other shows its details.
  */
 object SessionTap {
-    fun handle(context: Context, repo: BridgeRepository, sessionId: String) {
+    /** [flags] are added to the card's launch (the board adds [Intent.FLAG_ACTIVITY_NO_USER_ACTION]). */
+    fun handle(context: Context, repo: BridgeRepository, sessionId: String, flags: Int = 0) {
         val body = repo.snapshot.value ?: return
         val session = body.sessions.firstOrNull { it.id == sessionId } ?: return
         val request = body.pending.filter { it.sessionId == sessionId }.minByOrNull { it.createdAt }
@@ -24,6 +25,6 @@ object SessionTap {
             DetailActivity.intent(context, sessionId)
         }
         // From the floating pile there is no activity to start from.
-        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        context.startActivity(intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or flags))
     }
 }
