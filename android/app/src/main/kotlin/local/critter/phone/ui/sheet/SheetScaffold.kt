@@ -28,7 +28,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,16 +59,13 @@ import local.critter.core.skin.SkinManifest
 import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterView
-import local.critter.phone.ui.folderName
+import local.critter.phone.ui.PlaceRow
 import local.critter.phone.ui.look.SkyTime
 import local.critter.phone.ui.look.skyColors
 import local.critter.phone.ui.meadow.STAGE_PET
-import local.critter.phone.ui.sourceIcon
-import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.LocalDarkTheme
 import local.critter.phone.ui.theme.Nunito
-import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.PixelShape
 import local.critter.phone.ui.theme.rememberReduceMotion
 import kotlin.math.ceil
@@ -270,7 +266,7 @@ fun SheetHeader(
                 title, color = c.ink, fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 18.sp, lineHeight = 23.sp,
                 maxLines = 2, overflow = TextOverflow.Ellipsis,
             )
-            if (session != null) PlaceMeta(session, Modifier.padding(top = 2.dp))
+            if (session != null) PlaceRow(session, Modifier.padding(top = 2.dp))
         }
     }
 }
@@ -299,28 +295,6 @@ private fun PetTile(manifest: SkinManifest, state: PetState, activity: String?, 
 }
 
 private val TileGrass = 8.dp
-
-/** "folder · branch · source", each with its icon; the folder and branch are cut short when they don't fit. */
-@Composable
-private fun PlaceMeta(session: BridgeSession, modifier: Modifier) {
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        MetaItem("folder", folderName(session.cwd), Modifier.widthIn(max = 104.dp))
-        session.branch?.takeIf { it.isNotBlank() }?.let { MetaItem("branch", it, Modifier.weight(1f, fill = false)) }
-        MetaItem(sourceIcon(session.source), sourceLabel(session.source), Modifier)
-    }
-}
-
-@Composable
-private fun MetaItem(icon: String, text: String, modifier: Modifier) {
-    val c = Critter.colors
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        PixelIcon(icon, tint = c.ink2)
-        Text(
-            text, color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 12.sp,
-            maxLines = 1, overflow = TextOverflow.Ellipsis,
-        )
-    }
-}
 
 /**
  * One live Critter on a stage the size of [modifier], with no backdrop of its own (the caller paints the tile or

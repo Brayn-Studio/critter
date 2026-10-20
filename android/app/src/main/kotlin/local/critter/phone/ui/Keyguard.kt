@@ -2,6 +2,8 @@ package local.critter.phone.ui
 
 import android.app.Activity
 import android.app.KeyguardManager
+import android.content.Context
+import android.content.ContextWrapper
 
 /**
  * Runs [action] now if the phone is unlocked; on the lock screen, asks to unlock first and runs it only once that
@@ -16,4 +18,11 @@ fun Activity.withKeyguardDismissed(action: () -> Unit) {
     keyguard.requestDismissKeyguard(this, object : KeyguardManager.KeyguardDismissCallback() {
         override fun onDismissSucceeded() = action()
     })
+}
+
+/** The activity behind a Compose screen's context (to dismiss the keyguard from, or for its window). */
+tailrec fun Context.findActivity(): Activity? = when (this) {
+    is Activity -> this
+    is ContextWrapper -> baseContext.findActivity()
+    else -> null
 }

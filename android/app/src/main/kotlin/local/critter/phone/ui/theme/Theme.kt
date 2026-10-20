@@ -13,7 +13,10 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.AndroidFont
 import androidx.compose.ui.text.font.Font
 import androidx.compose.ui.text.font.FontFamily
@@ -21,6 +24,8 @@ import androidx.compose.ui.text.font.FontLoadingStrategy
 import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontVariation
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.em
 import local.critter.core.protocol.PetState
 import local.critter.phone.R
@@ -158,6 +163,16 @@ val Silkscreen: FontFamily = FontFamily(
     Font(R.font.silkscreen_regular, FontWeight.Normal),
     Font(R.font.silkscreen_bold, FontWeight.Bold),
 )
+
+/**
+ * A percentage for a [Silkscreen] text: its digits stay in pixel type, its "%" and "≈" are in Nunito at [signSize]
+ * (Silkscreen's % reads as a z when small; design §6).
+ */
+fun percentText(text: String, signSize: TextUnit): AnnotatedString = buildAnnotatedString {
+    for (ch in text) {
+        if (ch.isDigit()) append(ch) else withStyle(SpanStyle(fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = signSize)) { append(ch) }
+    }
+}
 
 private fun TextStyle.nunito() = copy(fontFamily = Nunito)
 

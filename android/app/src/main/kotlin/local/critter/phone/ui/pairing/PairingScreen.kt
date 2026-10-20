@@ -1,9 +1,6 @@
 package local.critter.phone.ui.pairing
 
 import android.Manifest
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
@@ -107,6 +104,7 @@ import local.critter.phone.onboarding.StepPosition
 import local.critter.phone.onboarding.StepStage
 import local.critter.phone.onboarding.StepTitle
 import local.critter.phone.onboarding.bundledSkin
+import local.critter.phone.ui.findActivity
 import local.critter.phone.ui.meadow.LonePet
 import local.critter.phone.ui.meadow.STAGE_PET
 import local.critter.phone.ui.theme.ButtonKind
@@ -543,12 +541,6 @@ private fun LightSystemBarIcons() {
             bars.isAppearanceLightNavigationBars = themeDarkIcons
         }
     }
-}
-
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
 }
 
 // --- typing the code -----------------------------------------------------------------------------------------

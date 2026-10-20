@@ -16,12 +16,7 @@ import androidx.compose.ui.layout.layout
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.TextUnit
@@ -29,7 +24,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.theme.BoardColors
-import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.PixelShape
 import local.critter.phone.ui.theme.SegmentMeter
@@ -78,13 +72,6 @@ fun boardDateText(nowMs: Long, zone: ZoneId = ZoneId.systemDefault()): String {
 
 /** The orange line under the clock while the Mac is out of reach: "未连接 · 5 分钟前". */
 fun offlineText(data: BoardData): String = "未连接" + (data.updatedAt?.let { " · ${agoText(it, data.now)}" } ?: "")
-
-/** A number in Silkscreen with its "%" and "≈" in Nunito (Silkscreen's % reads as a z when small). */
-fun boardPercent(text: String, signSize: TextUnit): AnnotatedString = buildAnnotatedString {
-    for (ch in text) {
-        if (ch.isDigit()) append(ch) else withStyle(SpanStyle(fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = signSize)) { append(ch) }
-    }
-}
 
 /** A flat, dim meter in the board's colors. */
 @Composable

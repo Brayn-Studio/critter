@@ -62,7 +62,6 @@ import local.critter.phone.ui.board.BoardMeter
 import local.critter.phone.ui.board.CardRequest
 import local.critter.phone.ui.board.boardClockText
 import local.critter.phone.ui.board.boardDateText
-import local.critter.phone.ui.board.boardPercent
 import local.critter.phone.ui.board.cardRequests
 import local.critter.phone.ui.board.cssLine
 import local.critter.phone.ui.board.offlineText
@@ -74,6 +73,7 @@ import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.Silkscreen
+import local.critter.phone.ui.theme.percentText
 import local.critter.phone.ui.theme.pixelSurface
 import local.critter.phone.ui.theme.wholePx
 import kotlin.math.max
@@ -266,7 +266,7 @@ private fun MiniLimit(label: String, window: RateWindow?) {
         )
         BoardMeter(window?.usedPercentage, 10, 6.dp, Modifier.padding(start = 10.dp).width(120.dp))
         Text(
-            boardPercent(LimitsText.percent(window), 11.sp),
+            percentText(LimitsText.percent(window), 11.sp),
             color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 13.sp, textAlign = TextAlign.End, maxLines = 1,
             modifier = Modifier.padding(start = 10.dp).width(40.dp),
         )

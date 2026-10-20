@@ -60,6 +60,7 @@ import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.PixelShape
 import local.critter.phone.ui.theme.Silkscreen
 import local.critter.phone.ui.theme.StateChip
+import local.critter.phone.ui.theme.percentText
 import local.critter.phone.ui.theme.pixelSurface
 import java.time.ZoneId
 
@@ -216,7 +217,7 @@ private fun Gauge(title: String, window: RateWindow?, now: Long) {
                 maxLines = 1, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1f).alignByBaseline(),
             )
             Text(
-                boardPercent(LimitsText.percent(window), 17.sp),
+                percentText(LimitsText.percent(window), 17.sp),
                 color = BoardColors.clock, fontFamily = Silkscreen, fontSize = 22.sp, lineHeight = 22.sp, maxLines = 1,
                 modifier = Modifier.alignByBaseline().cssLine(22.sp),
             )
@@ -288,7 +289,7 @@ private fun SessionCard(
             Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BoardMeter(ctx.usedPercent, 16, 4.dp, Modifier.weight(1f))
                 Text(
-                    boardPercent(contextPercentText(ctx), 10.5.sp),
+                    percentText(contextPercentText(ctx), 10.5.sp),
                     color = BoardColors.dim, fontFamily = Silkscreen, fontSize = 10.5.sp, textAlign = TextAlign.End, maxLines = 1,
                     modifier = Modifier.widthIn(min = 30.dp),
                 )

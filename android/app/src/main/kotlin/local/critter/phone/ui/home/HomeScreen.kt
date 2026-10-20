@@ -1,13 +1,9 @@
 package local.critter.phone.ui.home
 
-import android.app.Activity
-import android.content.Context
-import android.content.ContextWrapper
 import android.widget.Toast
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -52,14 +48,9 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.semantics.Role
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
@@ -70,7 +61,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.LayoutDirection
-import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
 import androidx.compose.ui.unit.sp
@@ -87,13 +77,14 @@ import local.critter.core.protocol.ResultReason
 import local.critter.core.skin.SkinLibrary
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.critter.CritterPortrait
+import local.critter.phone.ui.PlaceRow
 import local.critter.phone.ui.agoText
 import local.critter.phone.ui.board.CardRequest
 import local.critter.phone.ui.board.cardRequests
 import local.critter.phone.ui.connText
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
-import local.critter.phone.ui.folderName
+import local.critter.phone.ui.findActivity
 import local.critter.phone.ui.look.SkyColors
 import local.critter.phone.ui.look.SkyTime
 import local.critter.phone.ui.look.skyColors
@@ -103,8 +94,6 @@ import local.critter.phone.ui.meadow.MeadowTag
 import local.critter.phone.ui.meadow.PetStage
 import local.critter.phone.ui.meadow.currentSkyTime
 import local.critter.phone.ui.rememberMinuteClock
-import local.critter.phone.ui.sourceIcon
-import local.critter.phone.ui.sourceLabel
 import local.critter.phone.ui.theme.ButtonKind
 import local.critter.phone.ui.theme.ButtonSize
 import local.critter.phone.ui.theme.Critter
@@ -112,10 +101,12 @@ import local.critter.phone.ui.theme.LocalDarkTheme
 import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelButton
 import local.critter.phone.ui.theme.PixelIcon
+import local.critter.phone.ui.theme.PixelIconButton
 import local.critter.phone.ui.theme.PixelShape
 import local.critter.phone.ui.theme.SegmentMeter
 import local.critter.phone.ui.theme.Silkscreen
 import local.critter.phone.ui.theme.StateChip
+import local.critter.phone.ui.theme.percentText
 import local.critter.phone.ui.theme.pixelSurface
 import local.critter.phone.ui.theme.rememberReduceMotion
 import local.critter.phone.ui.theme.state
@@ -136,9 +127,6 @@ private const val STALE_ALPHA = 0.6f
 
 /** The longest command shown on a card; the answer card has all of it. */
 private const val SLIP_LINES = 6
-
-/** The widest a card's folder name gets (icon included). */
-private val FOLDER_MAX = 104.dp
 
 /** The header's padding over the meadow, at the top and the start, and the Mac's name in it (design §8.3). */
 private val HeaderTop = 10.dp
@@ -356,12 +344,6 @@ private fun StatusBarIcons(darkIcons: Boolean) {
     }
 }
 
-private tailrec fun Context.findActivity(): Activity? = when (this) {
-    is Activity -> this
-    is ContextWrapper -> baseContext.findActivity()
-    else -> null
-}
-
 // ---- the meadow -------------------------------------------------------------------------------------------
 
 /** The Mac's name and the connection on a tag at the top left, the board and settings buttons at the top right. */
@@ -390,8 +372,8 @@ private fun MeadowHeader(
         }
         Spacer(Modifier.size(8.dp))
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            HeaderButton("board", "打开看板", onOpenBoard)
-            HeaderButton("sliders", "设置", onOpenSettings)
+            PixelIconButton("board", "打开看板", onOpenBoard)
+            PixelIconButton("sliders", "设置", onOpenSettings)
         }
     }
 }
@@ -423,26 +405,6 @@ private fun ConnectionTag(text: String, connected: Boolean, sky: SkyColors, modi
             color = Color(sky.tagInk), fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 13.sp,
             maxLines = 1, overflow = TextOverflow.Ellipsis,
         )
-    }
-}
-
-/** A 44 dp square pixel button with an icon; pressed, it sinks 3 dp and its bottom row shrinks, in one step. */
-@Composable
-private fun HeaderButton(icon: String, label: String, onClick: () -> Unit) {
-    val c = Critter.colors
-    val source = remember { MutableInteractionSource() }
-    val down by source.collectIsPressedAsState()
-    Box(
-        Modifier
-            .size(44.dp)
-            .clickable(source, indication = null, role = Role.Button, onClick = onClick)
-            .semantics { contentDescription = label }
-            .graphicsLayer { translationY = if (down) wholePx(3.dp) else 0f }
-            .pixelSurface(c.surface, step = 3.dp, lip = if (down) 1.dp else 4.dp, lipColor = c.shade)
-            .padding(bottom = 3.dp),
-        contentAlignment = Alignment.Center,
-    ) {
-        PixelIcon(icon, tint = c.ink)
     }
 }
 
@@ -607,7 +569,7 @@ private fun SessionCard(
                     color = c.ink, fontFamily = Nunito, fontWeight = if (request != null) FontWeight.W800 else FontWeight.W600,
                     fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                PlaceLine(session)
+                PlaceRow(session, Modifier.clipToBounds())
             }
         }
         if (request != null) Ask(request, answer, onOpenRequest, onAnswer)
@@ -651,28 +613,6 @@ private fun GrassTile(session: BridgeSession, library: SkinLibrary, offline: Boo
             modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
             asleep = offline,
         )
-    }
-}
-
-/**
- * "proj · main · 终端" as three pieces, each with its pixel icon; the branch is cut short first. A very long folder
- * stops at [FOLDER_MAX], as in the sheets' header, so the source stays in view.
- */
-@Composable
-private fun PlaceLine(s: BridgeSession) {
-    Row(Modifier.clipToBounds(), horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
-        MetaPiece("folder", folderName(s.cwd), Modifier.widthIn(max = FOLDER_MAX))
-        s.branch?.takeIf { it.isNotBlank() }?.let { MetaPiece("branch", it, Modifier.weight(1f, fill = false)) }
-        MetaPiece(sourceIcon(s.source), sourceLabel(s.source))
-    }
-}
-
-@Composable
-private fun MetaPiece(icon: String, text: String, modifier: Modifier = Modifier) {
-    val c = Critter.colors
-    Row(modifier, horizontalArrangement = Arrangement.spacedBy(4.dp), verticalAlignment = Alignment.CenterVertically) {
-        PixelIcon(icon, tint = c.ink2)
-        Text(text, color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
     }
 }
 
@@ -727,12 +667,5 @@ private fun Ask(
             )
             InlineAnswer.None -> Unit
         }
-    }
-}
-
-/** A percentage with its digits in pixel type and the "%" (and "≈") in Nunito at [signSize] (design §6). */
-private fun percentText(text: String, signSize: TextUnit): AnnotatedString = buildAnnotatedString {
-    for (ch in text) {
-        if (ch.isDigit()) append(ch) else withStyle(SpanStyle(fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = signSize)) { append(ch) }
     }
 }
