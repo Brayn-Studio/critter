@@ -93,7 +93,7 @@ class BridgeRepository(private val app: Application) {
     /** What has been alerted already, across reconnects (used by the service on its main thread). */
     val alertTracker = AlertTracker()
 
-    private val answering = ConcurrentHashMap.newKeySet<String>()
+    private val answering = InFlight()
     private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
     @Volatile private var client: BridgeClient? = null
     private var clientJob: Job? = null
@@ -238,7 +238,9 @@ class BridgeRepository(private val app: Application) {
                         sending = true
                         val result = answer(requestId, payload)
                         sending = false
-                        val localFailure = !result.ok && result.reason == ResultReason.unknown
+                        // The card's answer going out meanwhile is not a broken connection: nothing to retry.
+                        val localFailure = !result.ok && result.reason == ResultReason.unknown &&
+                            !InFlight.isAlreadySending(result)
                         if (!localFailure || attempt == 1) return result
                     }
                 }
@@ -318,15 +320,15 @@ class BridgeRepository(private val app: Application) {
 
     /**
      * Sends the answer to [requestId]. A second call for the same request while the first is in flight
-     * (say, a notification button and the card tapped together) answers `resolved` instead of sending twice.
+     * (say, a notification button and the card tapped together) is not sent: it gets [InFlight.alreadySending].
      */
     suspend fun answer(requestId: String, payload: AnswerPayload): ServerMessage.Result {
-        if (!answering.add(requestId)) return failure(ResultReason.resolved, "已在电脑上处理")
+        if (!answering.start(requestId)) return InFlight.alreadySending()
         try {
             val c = client ?: return failure(ResultReason.unknown, "未连接")
             return c.request(ClientMessage.Answer(null, requestId, payload))
         } finally {
-            answering.remove(requestId)
+            answering.finish(requestId)
         }
     }
 
