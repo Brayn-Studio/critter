@@ -20,7 +20,10 @@ import local.critter.core.protocol.ClientMessage
 import local.critter.core.protocol.AnswerPayload
 import local.critter.core.protocol.PairingUri
 import local.critter.core.protocol.ResultReason
+import okhttp3.HttpUrl
+import okhttp3.Request
 import okhttp3.WebSocket
+import okhttp3.WebSocketListener
 import kotlin.concurrent.thread
 import kotlin.test.AfterTest
 import kotlin.test.Test
@@ -402,9 +405,12 @@ class BridgeClientTest {
         assertTrue(eventually(timeoutMs = 200) { endpoint.resolves.get() == 2 }, "a new attempt right away")
     }
 
-    /** Network callbacks, sheets and the service may all ask within the same moment: still one socket at a time. */
+    /**
+     * Network callbacks, sheets and the service may all ask within the same moment: still one socket at a time. The
+     * Mac accepts a connection only after the one before it has closed, so two at once would show as an overlap.
+     */
     @Test fun rapidReconnectsKeepOneSocket() = runBlocking {
-        val mac = mac().apply { answerEverything(); repeat(6) { expectConnection() } }
+        val mac = mac().apply { oneAtATime = true; answerEverything(); repeat(6) { expectConnection() } }
         val c = client(CountingEndpoint { mac.address }, mac.fingerprint)
         c.start()
         c.state.await { it is ConnState.Connected }
@@ -417,8 +423,24 @@ class BridgeClientTest {
         delay(1_000)
         assertIs<ConnState.Connected>(c.state.value)
         assertTrue(c.request(answer("req-1")).ok)
-        assertEquals(1, mac.mostOpenAtOnce.get(), "at most one connection open at a time")
+        assertFalse(mac.overlapped.get(), "a new connection while the old one was still open")
         assertTrue(mac.opened.get() in 2..4, "one reconnect per call at most, got ${mac.opened.get()}")
+    }
+
+    /** The check above has teeth: two sockets kept open together are caught. */
+    @Test fun fakeMacCatchesTwoSocketsAtOnce() = runBlocking {
+        val mac = mac().apply { oneAtATime = true; overlapWaitMs = 300; expectConnection(); expectConnection() }
+        val http = PinnedTls.client(mac.fingerprint)
+        val url = HttpUrl.Builder().scheme("https").host(mac.host).port(mac.port).build()
+        val quiet = object : WebSocketListener() {}
+        val first = http.newWebSocket(Request.Builder().url(url).build(), quiet)
+        assertTrue(eventually { mac.opened.get() == 1 })
+        assertFalse(mac.overlapped.get())
+        val second = http.newWebSocket(Request.Builder().url(url).build(), quiet)
+        assertTrue(eventually { mac.opened.get() == 2 })
+        assertTrue(mac.overlapped.get())
+        first.cancel()
+        second.cancel()
     }
 
     @Test fun closedClientDoesNotStartAgain() = runBlocking {
