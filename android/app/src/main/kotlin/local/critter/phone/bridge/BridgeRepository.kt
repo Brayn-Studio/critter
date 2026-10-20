@@ -2,6 +2,7 @@ package local.critter.phone.bridge
 
 import android.app.Application
 import android.content.Context
+import android.content.pm.ApplicationInfo
 import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import android.os.Build
@@ -293,8 +294,12 @@ class BridgeRepository(private val app: Application) {
         }
     }
 
+    /** A debuggable build: the debug hooks below do nothing in a release one. */
+    private val debuggable = app.applicationInfo.flags and ApplicationInfo.FLAG_DEBUGGABLE != 0
+
     /** Debug builds only (DebugSnapshotReceiver): shows [body] as if the Mac had sent it. */
     fun injectSnapshotForDebug(body: SnapshotBody) {
+        if (!debuggable) return
         onSnapshot(body)
         _live.value = body
     }
@@ -304,6 +309,7 @@ class BridgeRepository(private val app: Application) {
     private var holdingForDebug = false
 
     fun holdForDebug(hold: Boolean) {
+        if (!debuggable) return
         holdingForDebug = hold
         if (!hold) client?.snapshot?.value?.let { onSnapshot(it.body) }
     }
