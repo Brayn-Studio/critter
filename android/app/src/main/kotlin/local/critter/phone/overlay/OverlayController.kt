@@ -121,14 +121,17 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         }
     }
 
-    /** Whether the user can see the pile right now: shown, not hidden, screen on and unlocked. */
-    val isVisible: Boolean
-        get() {
-            if (!attached || !contentShown()) return false
-            val power = context.getSystemService(PowerManager::class.java)
-            val keyguard = context.getSystemService(KeyguardManager::class.java)
-            return power.isInteractive && !keyguard.isKeyguardLocked
-        }
+    /**
+     * Whether the user can see the requests: on the pile (shown, screen on and unlocked), or on the board, which
+     * stands in for a pile it hides ([requestsInSight]). Notifications wait while this holds.
+     */
+    val inSight: Boolean get() = requestsInSight(attached, screenInUse(), hiding())
+
+    private fun screenInUse(): Boolean {
+        val power = context.getSystemService(PowerManager::class.java)
+        val keyguard = context.getSystemService(KeyguardManager::class.java)
+        return power.isInteractive && !keyguard.isKeyguardLocked
+    }
 
     fun canDraw(): Boolean = Settings.canDrawOverlays(context)
 
@@ -414,12 +417,14 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         applyVisibility()
     }
 
-    private fun contentShown(): Boolean {
-        if (hiddenForBoard && !sinkingForBoard) return false
-        if (hiddenForFullscreen && settings.overlayHideInFullscreen) return false
-        if (settings.overlayAutoHide && online && sessions().isEmpty()) return false
-        return true
-    }
+    private fun hiding() = PileHiding(
+        boardUp = hiddenForBoard,
+        sinkingForBoard = sinkingForBoard,
+        fullscreen = hiddenForFullscreen && settings.overlayHideInFullscreen,
+        emptyAndAutoHide = settings.overlayAutoHide && online && sessions().isEmpty(),
+    )
+
+    private fun contentShown(): Boolean = hiding().shown
 
     /**
      * Hidden content stays measured (so insets keep coming, to show it again) but takes no touches and no clock.

@@ -87,12 +87,12 @@ class BridgeService : Service() {
                 val s = repo.settingsStore.settings.value
                 val prefs = AlertPrefs(s.vibrateOnWaiting, s.notifyDone, s.notifyError)
                 val plan = tracker.next(body, prefs)
-                // Notifications only when neither the floating pile nor the board (which the pile hides behind) can
-                // be seen (spec §8.7); the buzz stays.
+                // Notifications only when nothing on screen shows the requests (spec §8.7): not the floating pile,
+                // nor the board standing in for it. The buzz stays.
                 Alerts.apply(
                     this@BridgeService, plan, body,
                     canVibrate = Alerts.vibrationAllowed(this@BridgeService),
-                    notify = !overlay.isVisible && !repo.boardOnScreen.value,
+                    notify = !overlay.inSight,
                 )
             }
         }
