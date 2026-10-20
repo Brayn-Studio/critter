@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.SkinManifest
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterView
 import local.critter.phone.ui.look.SkyTime
@@ -63,9 +64,6 @@ fun PetStage(
         }
     }
 }
-
-/** A Critter's base box is 18 cells wide. */
-private const val BASE_COLUMNS = 18
 
 /** The stage's size in cells when nothing bounds it: a pet with room for its head marker and the grass. */
 private const val FALLBACK_COLUMNS = 24

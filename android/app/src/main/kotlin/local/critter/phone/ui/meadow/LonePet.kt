@@ -11,6 +11,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.SkinManifest
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterView
 import kotlin.math.max
@@ -46,6 +47,3 @@ fun LonePet(
         update = { it.setActors(listOf(slot)) },
     )
 }
-
-/** A Critter's base box is 18 cells wide. */
-private const val BASE_COLUMNS = 18

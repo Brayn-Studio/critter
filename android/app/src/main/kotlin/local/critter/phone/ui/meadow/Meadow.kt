@@ -40,6 +40,7 @@ import local.critter.core.flock.FlockModel
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.SkinLibrary
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterTouchListener
 import local.critter.phone.critter.CritterView
 import local.critter.phone.critter.PileSlots
@@ -62,9 +63,6 @@ import kotlin.math.min
 private const val SCALE = 3f
 private const val MARGIN_DP = 12f
 private const val MAX_PER_ROW = 5
-
-/** A Critter's base box is 18 cells wide; the pile is [PileSlots.EXTRA_CELLS] wider. */
-private const val BASE_CELLS = 18
 
 /** The opening: one Critter after another pops up out of the grass, this far apart (design §7). */
 private const val OPENING_STAGGER_MS = 80L
@@ -169,7 +167,8 @@ fun Meadow(
 
         val sky = skyColors(time)
         val centers = layout.slots.mapIndexed { i, p ->
-            p.x.toFloat() + (if (i == pileFrom) (BASE_CELLS + PileSlots.EXTRA_CELLS) / 2f else BASE_CELLS / 2f) * SCALE
+            // A Critter's base box; the pile's is PileSlots.EXTRA_CELLS wider.
+            p.x.toFloat() + (if (i == pileFrom) (BASE_COLUMNS + PileSlots.EXTRA_CELLS) / 2f else BASE_COLUMNS / 2f) * SCALE
         }
         val headTop = groundDp - 21 * SCALE
         val counts = if (pile.isEmpty()) emptyList() else FlockModel.merged(pile).counts.filter { it.state in COUNTED }

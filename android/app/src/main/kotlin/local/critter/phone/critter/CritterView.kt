@@ -34,6 +34,7 @@ import local.critter.core.motion.walkHome
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.MotionClip
 import local.critter.core.skin.SkinManifest
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -792,7 +793,6 @@ class CritterView(context: Context) : View(context) {
         const val HIT_SLOP_DP = 6f
         const val HELD_LIFT_CELLS = 3
         const val LAG_SETTLE_DELAY_S = 0.12
-        const val BASE_COLUMNS = 18
 
         /** How deep a sunk Critter is held: its whole body under the ground. */
         const val UNDERGROUND_CELLS = 12

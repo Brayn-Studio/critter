@@ -57,6 +57,7 @@ import androidx.compose.ui.viewinterop.AndroidView
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.SkinManifest
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterSlot
 import local.critter.phone.critter.CritterView
 import local.critter.phone.ui.folderName
@@ -353,6 +354,3 @@ internal fun SheetPet(
         )
     }
 }
-
-/** A Critter's base box is 18 cells wide. */
-private const val BASE_COLUMNS = 18

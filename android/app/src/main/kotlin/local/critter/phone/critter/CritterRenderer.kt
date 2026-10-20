@@ -79,13 +79,15 @@ class CritterRenderer {
         canvas.drawBitmap(bitmap, null, rect, bitmapPaint)
     }
 
-    private companion object {
-        const val GROUND_ROW = 10
+    companion object {
+        /** A Critter's base box is 18 cells wide (the skin format's), the one width every stage places it by. */
         const val BASE_COLUMNS = 18
+
+        private const val GROUND_ROW = 10
         /** The body clip reaches this far above the ground... */
-        const val CLIP_HEIGHT_CELLS = 40
+        private const val CLIP_HEIGHT_CELLS = 40
         /** ...and this far to either side of the 18-cell base box. */
-        const val CLIP_MARGIN_CELLS = 12
-        const val SHADOW_OPACITY = 0.28
+        private const val CLIP_MARGIN_CELLS = 12
+        private const val SHADOW_OPACITY = 0.28
     }
 }

@@ -68,6 +68,7 @@ import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
 import local.critter.core.skin.SkinManifest
 import local.critter.phone.bridge.BridgeRepository
+import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterView
 import local.critter.phone.repository
 import local.critter.phone.ui.agoText
@@ -125,8 +126,7 @@ private val StageGround = 22.dp
 private val StageCell = 4.dp
 private const val STAGE_CENTER = 0.25f
 
-/** A Critter's base box is 18 cells wide; the letter lands 14 cells above its feet, over its head. */
-private const val BASE_COLUMNS = 18
+/** The letter lands 14 cells above the Critter's feet, over its head. */
 private const val HEAD_ROWS = 14
 
 private val DETAIL_CLOUDS = listOf(0.05f to 0.12f, 0.5f to 0.05f)
