@@ -5,6 +5,7 @@ import androidx.core.content.edit
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import local.critter.phone.board.BoardBlock
 
 data class PhoneSettings(
     val bridgeEnabled: Boolean = true,
@@ -37,6 +38,8 @@ data class PhoneSettings(
     val openingShownOn: Long? = null,
     /** When the system last kept the board from opening, in millis. */
     val boardBlockedAt: Long? = null,
+    /** Why, while [boardBlockedAt] is set. */
+    val boardBlockedBy: BoardBlock = BoardBlock.BackgroundPopup,
 )
 
 class SettingsStore(context: Context) {
@@ -74,6 +77,7 @@ class SettingsStore(context: Context) {
             overlayY = prefs.getFloat("overlayY", d.overlayY).coerceIn(0f, 1f),
             openingShownOn = if (prefs.contains("openingShownOn")) prefs.getLong("openingShownOn", 0) else null,
             boardBlockedAt = if (prefs.contains("boardBlockedAt")) prefs.getLong("boardBlockedAt", 0) else null,
+            boardBlockedBy = BoardBlock.parse(prefs.getString("boardBlockedBy", null)),
         )
     }
 
@@ -101,5 +105,6 @@ class SettingsStore(context: Context) {
         if (opening == null) remove("openingShownOn") else putLong("openingShownOn", opening)
         val blocked = s.boardBlockedAt
         if (blocked == null) remove("boardBlockedAt") else putLong("boardBlockedAt", blocked)
+        putString("boardBlockedBy", s.boardBlockedBy.name)
     }
 }

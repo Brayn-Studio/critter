@@ -54,6 +54,10 @@ import androidx.lifecycle.compose.LifecycleEventEffect
 import local.critter.core.net.ConnState
 import local.critter.core.protocol.PetState
 import local.critter.core.skin.SkinManifest
+import local.critter.phone.board.BlockFix
+import local.critter.phone.board.BoardBlock
+import local.critter.phone.board.blockAdvice
+import local.critter.phone.board.pendingBlock
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.critter.CritterView
 import local.critter.phone.data.PhoneSettings
@@ -195,19 +199,29 @@ fun SettingsScreen(
                     "充电横放时自动打开", "充电、横放、静止 3 秒后打开；拔电 10 秒后或竖起来 3 秒后退出，平放不退出",
                     settings.boardAutoOpen,
                 ) { on -> update { it.copy(boardAutoOpen = on) } }
+                // What last kept it from opening by itself, while that still holds.
+                val block = pendingBlock(settings.boardBlockedAt, settings.boardBlockedBy, canOverlay)
                 if (settings.boardAutoOpen) {
+                    // The missing permission is said once: by the notice below when that is what blocked it.
+                    val missing = !canOverlay && block != BoardBlock.NoOverlayPermission
                     Text(
-                        (if (canOverlay) "" else "还没有「显示在其他应用上层」权限，看板打不开。") +
+                        (if (missing) "还没有「显示在其他应用上层」权限，看板打不开。" else "") +
                             "自动打开需要「显示在其他应用上层」权限；vivo、小米等手机还要在应用权限里打开「后台弹出界面」。" +
                             "系统拦下时，这次充电不再尝试，下次插电再试。",
-                        color = if (canOverlay) c.ink2 else c.err, fontFamily = Nunito, fontWeight = FontWeight.W600,
+                        color = if (missing) c.err else c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600,
                         fontSize = 12.sp, lineHeight = 17.sp,
                         modifier = Modifier.padding(start = ROW_PADDING, end = ROW_PADDING, bottom = 10.dp),
                     )
                 }
-                if (settings.boardBlockedAt != null) {
-                    NoticeRow("上次插电时被系统拦下了。vivo、小米等手机要在应用权限里打开「后台弹出界面」。", "去打开") {
-                        OemGuide.openAppDetails(context)
+                if (block != null) {
+                    val advice = blockAdvice(block)
+                    NoticeRow(advice.notice, advice.noticeAction) {
+                        when (advice.fix) {
+                            BlockFix.OverlayPermission -> context.startActivity(
+                                Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:${context.packageName}")),
+                            )
+                            BlockFix.AppDetails -> OemGuide.openAppDetails(context)
+                        }
                         update { it.copy(boardBlockedAt = null) }
                     }
                 }

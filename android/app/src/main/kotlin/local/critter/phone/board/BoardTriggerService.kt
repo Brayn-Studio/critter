@@ -132,36 +132,39 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         when (action) {
             Action.Open -> open()
             Action.Close -> context.sendBroadcast(Intent(ACTION_CLOSE_BOARD).setPackage(context.packageName))
-            Action.Blocked -> blocked()
+            // The trigger's own Blocked is the 2 s timeout: the start went out and nothing came up.
+            Action.Blocked -> blocked(BoardBlock.BackgroundPopup)
             Action.None -> Unit
         }
     }
 
     /**
-     * Remembered for the settings, which say what to switch on (wall-clock time, for "上次插电时"), and told right
-     * away in a quiet notification with 「去设置」.
+     * Remembered with its [cause] for the settings, which say what to switch on (wall-clock time, for "上次插电时"),
+     * and told right away in a quiet notification whose button leads there.
      */
-    private fun blocked() {
-        settings.update { it.copy(boardBlockedAt = System.currentTimeMillis()) }
-        Alerts.boardBlocked(context)
+    private fun blocked(cause: BoardBlock) {
+        settings.update { it.copy(boardBlockedAt = System.currentTimeMillis(), boardBlockedBy = cause) }
+        Alerts.boardBlocked(context, cause)
     }
 
     /**
      * Starting an activity from the background needs "display over other apps"; vivo and Xiaomi also need their
      * "background pop-up" switch, and without it the start fails silently. Either way the trigger stops asking for
-     * this charge: a missing permission up front, a silent refusal when the board is not up 2 s later. Both come
-     * back as [Action.Blocked], which the settings show.
+     * this charge: a missing permission up front, a silent refusal when the board is not up 2 s later. The two are
+     * told apart ([BoardBlock]), since only the permission page helps with the first.
      */
     private fun open() {
         if (!Settings.canDrawOverlays(context)) {
-            perform(trigger.onOpenFailed())
+            trigger.onOpenFailed()
+            blocked(BoardBlock.NoOverlayPermission)
             return
         }
         try {
             context.startActivity(BoardActivity.intent(context, auto = true).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         } catch (e: RuntimeException) {
             Log.w(TAG, "could not open the board", e)
-            perform(trigger.onOpenFailed())
+            trigger.onOpenFailed()
+            blocked(BoardBlock.BackgroundPopup)
         }
     }
 

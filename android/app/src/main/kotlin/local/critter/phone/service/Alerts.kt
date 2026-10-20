@@ -29,6 +29,9 @@ import local.critter.core.protocol.PendingKind
 import local.critter.core.protocol.PetState
 import local.critter.core.protocol.SnapshotBody
 import local.critter.phone.R
+import local.critter.phone.board.BlockFix
+import local.critter.phone.board.BoardBlock
+import local.critter.phone.board.blockAdvice
 import local.critter.phone.critter.Portraits
 import local.critter.phone.repository
 import local.critter.phone.ui.MainActivity
@@ -203,15 +206,20 @@ object Alerts {
     }
 
     /**
-     * The board could not open by itself: the system blocked a pop-up from the background. A quiet notification
-     * says so and how to allow it; 「去设置」 opens the app's details page.
+     * The board could not open by itself, for [cause]: no "display over other apps" permission (「去授权」 opens
+     * its page), or the system blocked a pop-up from the background (「去设置」 opens the app's details page). A quiet
+     * notification says which and how to allow it.
      */
-    fun boardBlocked(context: Context) {
+    fun boardBlocked(context: Context, cause: BoardBlock) {
         if (!canPost(context)) return
-        val details = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, "package:${context.packageName}".toUri())
-            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        val open = PendingIntent.getActivity(context, BOARD_BLOCKED_ID, details, PendingIntent.FLAG_IMMUTABLE)
-        val text = "系统拦下了后台弹出的界面。打开「后台弹出界面」后，下次插电就能自动打开。"
+        val advice = blockAdvice(cause)
+        val page = when (advice.fix) {
+            BlockFix.OverlayPermission -> Settings.ACTION_MANAGE_OVERLAY_PERMISSION
+            BlockFix.AppDetails -> Settings.ACTION_APPLICATION_DETAILS_SETTINGS
+        }
+        val fix = Intent(page, "package:${context.packageName}".toUri()).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        val open = PendingIntent.getActivity(context, BOARD_BLOCKED_ID, fix, PendingIntent.FLAG_IMMUTABLE)
+        val text = advice.notification
         val n = NotificationCompat.Builder(context, CH_STATUS)
             .setSmallIcon(R.drawable.ic_stat_critter)
             .setColor(Accent)
@@ -219,7 +227,7 @@ object Alerts {
             .setContentText(text)
             .setStyle(NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open)
-            .addAction(NotificationCompat.Action.Builder(0, "去设置", open).build())
+            .addAction(NotificationCompat.Action.Builder(0, advice.notificationAction, open).build())
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .setAutoCancel(true)
             .build()
