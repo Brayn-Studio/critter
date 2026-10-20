@@ -66,3 +66,73 @@ private func record(state: PetState, lastEvent: String, eventTime: Int64) -> Ses
     #expect(String(data: tail, encoding: .utf8) == nil) // genuinely invalid UTF-8
     #expect(TranscriptTail.isInterrupted(tail: tail))
 }
+
+// MARK: - latestProgress
+
+private let prompt = #"{"type":"user","message":{"role":"user","content":"跑一下测试"}}"#
+private func say(_ text: String) -> String {
+    #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"\#(text)"}]}}"#
+}
+private let toolUse = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"tool_use","id":"t1","name":"Bash","input":{}}]}}"#
+private let toolResult = #"{"type":"user","message":{"role":"user","content":[{"type":"tool_result","tool_use_id":"t1","content":"ok"}]}}"#
+private func tail(_ lines: String...) -> Data { Data((lines.joined(separator: "\n") + "\n").utf8) }
+
+@Test func progressIsTheTurnsLatestAssistantText() {
+    let data = tail(say("上一轮的回答"), prompt, say("先跑测试。"), toolUse, toolResult, say("  测试通过，接着构建。\\n"), toolUse)
+    #expect(TranscriptTail.latestProgress(tail: data) == "测试通过，接着构建。")
+}
+
+@Test func progressIsNilBeforeTheTurnSaysAnything() {
+    #expect(TranscriptTail.latestProgress(tail: tail(say("上一轮的回答"), prompt, toolUse)) == nil)
+    let interrupted = #"{"type":"user","message":{"role":"user","content":[{"type":"text","text":"[Request interrupted by user]"}]}}"#
+    #expect(TranscriptTail.latestProgress(tail: tail(say("被打断的话"), interrupted)) == nil)
+}
+
+@Test func progressLooksPastToolResultsMetaLinesAndSidechains() {
+    let meta = #"{"type":"user","isMeta":true,"message":{"role":"user","content":[{"type":"text","text":"skill body"}]}}"#
+    let sidechain = #"{"type":"assistant","isSidechain":true,"message":{"role":"assistant","content":[{"type":"text","text":"子代理的话"}]}}"#
+    let apiError = #"{"type":"assistant","isApiErrorMessage":true,"message":{"role":"assistant","content":[{"type":"text","text":"API Error"}]}}"#
+    let thinking = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"内部推理"}]}}"#
+    let data = tail(prompt, say("在读代码。"), toolUse, toolResult, meta, sidechain, apiError, thinking, #"{"type":"attachment"}"#)
+    #expect(TranscriptTail.latestProgress(tail: data) == "在读代码。")
+}
+
+@Test func progressIgnoresAPartialLastLine() {
+    let data = Data((prompt + "\n" + say("完整的一句。") + "\n" + #"{"type":"assistant","message":{"content":[{"type":"text","text":"半"#).utf8)
+    #expect(TranscriptTail.latestProgress(tail: data) == "完整的一句。")
+}
+
+@Test func progressKeepsTheLastTextBlockOfAMessage() {
+    let line = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"text","text":"第一段"},{"type":"tool_use","id":"t","name":"Read","input":{}},{"type":"text","text":"第二段"}]}}"#
+    #expect(TranscriptTail.latestProgress(tail: tail(prompt, line)) == "第二段")
+}
+
+@Test func progressUpdateRefreshesARunningBubble() {
+    var running = record(state: .running, lastEvent: "PreToolUse", eventTime: 100)
+    running.detail = "Bash: make app"
+    let next = TranscriptTail.progressUpdate(record: running, progress: "开始构建。")
+    #expect(next?.detail == "开始构建。")
+    #expect(next?.progress == "开始构建。")
+    #expect(next?.lastEvent == "PreToolUse")
+    #expect(next?.eventTime == 100)
+    // Already showing it, or nothing found: nothing to write.
+    #expect(TranscriptTail.progressUpdate(record: next!, progress: "开始构建。") == nil)
+    #expect(TranscriptTail.progressUpdate(record: running, progress: nil) == nil)
+}
+
+@Test func progressUpdateLeavesOtherStatesAndFreshPromptsAlone() {
+    for state in [PetState.waiting, .done, .idle, .error] {
+        #expect(TranscriptTail.progressUpdate(record: record(state: state, lastEvent: "PreToolUse", eventTime: 1), progress: "话") == nil)
+    }
+    // Before the new prompt reaches the transcript, its tail still ends in the last turn's answer.
+    #expect(TranscriptTail.progressUpdate(record: record(state: .running, lastEvent: "UserPromptSubmit", eventTime: 1), progress: "上一轮的回答") == nil)
+}
+
+@Test func progressReadsThinkingOnlyWhenShownAsUpdates() {
+    // Claude Code's "updates" thinking display prints these summaries in the terminal as the
+    // turn's progress lines; any other thinking stays internal.
+    let update = #"{"type":"assistant","thinkingDisplay":"updates","message":{"role":"assistant","content":[{"type":"thinking","thinking":"","signature":"s"},{"type":"thinking","thinking":"测试通过，开始安装。","signature":"s"}]}}"#
+    let hidden = #"{"type":"assistant","message":{"role":"assistant","content":[{"type":"thinking","thinking":"内部推理","signature":"s"}]}}"#
+    #expect(TranscriptTail.latestProgress(tail: tail(prompt, say("先跑测试。"), update, toolUse)) == "测试通过，开始安装。")
+    #expect(TranscriptTail.latestProgress(tail: tail(prompt, say("先跑测试。"), hidden, toolUse)) == "先跑测试。")
+}

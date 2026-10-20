@@ -182,12 +182,20 @@ public enum HookCommand {
         // `claude -p`, overriding an inherited `cli`); the registry entry is preferred.
         let entrypoint = located?.entry?.entrypoint ?? environment["CLAUDE_CODE_ENTRYPOINT"].flatMap { $0.isEmpty ? nil : $0 }
 
+        // Claude writes each text block to the transcript as its own line before the tool call
+        // that follows it, so by a tool hook the turn's latest commentary is already on disk.
+        var progress: String?
+        if progressEvents.contains(input.hookEventName), let path = input.transcriptPath, !path.isEmpty,
+           let tail = FileAppendWatcher.readTail(of: URL(fileURLWithPath: path), maxBytes: TranscriptTail.progressTailBytes) {
+            progress = TranscriptTail.latestProgress(tail: tail)
+        }
+
         let store = StateStore(paths: paths)
         var taken: ReducerAction = .ignore
         try? store.update(sessionId: input.sessionId) { previous in
             let action = StateReducer.reduce(
                 previous: previous, input: input, now: now,
-                pid: located?.pid, pidStartTime: located?.startTime, entrypoint: entrypoint
+                pid: located?.pid, pidStartTime: located?.startTime, entrypoint: entrypoint, progress: progress
             )
             taken = action
             return action
@@ -213,6 +221,9 @@ public enum HookCommand {
             break
         }
     }
+
+    /// The running events whose bubble shows the turn's latest commentary.
+    private static let progressEvents: Set<String> = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionDenied"]
 
     private static func describe(_ action: ReducerAction) -> String {
         switch action {

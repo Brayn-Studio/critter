@@ -41,6 +41,64 @@ public enum TranscriptTail {
         return false
     }
 
+    /// How much of the transcript's end the hook reads for `latestProgress`: enough to
+    /// reach past a few large tool results back to the turn's latest commentary.
+    public static let progressTailBytes = 256 * 1024
+
+    /// The current turn's latest public commentary: the last text block of the last main-chain
+    /// assistant line after the last user prompt (or interrupt) in `tail`, trimmed and capped
+    /// like Codex progress. Nil when the turn hasn't said anything yet. Thinking is read only
+    /// from lines with `thinkingDisplay: "updates"`, where Claude Code prints those summaries in
+    /// the terminal as the turn's progress lines; other thinking stays internal. Tool results
+    /// and meta lines (skill bodies) don't end the turn.
+    public static func latestProgress(tail: Data) -> String? {
+        var lines = String(decoding: tail, as: UTF8.self).components(separatedBy: "\n")
+        lines.removeLast() // The trailing partial (or empty) component, as in `isInterrupted`.
+        for line in lines.reversed() {
+            guard line.contains("\"type\":\"user\"") || line.contains("\"type\":\"assistant\""),
+                  let obj = (try? JSONSerialization.jsonObject(with: Data(line.utf8))) as? [String: Any],
+                  obj["isSidechain"] as? Bool != true, obj["isMeta"] as? Bool != true
+            else { continue }
+            let content = (obj["message"] as? [String: Any])?["content"]
+            switch obj["type"] as? String {
+            case "user":
+                let blocks = content as? [[String: Any]] ?? []
+                if content is String || blocks.contains(where: { $0["type"] as? String != "tool_result" }) {
+                    return nil
+                }
+            case "assistant":
+                guard obj["isApiErrorMessage"] as? Bool != true else { continue }
+                let showsThinking = obj["thinkingDisplay"] as? String == "updates"
+                let texts = (content as? [[String: Any]] ?? []).compactMap { block -> String? in
+                    switch block["type"] as? String {
+                    case "text": return block["text"] as? String
+                    case "thinking" where showsThinking: return block["thinking"] as? String
+                    default: return nil
+                    }
+                }.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+                if let text = texts.last(where: { !$0.isEmpty }) { return String(text.prefix(4000)) }
+            default:
+                continue
+            }
+        }
+        return nil
+    }
+
+    /// The record to write when the app sees `progress` land in the transcript, or nil when
+    /// there's nothing to change. Claude can append a text line only after the `PreToolUse`
+    /// hook that follows it has run, so this keeps a running bubble current between hooks.
+    /// Waiting/terminal bubbles keep their own text. Right after `UserPromptSubmit` the new
+    /// prompt may not be in the transcript yet, and the tail's last text is the previous
+    /// turn's answer, so a fresh prompt waits for its first tool hook.
+    public static func progressUpdate(record: SessionRecord, progress: String?) -> SessionRecord? {
+        guard let progress, record.state == .running, record.lastEvent != "UserPromptSubmit",
+              progress != record.progress || progress != record.detail else { return nil }
+        var next = record
+        next.progress = progress
+        next.detail = progress
+        return next
+    }
+
     /// Whether an interrupt line found at the end of the transcript should flip `record`
     /// to idle. Only a busy (`running`/`waiting`) session can be interrupted. And because
     /// `UserPromptSubmit` fires *before* Claude appends the new prompt to the transcript,

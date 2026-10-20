@@ -21,8 +21,14 @@ public enum StateReducer {
         now: Int64,
         pid: Int32?,
         pidStartTime: Int64?,
-        entrypoint: String? = nil
+        entrypoint: String? = nil,
+        progress: String? = nil
     ) -> ReducerAction {
+        // The turn's latest commentary, read from the transcript by the hook (nil when nothing
+        // new was found); a new prompt or session starts without one.
+        let fresh = input.hookEventName == "UserPromptSubmit" || input.hookEventName == "SessionStart"
+        let progress = progress ?? (fresh ? nil : previous?.progress)
+
         func write(state: PetState, detail: String?, activity: WorkActivity? = nil) -> ReducerAction {
             .write(SessionRecord(
                 schema: 1,
@@ -37,7 +43,8 @@ public enum StateReducer {
                 claudePid: pid ?? previous?.claudePid,
                 claudeStartTime: pidStartTime ?? previous?.claudeStartTime,
                 entrypoint: entrypoint ?? previous?.entrypoint,
-                activity: activity?.rawValue
+                activity: activity?.rawValue,
+                progress: progress
             ))
         }
 
@@ -62,12 +69,13 @@ public enum StateReducer {
             case "ExitPlanMode":
                 return write(state: .waiting, detail: BubbleText.planApproval)
             default:
+                // Like Codex: the commentary outranks the tool summary, the animation still shows the tool.
                 let summary = ToolSummary.activity(toolName: input.toolName ?? "", input: input.toolInput)
-                return write(state: .running, detail: summary, activity: WorkActivity.forTool(input.toolName ?? ""))
+                return write(state: .running, detail: progress ?? summary, activity: WorkActivity.forTool(input.toolName ?? ""))
             }
 
         case "PostToolUse", "PostToolUseFailure", "PermissionDenied":
-            return write(state: .running, detail: BubbleText.thinking, activity: .think)
+            return write(state: .running, detail: progress ?? BubbleText.thinking, activity: .think)
 
         case "PermissionRequest":
             let summary = ToolSummary.permission(toolName: input.toolName ?? "", input: input.toolInput)

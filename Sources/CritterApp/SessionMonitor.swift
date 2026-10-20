@@ -289,6 +289,7 @@ private final class MonitorEngine: @unchecked Sendable {
             let url = URL(fileURLWithPath: path)
             let watcher = FileAppendWatcher(url: url, queue: queue) { [weak self] tail in
                 self?.checkInterrupt(sessionId: id, transcript: url, tail: tail)
+                self?.checkProgress(sessionId: id, tail: tail)
             }
             transcriptWatchers[id] = (path, watcher)
             // A transcript that doesn't exist yet (a brand-new session's first prompt) is
@@ -326,6 +327,19 @@ private final class MonitorEngine: @unchecked Sendable {
             pendingStore.removeAll(sessionId: sessionId)
             scheduleRebuild()
         }
+    }
+
+    /// Shows the turn's latest commentary as soon as it lands in the transcript, rather than
+    /// at the next tool hook (which, for a long build, can be minutes away).
+    private func checkProgress(sessionId: String, tail: Data) {
+        guard let progress = TranscriptTail.latestProgress(tail: tail) else { return }
+        var changed = false
+        try? store.update(sessionId: sessionId) { previous in
+            guard let previous, let next = TranscriptTail.progressUpdate(record: previous, progress: progress) else { return .ignore }
+            changed = true
+            return .write(next)
+        }
+        if changed { scheduleRebuild() }
     }
 
     private static func registryKey(_ entry: RegistryEntry) -> String {

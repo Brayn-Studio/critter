@@ -174,3 +174,43 @@ private func activity(_ json: String) -> String?? {
     #expect(r.state == .waiting)
     #expect(r.activity == nil)
 }
+
+// MARK: - progress (the turn's latest assistant text)
+
+private func reduce(_ previous: SessionRecord?, _ json: String, progress: String? = nil) -> SessionRecord? {
+    guard case .write(let r) = StateReducer.reduce(previous: previous, input: input(json), now: 10, pid: 1, pidStartTime: 1, progress: progress) else { return nil }
+    return r
+}
+
+@Test func progressReplacesThinkingAndToolSummaries() {
+    let pre = reduce(nil, #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"swift test"}}"#, progress: "先跑一遍测试。")
+    #expect(pre?.detail == "先跑一遍测试。")
+    #expect(pre?.progress == "先跑一遍测试。")
+    #expect(pre?.activity == "bash")
+
+    // Nothing new said since: the last progress carries on through the thinking gap.
+    let post = reduce(pre, #"{"session_id":"s","cwd":"/x","hook_event_name":"PostToolUse","tool_name":"Bash"}"#)
+    #expect(post?.detail == "先跑一遍测试。")
+    #expect(post?.activity == "think")
+
+    let next = reduce(post, #"{"session_id":"s","cwd":"/x","hook_event_name":"PostToolUse","tool_name":"Bash"}"#, progress: "测试通过，接着构建。")
+    #expect(next?.detail == "测试通过，接着构建。")
+}
+
+@Test func waitingStillOutranksProgress() {
+    let prev = reduce(nil, #"{"session_id":"s","cwd":"/x","hook_event_name":"PostToolUse","tool_name":"Bash"}"#, progress: "准备提交。")
+    let asking = reduce(prev, #"{"session_id":"s","cwd":"/x","hook_event_name":"PermissionRequest","tool_name":"Bash","tool_input":{"command":"git push"}}"#)
+    #expect(asking?.detail == "需要你确认：Bash(git push)")
+    #expect(asking?.progress == "准备提交。")
+    let question = reduce(prev, #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"AskUserQuestion","tool_input":{}}"#, progress: "问一下你。")
+    #expect(question?.detail == "Claude 在问你问题")
+}
+
+@Test func newPromptClearsProgress() {
+    let prev = reduce(nil, #"{"session_id":"s","cwd":"/x","hook_event_name":"PostToolUse","tool_name":"Bash"}"#, progress: "上一轮的话。")
+    let fresh = reduce(prev, #"{"session_id":"s","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"继续"}"#)
+    #expect(fresh?.progress == nil)
+    #expect(fresh?.detail == "思考中…")
+    let tool = reduce(fresh, #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/x/a.swift"}}"#)
+    #expect(tool?.detail == "读取 a.swift")
+}
