@@ -10,11 +10,15 @@ import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonDecoder
 import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonEncoder
+import kotlinx.serialization.json.JsonNull
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.doubleOrNull
 import kotlinx.serialization.json.intOrNull
 import local.critter.core.motion.GazeZone
 import local.critter.core.protocol.PetState
+import kotlin.math.abs
+import kotlin.math.floor
 
 /** The five states a manifest must define (the protocol's `unknown` is not one of them). */
 val SKIN_STATES: List<PetState> = PetState.entries.filter { it != PetState.unknown }
@@ -22,29 +26,30 @@ val SKIN_STATES: List<PetState> = PetState.entries.filter { it != PetState.unkno
 /**
  * A complete, data-driven description of how the pet looks and animates: no animation is
  * hardcoded, so a brand-replacement skin only has to supply a valid manifest. Field names
- * equal the JSON keys of schema 2. Mirrors `SkinManifest` in Skin.swift; fields are `var`
- * (and the maps mutable) only so the ported tests can mutate a copy as the Swift ones do.
+ * equal the JSON keys of schema 2. Mirrors `SkinManifest` in Skin.swift. Immutable, all the way
+ * down: one manifest is shared by every Critter wearing the skin (Swift's is a value type).
+ * A changed manifest is a `copy`.
  */
 @Serializable
 data class SkinManifest(
-    var schema: Int,
-    var name: String,
+    val schema: Int,
+    val name: String,
     /** What the settings call the skin ("小芽 Sprig"); optional. */
-    var title: String? = null,
+    val title: String? = null,
     /** Duration of one tick in milliseconds. */
-    var tickMs: Int,
+    val tickMs: Int,
     /** Base box `[width, height]` in square pixel cells; row `height` is the ground. */
-    var grid: List<Int>,
-    var palette: MutableMap<String, String>,
-    var parts: MutableMap<String, SkinPart>,
-    var poses: MutableMap<String, List<String>>,
-    var glyphs: MutableMap<String, List<String>>,
-    var clips: MutableMap<String, List<ClipKey>>,
-    var effects: MutableMap<String, EffectSpec>,
-    var accessories: MutableMap<String, AccessorySpec>,
-    var states: MutableMap<String, StateSpec>,
-    var interactions: InteractionNames,
-    var props: MutableMap<String, PropSpec>,
+    val grid: List<Int>,
+    val palette: Map<String, String>,
+    val parts: Map<String, SkinPart>,
+    val poses: Map<String, List<String>>,
+    val glyphs: Map<String, List<String>>,
+    val clips: Map<String, List<ClipKey>>,
+    val effects: Map<String, EffectSpec>,
+    val accessories: Map<String, AccessorySpec>,
+    val states: Map<String, StateSpec>,
+    val interactions: InteractionNames,
+    val props: Map<String, PropSpec>,
 ) {
     /** The spec of `s`. Only call on a manifest that passed `SkinValidator`. */
     fun state(s: PetState): StateSpec = states.getValue(s.name)
@@ -52,7 +57,7 @@ data class SkinManifest(
 
 /** A rectangle of pixel rows placed at `at` (top-left, base-box coordinates, may be negative). */
 @Serializable
-data class SkinPart(var at: List<Int>, var rows: List<String>)
+data class SkinPart(val at: List<Int>, val rows: List<String>)
 
 /**
  * One key of a motion clip: show `pose` for `ticks` ticks offset by (`dx`, `dy`) cells,
@@ -61,11 +66,11 @@ data class SkinPart(var at: List<Int>, var rows: List<String>)
  */
 @Serializable(with = ClipKeySerializer::class)
 data class ClipKey(
-    var pose: String,
-    var ticks: Int,
-    var dx: Int = 0,
-    var dy: Int = 0,
-    var effect: String? = null,
+    val pose: String,
+    val ticks: Int,
+    val dx: Int = 0,
+    val dy: Int = 0,
+    val effect: String? = null,
 )
 
 typealias MotionClip = List<ClipKey>
@@ -103,7 +108,7 @@ object ClipKeySerializer : KSerializer<ClipKey> {
 
 /** A number or an inclusive `[min, max]` range (uniformly random when min < max). */
 @Serializable(with = SpanSerializer::class)
-data class Span(var min: Double, var max: Double) {
+data class Span(val min: Double, val max: Double) {
     constructor(v: Double) : this(v, v)
 }
 
@@ -131,45 +136,45 @@ object SpanSerializer : KSerializer<Span> {
 /** One emitted particle (or a repeated group, via `count`). */
 @Serializable
 data class ParticleSpec(
-    var count: Int? = null,
-    var glyph: String,
-    var color: String? = null,
-    var colors: List<String>? = null,
-    var x: Span,
-    var y: Span,
-    var vx: Span? = null,
-    var vy: Span? = null,
-    var ay: Double? = null,
-    var life: Span,
-    var sway: Double? = null,
-    var pop: Boolean? = null,
-    var shrinkTo: String? = null,
+    val count: Int? = null,
+    val glyph: String,
+    val color: String? = null,
+    val colors: List<String>? = null,
+    val x: Span,
+    val y: Span,
+    val vx: Span? = null,
+    val vy: Span? = null,
+    val ay: Double? = null,
+    val life: Span,
+    val sway: Double? = null,
+    val pop: Boolean? = null,
+    val shrinkTo: String? = null,
 )
 
 /** A particle effect: all `particles` on every trigger, or the next group of `cycle` each time. */
 @Serializable
 data class EffectSpec(
-    var particles: List<ParticleSpec>? = null,
-    var cycle: List<List<ParticleSpec>>? = null,
+    val particles: List<ParticleSpec>? = null,
+    val cycle: List<List<ParticleSpec>>? = null,
 )
 
 /** A marker above the head (spinner, question mark, check, bang). */
 @Serializable
 data class AccessorySpec(
-    var glyph: String? = null,
-    var frames: List<String>? = null,
-    var color: String,
-    var periodMs: Int? = null,
-    var box: Int? = null,
-    var reduced: String? = null,
-    var bobEvery: Int? = null,
-    var twinkleEvery: Int? = null,
-    var twinkle: String? = null,
+    val glyph: String? = null,
+    val frames: List<String>? = null,
+    val color: String,
+    val periodMs: Int? = null,
+    val box: Int? = null,
+    val reduced: String? = null,
+    val bobEvery: Int? = null,
+    val twinkleEvery: Int? = null,
+    val twinkle: String? = null,
 )
 
 /** A clip name with a pick weight; JSON is `["blink", 6]`. */
 @Serializable(with = WeightedClipSerializer::class)
-data class WeightedClip(var clip: String, var weight: Int)
+data class WeightedClip(val clip: String, val weight: Int)
 
 object WeightedClipSerializer : KSerializer<WeightedClip> {
     override val descriptor = JsonElement.serializer().descriptor
@@ -192,29 +197,29 @@ object WeightedClipSerializer : KSerializer<WeightedClip> {
 
 /** Random small gestures: every `every[0]..every[1]` ticks, one weighted pick plays. */
 @Serializable
-data class FidgetSpec(var every: List<Int>, var pick: List<WeightedClip>)
+data class FidgetSpec(val every: List<Int>, val pick: List<WeightedClip>)
 
 @Serializable
-data class SleepSpec(var after: Int, var doze: String, var loop: String, var wake: String, var still: String)
+data class SleepSpec(val after: Int, val doze: String, val loop: String, val wake: String, val still: String)
 
 @Serializable
-data class ImpatientSpec(var after: Int, var loop: String)
+data class ImpatientSpec(val after: Int, val loop: String)
 
 @Serializable
 data class BadgeSpec(
-    var glyph: String,
-    var color: String,
-    var x: Int,
-    var hopEvery: Int,
-    var impatientHopEvery: Int,
+    val glyph: String,
+    val color: String,
+    val x: Int,
+    val hopEvery: Int,
+    val impatientHopEvery: Int,
 )
 
 @Serializable
 data class VariantSpec(
-    var loop: String,
-    var enter: String? = null,
-    var exit: String? = null,
-    var prop: String? = null,
+    val loop: String,
+    val enter: String? = null,
+    val exit: String? = null,
+    val prop: String? = null,
 )
 
 /**
@@ -223,11 +228,11 @@ data class VariantSpec(
  */
 @Serializable
 data class GazePoses(
-    var left: String,
-    var right: String,
-    var up: String,
-    var down: String,
-    var center: String,
+    val left: String,
+    val right: String,
+    val up: String,
+    val down: String,
+    val center: String,
 ) {
     fun pose(zone: GazeZone): String = when (zone) {
         GazeZone.left -> left
@@ -248,54 +253,54 @@ enum class Tint { dim }
  */
 @Serializable
 data class StateSpec(
-    var enter: String? = null,
-    var loop: String? = null,
-    var tint: Tint? = null,
-    var accessory: String? = null,
-    var still: String,
-    var stillDy: Int? = null,
-    var seen: String? = null,
-    var fidget: FidgetSpec? = null,
-    var sleep: SleepSpec? = null,
-    var impatient: ImpatientSpec? = null,
-    var badge: BadgeSpec? = null,
-    var variants: MutableMap<String, VariantSpec>? = null,
-    var defaultVariant: String? = null,
-    var gaze: GazePoses? = null,
+    val enter: String? = null,
+    val loop: String? = null,
+    val tint: Tint? = null,
+    val accessory: String? = null,
+    val still: String,
+    val stillDy: Int? = null,
+    val seen: String? = null,
+    val fidget: FidgetSpec? = null,
+    val sleep: SleepSpec? = null,
+    val impatient: ImpatientSpec? = null,
+    val badge: BadgeSpec? = null,
+    val variants: Map<String, VariantSpec>? = null,
+    val defaultVariant: String? = null,
+    val gaze: GazePoses? = null,
 )
 
 /** Names of the clips, poses and effects the engine uses for interactions and orchestration. */
 @Serializable
 data class InteractionNames(
-    var notice: String,
-    var pet: String,
-    var petEnd: String,
-    var press: String,
-    var boopEnd: String,
-    var held: String,
-    var heldStill: String,
-    var drop: String,
-    var blink: String,
-    var join: String,
-    var leave: String,
-    var appear: String,
-    var vanish: String,
-    var hop: String,
-    var land: String,
-    var blinkPose: String,
-    var landDust: String,
-    var walkLeft: List<String>,
-    var walkRight: List<String>,
-    var lookLeft: String,
-    var lookRight: String,
-    var lookUp: String,
-    var lookDown: String,
-    var lookCenter: String,
+    val notice: String,
+    val pet: String,
+    val petEnd: String,
+    val press: String,
+    val boopEnd: String,
+    val held: String,
+    val heldStill: String,
+    val drop: String,
+    val blink: String,
+    val join: String,
+    val leave: String,
+    val appear: String,
+    val vanish: String,
+    val hop: String,
+    val land: String,
+    val blinkPose: String,
+    val landDust: String,
+    val walkLeft: List<String>,
+    val walkRight: List<String>,
+    val lookLeft: String,
+    val lookRight: String,
+    val lookUp: String,
+    val lookDown: String,
+    val lookCenter: String,
 )
 
 /** A prop bound to a clip variant (the juggled balls). */
 @Serializable
-data class PropSpec(var glyph: String, var colors: List<String>)
+data class PropSpec(val glyph: String, val colors: List<String>)
 
 /**
  * Checks a manifest is internally consistent and complete enough to render, so a broken or
@@ -496,12 +501,29 @@ object SkinLoader {
     /** The manifest in `json`, or null if it doesn't decode or fails `SkinValidator`. */
     fun decode(json: String): SkinManifest? {
         val manifest = try {
-            SkinJson.decodeFromString(SkinManifest.serializer(), json)
+            SkinJson.decodeFromJsonElement(SkinManifest.serializer(), wholeNumbersAsIntegers(SkinJson.parseToJsonElement(json)))
         } catch (_: SerializationException) {
             return null
         } catch (_: IllegalArgumentException) {
             return null
         }
         return manifest.takeIf { SkinValidator.validate(it).isEmpty() }
+    }
+
+    /**
+     * JSON has one number type, and Swift's decoder reads a whole number written as `60.0` or `6e1` into an Int, so
+     * the Mac shows such a skin. Here they become integer literals before decoding; a fraction stays one (and is
+     * no Int), and a `Double` field takes an integer literal just the same.
+     */
+    private fun wholeNumbersAsIntegers(e: JsonElement): JsonElement = when (e) {
+        is JsonObject -> JsonObject(e.mapValues { wholeNumbersAsIntegers(it.value) })
+        is JsonArray -> JsonArray(e.map(::wholeNumbersAsIntegers))
+        is JsonNull -> e
+        is JsonPrimitive -> {
+            val c = e.content
+            val whole = if (e.isString || c.none { it == '.' || it == 'e' || it == 'E' }) null
+            else c.toDoubleOrNull()?.takeIf { it == floor(it) && abs(it) < 1e15 }
+            if (whole != null) JsonPrimitive(whole.toLong()) else e
+        }
     }
 }

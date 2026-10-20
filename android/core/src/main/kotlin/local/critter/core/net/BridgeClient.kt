@@ -5,6 +5,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -53,7 +54,8 @@ interface Endpoint {
 
 /**
  * One long-lived, certificate-pinned WebSocket to the Mac, with reconnect and request/result matching.
- * Not for use before [start] is called; [stop] disconnects and ends the retry loop.
+ * Not for use before [start] is called; [stop] disconnects and ends the retry loop; [close] also lets go of the
+ * HTTP client for good.
  */
 class BridgeClient(
     private val scope: CoroutineScope,
@@ -75,14 +77,35 @@ class BridgeClient(
     private val _pairing = MutableSharedFlow<ServerMessage.Paired>(extraBufferCapacity = 1)
     val pairing: SharedFlow<ServerMessage.Paired> = _pairing
 
+    /**
+     * Guards the connection loop's shared state ([run], the state while running, [socket], [offlineSince],
+     * [backoff], the ping interval) against [start], [stop], [reconnectNow] and a stopped run that has not noticed yet.
+     */
+    private val lock = Any()
+
+    /**
+     * Which [start] the loop belongs to; [stop] moves it on. A run that is no longer current (cancelled, but still
+     * finishing a step that does not suspend, or its socket's last callbacks) changes nothing.
+     */
+    private var run = 0
+    private var closed = false
+
     @Volatile private var pingIntervalMs = 30_000L
     @Volatile private var http = buildHttp(fingerprint)
     @Volatile private var job: Job? = null
     @Volatile private var socket: WebSocket? = null
-    @Volatile private var offlineSince: Long? = null
+    private var offlineSince: Long? = null
+
+    /** Ends the backoff wait at once. Only sent when the very next wait is the one meant ([reconnectNow]). */
     private val wake = Channel<Unit>(Channel.CONFLATED)
-    private val inFlight = ConcurrentHashMap<String, CompletableDeferred<ServerMessage.Result>>()
-    private val skinsInFlight = ConcurrentHashMap<String, CompletableDeferred<ServerMessage.Skin?>>()
+
+    /** A request waiting for its reply, and the connection it went out on: only that connection's end fails it. */
+    private class Waiting<T>(val ws: WebSocket) {
+        val reply = CompletableDeferred<T>()
+    }
+
+    private val inFlight = ConcurrentHashMap<String, Waiting<ServerMessage.Result>>()
+    private val skinsInFlight = ConcurrentHashMap<String, Waiting<ServerMessage.Skin?>>()
     private val nextId = AtomicLong()
 
     private fun buildHttp(pin: String): OkHttpClient = PinnedTls.client(
@@ -90,67 +113,134 @@ class BridgeClient(
         OkHttpClient.Builder().pingInterval(pingIntervalMs, TimeUnit.MILLISECONDS).build(),
     )
 
-    @Synchronized
     fun start() {
-        if (job?.isActive == true) return
-        job = scope.launch { runLoop() }
+        synchronized(lock) {
+            if (closed || job?.isActive == true) return
+            val mine = ++run
+            job = scope.launch { runLoop(mine) }
+        }
     }
 
-    @Synchronized
+    /** Disconnects and ends the retry loop. A [start] after it begins afresh: the first wait is the shortest again. */
     fun stop() {
-        job?.cancel()
-        job = null
-        socket?.cancel()
-        socket = null
-        _state.value = ConnState.Idle
-    }
-
-    /** Drops the current connection (if any) and connects again without waiting out the backoff. */
-    fun reconnectNow() {
-        wake.trySend(Unit)
-        socket?.cancel()
+        val ws = synchronized(lock) {
+            run++
+            job?.cancel()
+            job = null
+            offlineSince = null
+            backoff.reset()
+            _state.value = ConnState.Idle
+            socket.also { socket = null }
+        }
+        ws?.cancel()
     }
 
     /**
-     * 30 s while the board is open, 3 min otherwise. OkHttp fixes a WebSocket's ping interval when it opens, so
-     * the new one applies from the next connection on: a live connection is never dropped just to change it. The
+     * [stop], then shuts the HTTP client's threads and pooled connections down (shared by every client this one
+     * built). For a client that is being thrown away: it does not start again.
+     */
+    fun close() {
+        synchronized(lock) { closed = true }
+        stop()
+        http.dispatcher.executorService.shutdown()
+        http.connectionPool.evictAll()
+    }
+
+    /**
+     * Connects again without waiting: while [ConnState.Offline] it skips the rest of the backoff; while
+     * [ConnState.Connected] it drops the connection (the network changed under it, say) and makes a new one at once.
+     * While connecting, waiting for approval, idle or in need of re-pairing it does nothing, and leaves nothing
+     * behind for later.
+     */
+    fun reconnectNow() {
+        val drop = synchronized(lock) {
+            when (_state.value) {
+                is ConnState.Offline -> {
+                    wake.trySend(Unit)
+                    null
+                }
+                is ConnState.Connected -> {
+                    // The loop has not left this connection yet: its very next wait is the one this ends.
+                    wake.trySend(Unit)
+                    socket
+                }
+                else -> null
+            }
+        }
+        drop?.cancel()
+    }
+
+    /**
+     * 30 s while the board is open, 3 min otherwise (spec §8.3). OkHttp fixes a WebSocket's ping interval when it
+     * opens. A longer interval waits for the next connection; a shorter one renews the live connection once the
+     * requests on it have their replies (at most [requestTimeoutMs]), so the board's heartbeat applies now. The
      * rebuilt client shares the old one's connection pool and dispatcher.
      */
     fun setPingInterval(ms: Long) {
-        if (ms == pingIntervalMs) return
-        pingIntervalMs = ms
-        http = http.newBuilder().pingInterval(ms, TimeUnit.MILLISECONDS).build()
+        val shorter = synchronized(lock) {
+            if (ms == pingIntervalMs) return
+            val shorter = ms < pingIntervalMs
+            pingIntervalMs = ms
+            http = http.newBuilder().pingInterval(ms, TimeUnit.MILLISECONDS).build()
+            shorter
+        }
+        if (shorter && _state.value is ConnState.Connected) socket?.let(::renewWhenSettled)
     }
 
     /** The ping interval the next connection will use. */
     val nextPingIntervalMs: Long get() = http.pingIntervalMillis.toLong()
 
-    /** Sends [msg] with a fresh correlation id and waits for the Mac's `result`. */
+    /** Drops [ws] for a new connection, at once, when nothing sent on it is still waiting for a reply. */
+    private fun renewWhenSettled(ws: WebSocket) {
+        scope.launch {
+            withTimeoutOrNull(requestTimeoutMs) {
+                while (true) {
+                    val pending = inFlight.values.filter { it.ws === ws && !it.reply.isCompleted }.map { it.reply } +
+                        skinsInFlight.values.filter { it.ws === ws && !it.reply.isCompleted }.map { it.reply }
+                    if (pending.isEmpty()) break
+                    pending.forEach { it.join() }
+                }
+            }
+            val current = synchronized(lock) {
+                (socket === ws && _state.value is ConnState.Connected).also { if (it) wake.trySend(Unit) }
+            }
+            if (current) ws.cancel()
+        }
+    }
+
+    /**
+     * Sends [msg] with a fresh correlation id and waits for the Mac's `result`. The Mac answers within milliseconds,
+     * so none within [requestTimeoutMs] means the connection is broken: it is dropped (and made again) rather than
+     * left looking connected.
+     */
     suspend fun request(msg: ClientMessage.Command): ServerMessage.Result {
         val id = "a${nextId.incrementAndGet()}"
         val ws = socket ?: return failure(id, "未连接")
-        val reply = CompletableDeferred<ServerMessage.Result>()
-        inFlight[id] = reply
+        val waiting = Waiting<ServerMessage.Result>(ws)
+        inFlight[id] = waiting
         try {
             if (!ws.send(encode(msg.withId(id)))) return failure(id, "未连接")
-            return withTimeoutOrNull(requestTimeoutMs) { reply.await() } ?: failure(id, "超时")
+            return withTimeoutOrNull(requestTimeoutMs) { waiting.reply.await() }
+                ?: failure(id, "超时").also { ws.cancel() }
         } finally {
             inFlight.remove(id)
         }
     }
 
     /**
-     * Asks the Mac for a skin's manifest. Null if the Mac has no such skin, the connection is down or it
-     * does not answer in time.
+     * Asks the Mac for a skin's manifest. Null if the Mac has no such skin, the connection is down or it does not
+     * answer in time (which drops the connection, as in [request]).
      */
     suspend fun requestSkin(name: String): ServerMessage.Skin? {
         val id = "a${nextId.incrementAndGet()}"
         val ws = socket ?: return null
-        val reply = CompletableDeferred<ServerMessage.Skin?>()
-        skinsInFlight[id] = reply
+        val waiting = Waiting<ServerMessage.Skin?>(ws)
+        skinsInFlight[id] = waiting
         try {
             if (!ws.send(encode(ClientMessage.SkinRequest(id, name)))) return null
-            return withTimeoutOrNull(requestTimeoutMs) { reply.await() }
+            val reply = withTimeoutOrNull(requestTimeoutMs) { waiting.reply.await() }
+            if (reply == null && !waiting.reply.isCompleted) ws.cancel()
+            return reply?.takeIf { it.manifest != null }
         } finally {
             skinsInFlight.remove(id)
         }
@@ -170,7 +260,7 @@ class BridgeClient(
             port = uri.port,
             first = ClientMessage.Pair(uri.code, deviceName),
             onOpen = { _state.value = ConnState.AwaitingApproval },
-        ) { msg -> if (msg is ServerMessage.Paired) paired.complete(msg) }
+        ) { _, msg -> if (msg is ServerMessage.Paired) paired.complete(msg) }
         try {
             // Whichever comes first: the approval, or the connection ending (denied, refused, closed).
             val settled = withTimeoutOrNull(pairTimeoutMs) {
@@ -198,67 +288,90 @@ class BridgeClient(
 
     // --- connection loop -------------------------------------------------------------------
 
-    private suspend fun runLoop() {
+    /** Sets the state if [mine] is still the current run. */
+    private fun setState(mine: Int, value: ConnState) {
+        synchronized(lock) { if (run == mine) _state.value = value }
+    }
+
+    private suspend fun runLoop(mine: Int) {
         while (currentCoroutineContext().isActive) {
             val creds = credentials()
             if (creds == null) {
-                _state.value = ConnState.NeedsRepair("尚未配对")
+                setState(mine, ConnState.NeedsRepair("尚未配对"))
                 return
             }
-            _state.value = ConnState.Connecting
-            wake.tryReceive()
+            synchronized(lock) {
+                if (run != mine) return
+                _state.value = ConnState.Connecting
+                wake.tryReceive() // not meant for the wait after this attempt
+            }
 
-            val end = connectOnce(creds)
+            val end = connectOnce(creds, mine)
             when {
                 end is End.Denied -> {
-                    _state.value = ConnState.NeedsRepair(deniedText(end.reason))
+                    setState(mine, ConnState.NeedsRepair(deniedText(end.reason)))
                     return
                 }
                 end is End.Dropped && end.cause.hasPinMismatch() -> {
-                    _state.value = ConnState.NeedsRepair("证书指纹与配对时不一致，请重新配对")
+                    setState(mine, ConnState.NeedsRepair("证书指纹与配对时不一致，请重新配对"))
                     return
                 }
             }
-            val since = offlineSince ?: clock().also { offlineSince = it }
-            val delayMs = backoff.nextDelayMs()
-            _state.value = ConnState.Offline(delayMs, since)
+            val delayMs = synchronized(lock) {
+                if (run != mine) return
+                val since = offlineSince ?: clock().also { offlineSince = it }
+                backoff.nextDelayMs().also { _state.value = ConnState.Offline(it, since) }
+            }
             withTimeoutOrNull(delayMs) { wake.receive() }
         }
     }
 
-    private suspend fun connectOnce(creds: Credentials): End {
+    private suspend fun connectOnce(creds: Credentials, mine: Int): End {
         val address = endpoint.resolve() ?: return End.Dropped(null)
+        // Finding the Mac may not notice a stop (a blocking probe): a stopped run goes no further.
+        currentCoroutineContext().ensureActive()
+        val client = http
+        val pingMs = client.pingIntervalMillis.toLong()
         val link = open(
-            client = http,
+            client = client,
             host = address.first,
             port = address.second,
             first = ClientMessage.Hello(appName, creds.deviceId, creds.token),
-        ) { msg ->
+        ) { ws, msg ->
             when (msg) {
                 is ServerMessage.Welcome -> {
-                    backoff.reset()
-                    offlineSince = null
-                    _state.value = ConnState.Connected(msg.macName)
+                    val renew = synchronized(lock) {
+                        if (run != mine) return@open
+                        socket = ws // already, unless the welcome beat open()'s return
+                        backoff.reset()
+                        offlineSince = null
+                        _state.value = ConnState.Connected(msg.macName)
+                        // The board shortened the heartbeat while this connection was being made.
+                        pingMs > pingIntervalMs
+                    }
+                    if (renew) renewWhenSettled(ws)
                 }
-                is ServerMessage.Snapshot -> _snapshot.value = msg
-                is ServerMessage.Result -> msg.id?.let { inFlight[it] }?.complete(msg)
+                is ServerMessage.Snapshot -> synchronized(lock) { if (run == mine) _snapshot.value = msg }
+                is ServerMessage.Result -> msg.id?.let { inFlight[it] }?.reply?.complete(msg)
                 // A skin reply carries no `result`; it still settles the request that asked for it.
                 is ServerMessage.Skin -> {
-                    msg.id?.let { inFlight[it] }?.complete(ServerMessage.Result(msg.id, true))
-                    msg.id?.let { skinsInFlight[it] }?.complete(msg)
+                    msg.id?.let { inFlight[it] }?.reply?.complete(ServerMessage.Result(msg.id, true))
+                    msg.id?.let { skinsInFlight[it] }?.reply?.complete(msg)
                 }
                 else -> Unit
             }
         }
-        socket = link.ws
+        val current = synchronized(lock) { (run == mine).also { if (it) socket = link.ws } }
         try {
+            if (!current) return End.Dropped(null)
             return link.ended.await()
         } finally {
             link.ws.cancel()
-            socket = null
+            synchronized(lock) { if (socket === link.ws) socket = null }
+            // Only what went out on this connection: a request on a newer one is answered there.
             val gone = failure(null, "未连接")
-            inFlight.values.forEach { it.complete(gone) }
-            skinsInFlight.values.forEach { it.complete(null) }
+            inFlight.values.forEach { if (it.ws === link.ws) it.reply.complete(gone) }
+            skinsInFlight.values.forEach { if (it.ws === link.ws) it.reply.complete(null) }
         }
     }
 
@@ -276,7 +389,7 @@ class BridgeClient(
         port: Int,
         first: ClientMessage,
         onOpen: () -> Unit = {},
-        onMessage: (ServerMessage) -> Unit,
+        onMessage: (WebSocket, ServerMessage) -> Unit,
     ): Link {
         val ended = CompletableDeferred<End>()
         val url = HttpUrl.Builder().scheme("https").host(host).port(port).build()
@@ -290,7 +403,7 @@ class BridgeClient(
                 when (val msg = decodeServer(text)) {
                     null -> Unit
                     is ServerMessage.Denied -> ended.complete(End.Denied(msg.reason))
-                    else -> onMessage(msg)
+                    else -> onMessage(webSocket, msg)
                 }
             }
 

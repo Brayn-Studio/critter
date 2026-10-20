@@ -31,7 +31,6 @@ import local.critter.phone.ui.board.BoardActivity
 class BoardTriggerService(private val context: Context, private val enabled: () -> Boolean) {
     private val settings = context.repository.settingsStore
     private val trigger = BoardTrigger()
-    private val still = BoardTrigger.Stillness()
     private val handler = Handler(Looper.getMainLooper())
     private val sensors = context.getSystemService(SensorManager::class.java)
     private var started = false
@@ -60,9 +59,7 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     private val sensorListener = object : SensorEventListener {
         override fun onSensorChanged(event: SensorEvent) {
             val (x, y, z) = event.values
-            val t = now()
-            val isStill = still.add(t, x, y, z)
-            perform(trigger.onOrientation(BoardTrigger.poseOf(x, y, z), isStill, t))
+            perform(trigger.onGravity(x, y, z, now()))
             update()
         }
 
@@ -179,7 +176,7 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         if (listening) return
         val sensor = sensors.getDefaultSensor(Sensor.TYPE_GRAVITY)
             ?: sensors.getDefaultSensor(Sensor.TYPE_ACCELEROMETER) ?: return
-        still.clear()
+        trigger.onSensorStarted()
         listening = sensors.registerListener(sensorListener, sensor, SensorManager.SENSOR_DELAY_NORMAL, 500_000, handler)
     }
 

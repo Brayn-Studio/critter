@@ -265,8 +265,7 @@ fun SettingsScreen(
             confirmText = "取消配对",
             onConfirm = {
                 confirmUnpair = false
-                repo.unpair()
-                onUnpaired()
+                repo.unpair(onDone = onUnpaired)
             },
             dismissText = "保留",
             onDismiss = { confirmUnpair = false },

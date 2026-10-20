@@ -124,14 +124,24 @@ sealed interface AnswerOutcome {
     /** Someone answered first (on the Mac): not an error, the card says so and closes. */
     data object HandledElsewhere : AnswerOutcome
 
+    /**
+     * Too late: the request's time ran out and the hook no longer waits for it. As with [HandledElsewhere], the card
+     * says so ([message], the Mac's words) and closes: there is nothing to retry.
+     */
+    data class Expired(val message: String) : AnswerOutcome
+
     /** It did not get through; the card stays open with [message] over the buttons. */
     data class Failed(val message: String) : AnswerOutcome
 }
 
-fun answerOutcome(result: ServerMessage.Result): AnswerOutcome = when {
-    result.ok -> AnswerOutcome.Sent
-    result.reason == ResultReason.resolved -> AnswerOutcome.HandledElsewhere
-    else -> AnswerOutcome.Failed(result.message?.takeIf { it.isNotBlank() } ?: "没有发送出去，再试一次")
+fun answerOutcome(result: ServerMessage.Result): AnswerOutcome {
+    val message = result.message?.takeIf { it.isNotBlank() }
+    return when {
+        result.ok -> AnswerOutcome.Sent
+        result.reason == ResultReason.resolved -> AnswerOutcome.HandledElsewhere
+        result.reason == ResultReason.expired -> AnswerOutcome.Expired(message ?: "这个请求已经过期了")
+        else -> AnswerOutcome.Failed(message ?: "没有发送出去，再试一次")
+    }
 }
 
 /** How long the card shows "✓ 已允许" and the cheering Critter before it slides away (design §7). */
@@ -499,7 +509,7 @@ private fun DoneButton(text: String, modifier: Modifier) {
  * [name] is the session's, when it was seen; [onOk] closes the card (it also closes by itself).
  */
 @Composable
-internal fun HandledElsewhereCard(name: String?, manifest: SkinManifest, onOk: () -> Unit) {
+internal fun HandledElsewhereCard(name: String?, manifest: SkinManifest, onOk: () -> Unit, expired: String? = null) {
     val c = Critter.colors
     Column(
         Modifier.fillMaxWidth().padding(start = 18.dp, end = 18.dp, bottom = 16.dp),
@@ -511,11 +521,15 @@ internal fun HandledElsewhereCard(name: String?, manifest: SkinManifest, onOk: (
             Modifier.fillMaxWidth().height(150.dp).clip(PixelShape(5.dp)), cell = 5.dp, groundInset = 24.dp,
         )
         Text(
-            "已在电脑上处理", Modifier.padding(top = 4.dp), color = c.ink, fontFamily = Nunito,
-            fontWeight = FontWeight.W900, fontSize = 19.sp,
+            if (expired != null) "已经过期了" else "已在电脑上处理", Modifier.padding(top = 4.dp), color = c.ink,
+            fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 19.sp,
         )
         Text(
-            if (name != null) "$name 的这个请求已经在电脑上处理了。" else "这个请求已经在电脑上处理了。",
+            when {
+                expired != null -> expired
+                name != null -> "$name 的这个请求已经在电脑上处理了。"
+                else -> "这个请求已经在电脑上处理了。"
+            },
             color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 13.5.sp, textAlign = TextAlign.Center,
         )
         PixelButton("好的", onOk, Modifier.padding(top = 6.dp).width(140.dp), kind = ButtonKind.Secondary)

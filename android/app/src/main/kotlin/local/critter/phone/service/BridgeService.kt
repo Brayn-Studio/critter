@@ -86,14 +86,22 @@ class BridgeService : Service() {
                 }
                 val s = repo.settingsStore.settings.value
                 val prefs = AlertPrefs(s.vibrateOnWaiting, s.notifyDone, s.notifyError)
-                val plan = tracker.next(body, prefs)
-                // Notifications only when neither the floating pile nor the board (which the pile hides behind) can
-                // be seen (spec §8.7); the buzz stays.
+                // Notifications only when nothing on screen shows the requests (spec §8.7): not the floating pile,
+                // nor the board standing in for it. The buzz stays. What the pile held back is posted when it goes.
+                val notify = !overlay.inSight
+                val plan = tracker.next(body, prefs, notify)
                 Alerts.apply(
                     this@BridgeService, plan, body,
                     canVibrate = Alerts.vibrationAllowed(this@BridgeService),
-                    notify = !overlay.isVisible && !repo.boardOnScreen.value,
+                    notify = notify,
                 )
+            }
+        }
+
+        overlay.onHidden = {
+            repo.live.value?.let { body ->
+                val plan = repo.alertTracker.pileHidden(body)
+                if (plan.post.isNotEmpty()) Alerts.apply(this@BridgeService, plan, body, canVibrate = false)
             }
         }
 
@@ -155,6 +163,7 @@ class BridgeService : Service() {
         networkCallback = null
         scope.cancel()
         boardTrigger.stop()
+        overlay.onHidden = null // everything is withdrawn below
         overlay.hide()
         repo.stopClient()
         // Nothing withdraws them from here on (answered on the Mac, expired); the tracker forgets them too, so they

@@ -13,6 +13,8 @@ import java.io.IOException
  * [SoundPool]. The theme is the Mac's `prefs.soundTheme`; `system`, an unknown one or one the app does not
  * have means `voice`. Silent under Do Not Disturb. Which snapshot deserves a sound is decided by
  * `SoundTrigger.enteredAlertStates`, not here.
+ *
+ * [prepare] reads files: call it off the main thread. [play] and [release] may come from another thread meanwhile.
  */
 class BoardSounds(private val context: Context) {
     private val pool = SoundPool.Builder()
@@ -25,6 +27,7 @@ class BoardSounds(private val context: Context) {
         )
         .build()
     private val loaded = HashMap<String, Int>()
+    private var released = false
     private val themes: Set<String> by lazy { context.assets.list("sounds")?.toSet() ?: emptySet() }
 
     /** The folder name to use for the Mac's [theme]. */
@@ -41,16 +44,23 @@ class BoardSounds(private val context: Context) {
 
     fun play(state: PetState, theme: SoundTheme?) {
         if (state !in SOUND_STATES || !Alerts.vibrationAllowed(context)) return // DND mutes the board too
-        val id = soundId(resolveTheme(theme), state) ?: return
-        pool.play(id, 1f, 1f, 1, 0, 1f)
+        val t = resolveTheme(theme)
+        synchronized(this) {
+            val id = soundId(t, state) ?: return
+            pool.play(id, 1f, 1f, 1, 0, 1f)
+        }
     }
 
+    @Synchronized
     fun release() {
+        released = true
         pool.release()
         loaded.clear()
     }
 
+    @Synchronized
     private fun soundId(theme: String, state: PetState): Int? {
+        if (released) return null
         val key = "$theme/${state.name}"
         loaded[key]?.let { return it }
         return try {

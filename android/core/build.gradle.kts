@@ -20,11 +20,10 @@ dependencies {
     testImplementation(libs.mockwebserver3)
 }
 
-// The repo-root skins double as test resources (`<name>/manifest.json`): there is one source of truth.
-sourceSets {
-    test {
-        resources.srcDir("../../Skins")
-    }
+// The repo-root skins double as test resources (`<name>/manifest.json`): there is one source of truth. Only the
+// manifests: whatever else lands in Skins/ stays off the test classpath.
+tasks.processTestResources {
+    from("../../Skins") { include("*/manifest.json") }
 }
 
 tasks.test {

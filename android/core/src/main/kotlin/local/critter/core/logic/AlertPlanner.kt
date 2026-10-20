@@ -80,17 +80,24 @@ object AlertPlanner {
  *
  * A reconnect makes the next snapshot "the first" again (no buzz for what happened offline), but what was already
  * alerted is remembered, so a notification the user dismissed is not posted again on every reconnect; requests
- * that were resolved while offline are withdrawn. A request counts as alerted once a live snapshot listed it,
- * whether a notification went up or the floating pile was on screen.
+ * that were resolved while offline are withdrawn.
  *
- * Not thread-safe: one caller (the service's main-thread collector).
+ * A request gets its notification once, the first time a live snapshot lists it while nothing on screen shows it.
+ * Listed while the floating pile shows it (`notify = false`: the pile, or the board in its place), it waits: posted
+ * when the pile goes out of sight ([pileHidden]: screen off, locked, hidden) or by the next snapshot out of sight,
+ * if the Mac still lists it then; never if it was answered meanwhile.
+ *
+ * Not thread-safe: one caller (the service's main thread).
  */
 class AlertTracker {
     private var previous: SnapshotBody? = null
     private var lastPending: Set<String>? = null
 
-    /** Request ids a live snapshot has listed (and still lists). */
+    /** Request ids notified (or due to be: a notification the system did not show counts) and still listed. */
     private val alerted = HashSet<String>()
+
+    /** Request ids still listed that only the pile (or the board) has shown so far: no notification yet. */
+    private val shownOnPile = HashSet<String>()
 
     /** Sessions with a waiting notice up (or due, had the pile not been on screen). */
     private val noticed = HashSet<String>()
@@ -114,21 +121,30 @@ class AlertTracker {
         previous = null
         lastPending = null
         alerted.clear()
+        shownOnPile.clear()
         noticed.clear()
         hadRequest.clear()
         resulted.clear()
     }
 
-    fun next(current: SnapshotBody, prefs: AlertPrefs): AlertPlan {
+    /**
+     * The plan for the live snapshot [current]. [notify]: nothing on screen shows the requests (the floating pile is
+     * out of sight); false holds new requests back for [pileHidden] instead of posting them. The buzz never waits.
+     */
+    fun next(current: SnapshotBody, prefs: AlertPrefs, notify: Boolean = true): AlertPlan {
         val base = AlertPlanner.plan(previous, current, prefs)
         val pendingIds = current.pending.mapTo(LinkedHashSet()) { it.requestId }
         val sessionIds = current.sessions.mapTo(HashSet()) { it.id }
 
-        // Requests: post only the never-alerted ones; withdraw every alerted one that is gone, offline or not.
-        val post = base.post.filter { it.requestId !in alerted }
+        // Requests: post the never-notified ones (new, or held back while the pile showed them) when nothing shows
+        // them; withdraw every notified one that is gone, offline or not.
         val cancel = alerted.filter { it !in pendingIds }
         alerted.retainAll(pendingIds)
-        alerted.addAll(pendingIds)
+        shownOnPile.retainAll(pendingIds)
+        val due = current.pending.filter { it.requestId !in alerted }
+        val post = if (notify) due else emptyList()
+        due.mapTo(if (notify) alerted else shownOnPile) { it.requestId }
+        if (notify) shownOnPile.clear()
 
         // Waiting with nothing the phone can answer.
         val withRequest = current.pending.mapTo(HashSet()) { it.sessionId }
@@ -162,5 +178,17 @@ class AlertTracker {
             cancelWaitingNotices = cancelWaiting,
             reconcile = reconcile,
         )
+    }
+
+    /**
+     * The floating pile (or the board in its place) went out of sight: the requests only it has shown get their
+     * notification now, those [current] (the newest live snapshot) still lists. No buzz: they buzzed when they came.
+     */
+    fun pileHidden(current: SnapshotBody): AlertPlan {
+        val post = current.pending.filter { it.requestId in shownOnPile }
+        // The rest were answered meanwhile.
+        shownOnPile.clear()
+        post.mapTo(alerted) { it.requestId }
+        return AlertPlan(vibrate = false, post = post, cancel = emptyList(), sessionAlerts = emptyList(), reconcile = false)
     }
 }

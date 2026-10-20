@@ -51,6 +51,13 @@ class NotificationActionReceiver : BroadcastReceiver() {
                         Alerts.cancelRequest(app, requestId)
                         Alerts.showHandled(app, requestId)
                     }
+                    // Too late to answer at all: the notification has nothing left to offer.
+                    result.reason == ResultReason.expired -> {
+                        Alerts.cancelRequest(app, requestId)
+                        withContext(Dispatchers.Main) {
+                            Toast.makeText(app, result.message ?: "这个请求已经过期了", Toast.LENGTH_SHORT).show()
+                        }
+                    }
                     result.reason == ResultReason.invalid -> withContext(Dispatchers.Main) { openCard(app, requestId, locked = false) }
                     // Anything else (no connection, timeout): keep the notification so it can be tried again.
                     else -> withContext(Dispatchers.Main) {

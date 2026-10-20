@@ -22,13 +22,6 @@ class MotionCuesTest {
         assertEquals(6, clip.sumOf { it.ticks })
     }
 
-    @Test
-    fun cuesDoNotShareKeysWithTheSkin() {
-        val skin = bundledSkin("sprig")
-        MotionCues.lookAtYou(skin).first().ticks = 99
-        assertEquals(2, skin.clips.getValue(skin.interactions.notice).first().ticks)
-    }
-
     /** How long the hop lasts on screen: its ticks at the skin's tick (the floating shelf waits for it). */
     @Test
     fun hopMsIsItsTicksAtTheSkinsTick() {
