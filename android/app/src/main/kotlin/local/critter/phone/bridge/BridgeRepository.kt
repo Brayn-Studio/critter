@@ -126,6 +126,7 @@ class BridgeRepository(private val app: Application) {
             },
             fingerprint = p.fingerprint,
             credentials = { _pairing.value?.let { Credentials(it.deviceId, it.token) } },
+            requestTimeoutMs = REQUEST_TIMEOUT_MS,
         )
         c.setPingInterval(pingInterval())
         client = c
@@ -202,27 +203,42 @@ class BridgeRepository(private val app: Application) {
     /**
      * For a caller with no screen (a notification button): brings the connection back, waits for it to list
      * [requestId], and answers with what [payloadFor] makes of the request (null: cannot be answered this way,
-     * reason `invalid`). If the answer failed on the phone's side (the connection dropped under it, or no reply in
-     * time: reason `unknown`), it tries once more; the Mac only accepts an answer to a request it still lists, so a
-     * second one for a request the first already settled comes back `resolved`. A request that is gone gives
-     * `resolved`; no connection gives `unknown` "没连上电脑".
+     * reason `invalid`). A request that is gone gives `resolved`; no connection gives `unknown` "没连上电脑".
+     *
+     * If the answer failed on the phone's side (reason `unknown`: the connection dropped under it, or no reply in
+     * time, which drops it), it tries once more, on a new connection: it first waits for the failed one to leave
+     * [ConnState.Connected], so the retry never goes out on it, nor is checked against its last snapshot. The Mac
+     * only accepts an answer to a request it still lists, so a second one for a request the first already settled
+     * comes back `resolved`.
+     *
+     * All of it takes at most [ANSWER_DEADLINE_MS] (the request timeout plus [LIVE_WAIT_MS], about 18 s): on a
+     * connection that looks up but is dead, the first answer times out after 10 s, which leaves 8 s for a new
+     * connection and the second one. Past that, `unknown` as well.
      */
     suspend fun answerWhenLive(requestId: String, payloadFor: (BridgePending) -> AnswerPayload?): ServerMessage.Result {
-        for (attempt in 0..1) {
-            ensureConnected()
-            when (val found = awaitRequest(requestId)) {
-                LiveRequest.Offline -> return failure(ResultReason.unknown, "没连上电脑，没有发送")
-                LiveRequest.Gone -> return failure(ResultReason.resolved, "已在电脑上处理")
-                is LiveRequest.Found -> {
-                    val payload = payloadFor(found.request) ?: return failure(ResultReason.invalid, "要打开卡片回答")
-                    val result = answer(requestId, payload)
-                    // Checking the state here would race: the socket's end is reported before the state leaves Connected.
-                    val localFailure = !result.ok && result.reason == ResultReason.unknown
-                    if (!localFailure || attempt == 1) return result
+        var sending = false
+        suspend fun attempts(): ServerMessage.Result {
+            for (attempt in 0..1) {
+                // The socket's end is reported before the state leaves Connected: a retry waits for that first.
+                if (attempt == 1) state.first { it !is ConnState.Connected }
+                ensureConnected()
+                when (val found = awaitRequest(requestId)) {
+                    LiveRequest.Offline -> return failure(ResultReason.unknown, "没连上电脑，没有发送")
+                    LiveRequest.Gone -> return failure(ResultReason.resolved, "已在电脑上处理")
+                    is LiveRequest.Found -> {
+                        val payload = payloadFor(found.request) ?: return failure(ResultReason.invalid, "要打开卡片回答")
+                        sending = true
+                        val result = answer(requestId, payload)
+                        sending = false
+                        val localFailure = !result.ok && result.reason == ResultReason.unknown
+                        if (!localFailure || attempt == 1) return result
+                    }
                 }
             }
+            return failure(ResultReason.unknown, "没有发送出去")
         }
-        return failure(ResultReason.unknown, "没有发送出去")
+        return withTimeoutOrNull(ANSWER_DEADLINE_MS) { attempts() }
+            ?: failure(ResultReason.unknown, if (sending) "没有收到电脑的回复" else "没连上电脑，没有发送")
     }
 
     /**
@@ -439,6 +455,12 @@ class BridgeRepository(private val app: Application) {
     companion object {
         /** How long a notification button or a sheet waits for the connection to come back. */
         const val LIVE_WAIT_MS = 8_000L
+
+        /** How long the Mac gets to reply to a command before the connection counts as broken ([BridgeClient]). */
+        const val REQUEST_TIMEOUT_MS = 10_000L
+
+        /** The longest a notification button's answer takes, retry included ([answerWhenLive]). */
+        const val ANSWER_DEADLINE_MS = REQUEST_TIMEOUT_MS + LIVE_WAIT_MS
 
         /** The snapshot cache is written at most this often while connected. */
         private const val CACHE_EVERY_MS = 30_000L
