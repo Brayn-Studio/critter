@@ -106,6 +106,15 @@ class AnswerInputTest {
         assertEquals(AnswerOutcome.Failed("没有发送出去，再试一次"), answerOutcome(result(false, ResultReason.failed)))
     }
 
+    /** Too late: the hook stopped waiting. Like "handled elsewhere" the card says so and closes; nothing to retry. */
+    @Test
+    fun anExpiredRequestClosesTheCardWithTheMacsWords() {
+        fun expired(message: String?) = ServerMessage.Result("1", false, ResultReason.expired, message)
+        assertEquals(AnswerOutcome.Expired("这个请求已经过期了"), answerOutcome(expired(null)))
+        assertEquals(AnswerOutcome.Expired("这个请求已经过期了"), answerOutcome(expired(" ")))
+        assertEquals(AnswerOutcome.Expired("超过了等待时间"), answerOutcome(expired("超过了等待时间")))
+    }
+
     @Test
     fun aYesGetsASuccessBeatANoDoesNot() {
         assertEquals("已允许", successLabel(AnswerPayload(decision = "allow")))

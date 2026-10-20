@@ -85,6 +85,8 @@ class AnswerActivity : ComponentActivity() {
         var shown by remember { mutableStateOf(true) }
         val cue = remember { LookAtYouCue() }
         var handledElsewhere by remember(id) { mutableStateOf(false) }
+        // The Mac's word that the request ran out of time: closes the card like handledElsewhere.
+        var expired by remember(id) { mutableStateOf<String?>(null) }
         var busy by remember(id) { mutableStateOf(false) }
         var failure by remember(id) { mutableStateOf<String?>(null) }
         var attempt by remember(id) { mutableIntStateOf(0) }
@@ -101,8 +103,9 @@ class AnswerActivity : ComponentActivity() {
             delay(BridgeRepository.LIVE_WAIT_MS)
             waitedOut = true
         }
-        val waiting = answered == null && request == null && live == null && !waitedOut && !handledElsewhere
-        val gone = answered == null && !waiting && (request == null || handledElsewhere)
+        val settledElsewhere = handledElsewhere || expired != null
+        val waiting = answered == null && request == null && live == null && !waitedOut && !settledElsewhere
+        val gone = answered == null && !waiting && (request == null || settledElsewhere)
         LaunchedEffect(gone) {
             if (gone) {
                 delay(HANDLED_CLOSE_MS)
@@ -133,6 +136,7 @@ class AnswerActivity : ComponentActivity() {
                             answered = Answered(d, session, label)
                         }
                         AnswerOutcome.HandledElsewhere -> handledElsewhere = true
+                        is AnswerOutcome.Expired -> expired = outcome.message
                         is AnswerOutcome.Failed -> {
                             failure = outcome.message
                             attempt++ // a fresh draft, so the retry is allowed
@@ -155,6 +159,7 @@ class AnswerActivity : ComponentActivity() {
                     name = lastSession?.name,
                     manifest = library.manifest(lastSession?.skin.orEmpty()),
                     onOk = { shown = false },
+                    expired = expired,
                 )
                 shownDraft == null -> SheetMessage("正在连接电脑…")
                 else -> {
