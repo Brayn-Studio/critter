@@ -10,6 +10,8 @@ import okhttp3.tls.HeldCertificate
 import local.critter.core.protocol.sha256Hex
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 
 /** A stand-in for the Mac: a TLS WebSocket server with a self-signed certificate. */
 class FakeMac(val cert: HeldCertificate = newCert()) {
@@ -23,6 +25,11 @@ class FakeMac(val cert: HeldCertificate = newCert()) {
 
     /** What the Mac does with a frame; the default does nothing. */
     var onFrame: (WebSocket, String) -> Unit = { _, _ -> }
+
+    /** How many WebSockets were accepted, and the most that were open at the same time. */
+    val opened = AtomicInteger()
+    val mostOpenAtOnce = AtomicInteger()
+    private val openNow = AtomicInteger()
 
     val fingerprint: String = sha256Hex(cert.certificate.encoded)
     val host: String get() = server.hostName
@@ -39,13 +46,27 @@ class FakeMac(val cert: HeldCertificate = newCert()) {
     /** Accept one more WebSocket upgrade. */
     fun expectConnection() {
         server.enqueue(MockResponse.Builder().webSocketUpgrade(object : WebSocketListener() {
+            private val gone = AtomicBoolean()
+
             override fun onOpen(webSocket: WebSocket, response: Response) {
+                opened.incrementAndGet()
+                mostOpenAtOnce.accumulateAndGet(openNow.incrementAndGet(), ::maxOf)
                 sockets.add(webSocket)
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
                 received.add(text)
                 onFrame(webSocket, text)
+            }
+
+            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) = ended()
+
+            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) = ended()
+
+            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) = ended()
+
+            private fun ended() {
+                if (gone.compareAndSet(false, true)) openNow.decrementAndGet()
             }
         }).build())
     }

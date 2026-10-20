@@ -152,7 +152,7 @@ class BridgeRepository(private val app: Application) {
         flushCache()
         clientJob?.cancel()
         clientJob = null
-        client?.stop()
+        client?.close()
         client = null
         _state.value = ConnState.Idle
         _live.value = null
@@ -383,6 +383,7 @@ class BridgeRepository(private val app: Application) {
             return null
         } finally {
             progress.cancel()
+            temp.close()
             _pairState.value = ConnState.Idle
             // A failed re-pairing leaves the old pairing in place: bring its connection back.
             if (!success && BridgeService.shouldRun(this)) startClient()
