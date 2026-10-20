@@ -45,6 +45,9 @@ class BoardTrigger(
     /** Since when the phone has been charging, landscape and still (while the board is not up). */
     private var holdSince: Long? = null
 
+    /** The earliest a hold may count from: the last plug-in or screen-on. */
+    private var holdFloor = Long.MIN_VALUE
+
     /** Since when the phone has been upright (while the board is up). */
     private var uprightSince: Long? = null
 
@@ -68,6 +71,7 @@ class BoardTrigger(
             suppressed = false
             unpluggedAt = null
             uprightSince = null
+            holdFloor = nowMs
         } else {
             holdSince = null
             openedAt = null
@@ -82,10 +86,15 @@ class BoardTrigger(
         screenOn = on
         holdSince = null
         uprightSince = null
+        if (on) holdFloor = nowMs
         return evaluate(nowMs)
     }
 
-    fun onOrientation(pose: Pose, still: Boolean, nowMs: Long): Action {
+    /**
+     * How the phone lies now. [stillSinceMs]: since when it has been still, if [still] (the hold counts from there:
+     * the time it took to see that the phone is still is part of the hold, not added to it).
+     */
+    fun onOrientation(pose: Pose, still: Boolean, nowMs: Long, stillSinceMs: Long = nowMs): Action {
         if (!charging || !screenOn) return evaluate(nowMs)
         if (shown) {
             if (pose == Pose.Upright) {
@@ -94,11 +103,28 @@ class BoardTrigger(
                 uprightSince = null
             }
         } else if (pose == Pose.Landscape && still && autoOpen && !suppressed) {
-            if (holdSince == null) holdSince = nowMs
+            // Not from before this charge or this screen-on: only since then does lying still count.
+            if (holdSince == null) holdSince = stillSinceMs.coerceIn(holdFloor, nowMs)
         } else {
             holdSince = null
         }
         return evaluate(nowMs)
+    }
+
+    private val stillness = Stillness()
+
+    /**
+     * A gravity reading (the sensor runs only while [sensorWanted]): its pose, and whether the phone has been still
+     * (see [Stillness]).
+     */
+    fun onGravity(x: Float, y: Float, z: Float, nowMs: Long): Action {
+        val still = stillness.add(nowMs, x, y, z)
+        return onOrientation(poseOf(x, y, z), still, nowMs, stillness.stillSince ?: nowMs)
+    }
+
+    /** The gravity sensor was started (again): what it read before says nothing about now. */
+    fun onSensorStarted() {
+        stillness.clear()
     }
 
     fun onTick(nowMs: Long): Action = evaluate(nowMs)
@@ -177,6 +203,13 @@ class BoardTrigger(
         private val ys = ArrayDeque<Float>()
         private val zs = ArrayDeque<Float>()
 
+        /**
+         * Since when the phone has been still: the first reading of the window in which [add] first said so, kept
+         * for as long as it stays still. Null while it is not.
+         */
+        var stillSince: Long? = null
+            private set
+
         /** Adds a reading and says whether the phone is still. */
         fun add(nowMs: Long, x: Float, y: Float, z: Float): Boolean {
             times.addLast(nowMs); xs.addLast(x); ys.addLast(y); zs.addLast(z)
@@ -185,12 +218,15 @@ class BoardTrigger(
             while (times.size > 1 && times[1] <= start) {
                 times.removeFirst(); xs.removeFirst(); ys.removeFirst(); zs.removeFirst()
             }
-            if (times.first() > start) return false
-            return range(xs) < tolerance && range(ys) < tolerance && range(zs) < tolerance
+            val still = times.first() <= start &&
+                range(xs) < tolerance && range(ys) < tolerance && range(zs) < tolerance
+            stillSince = if (still) stillSince ?: times.first() else null
+            return still
         }
 
         fun clear() {
             times.clear(); xs.clear(); ys.clear(); zs.clear()
+            stillSince = null
         }
 
         private fun range(v: ArrayDeque<Float>): Float = (v.maxOrNull() ?: 0f) - (v.minOrNull() ?: 0f)

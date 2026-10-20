@@ -297,6 +297,60 @@ class BoardTriggerTest {
         assertFalse(s.add(5_000, 9.7f, 0f, 1f), "cleared: a fresh start")
     }
 
+    /** Still since the first of the readings that showed it, not since the window was first full. */
+    @Test fun stillSinceIsWhereTheStillReadingsBegin() {
+        val s = BoardTrigger.Stillness()
+        for (t in 0L..1_400L step 200) s.add(t, 9.7f, 0f, 1f)
+        assertNull(s.stillSince)
+        assertTrue(s.add(1_600, 9.7f, 0f, 1f))
+        assertEquals(0L, s.stillSince)
+        assertTrue(s.add(5_000, 9.7f, 0f, 1f))
+        assertEquals(0L, s.stillSince, "the same still spell")
+        assertFalse(s.add(5_200, 5f, 5f, 5f))
+        assertNull(s.stillSince)
+    }
+
+    /**
+     * Design §8.6: charging, landscape and still for 3 s opens the board. Real readings every 200 ms from 0: the
+     * 1.5 s it takes to see the phone is still are part of those 3 s, not added to them.
+     */
+    @Test fun gravityReadingsOpenTheBoardAfterThreeSeconds() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onSensorStarted()
+        var openedAt: Long? = null
+        for (now in 0L..6_000L step 100) {
+            val action = when {
+                now % 200 == 0L -> t.onGravity(9.7f, 0.3f, 1.0f, now)
+                (t.nextDeadline() ?: Long.MAX_VALUE) <= now -> t.onTick(now)
+                else -> none
+            }
+            if (action == open && openedAt == null) openedAt = now
+        }
+        assertEquals(3_000L, openedAt)
+    }
+
+    /** Readings from before the sensor was started again (the screen was off, say) count for nothing. */
+    @Test fun aRestartedSensorStartsTheStillnessAfresh() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onSensorStarted()
+        for (now in 0L..2_000L step 200) t.onGravity(9.7f, 0.3f, 1.0f, now)
+        t.onScreen(false, 2_100)
+        t.onScreen(true, 10_000)
+        t.onSensorStarted()
+        var openedAt: Long? = null
+        for (now in 10_000L..16_000L step 100) {
+            val action = when {
+                now % 200 == 0L -> t.onGravity(9.7f, 0.3f, 1.0f, now)
+                (t.nextDeadline() ?: Long.MAX_VALUE) <= now -> t.onTick(now)
+                else -> none
+            }
+            if (action == open && openedAt == null) openedAt = now
+        }
+        assertEquals(13_000L, openedAt)
+    }
+
     @Test fun stillAfterAFullWindow() {
         val s = BoardTrigger.Stillness()
         for (t in 0L..1_400L step 200) assertFalse(s.add(t, 9.7f, 0f, 1f), "at $t ms the readings cover less than 1.5 s")
