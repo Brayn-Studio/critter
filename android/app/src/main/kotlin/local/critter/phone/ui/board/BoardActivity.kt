@@ -224,8 +224,11 @@ class BoardActivity : ComponentActivity() {
                     shift = shift,
                     onAllow = { answerPermission(repo, it, allow = true) },
                     onDeny = { answerPermission(repo, it, allow = false) },
+                    // In the card's own task, as from the critter board: a card left behind in the board's task
+                    // would come to the front in place of the board the next time the board is started.
                     onOpen = {
-                        startActivity(AnswerActivity.intent(this@BoardActivity, it.requestId).addFlags(OWN_CARD))
+                        val card = AnswerActivity.intent(this@BoardActivity, it.requestId)
+                        startActivity(card.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or OWN_CARD))
                     },
                 )
             }
