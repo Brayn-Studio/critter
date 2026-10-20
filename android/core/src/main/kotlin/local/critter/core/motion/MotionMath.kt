@@ -7,6 +7,13 @@ import kotlin.math.floor
  * Rounds like JavaScript's `Math.round`, which the approved motion preview uses: halves go
  * toward +∞ (`-2.5 → -2`). `Math.round` on a `Double` happens to do the same, but the formula
  * is kept as in Swift (`Int(floor(v + 0.5))`) so the two stay obviously identical.
+ *
+ * Out of `Int` range the two would part (`toInt()` saturates, Swift's `Int(_:)` traps), but nothing that comes here
+ * gets near it. What a skin supplies is bounded by `SkinValidator`: particles start within ±1000 cells, move at most
+ * 1000 cells/s and accelerate at most 1000 cells/s², sway at most 1000, and live at most 300 ticks of at most 1 s
+ * (`tickMs` 16…1000), so one stays within about ±1e8 cells; clip offsets are within ±64 cells, the grid is 18 wide
+ * and glyphs at most 64. The rest is screen-sized: follow offsets clamped to ±12 × ±8 cells, a carry or a drag in
+ * cells or points of the screen, a spinner frame index.
  */
 fun jsRound(v: Double): Int = floor(v + 0.5).toInt()
 
