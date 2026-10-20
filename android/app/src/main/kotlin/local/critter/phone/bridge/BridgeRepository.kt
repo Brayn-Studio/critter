@@ -217,7 +217,8 @@ class BridgeRepository(private val app: Application) {
      * time, which drops it), it tries once more, on a new connection: it first waits for the failed one to leave
      * [ConnState.Connected], so the retry never goes out on it, nor is checked against its last snapshot. The Mac
      * only accepts an answer to a request it still lists, so a second one for a request the first already settled
-     * comes back `resolved`.
+     * comes back `resolved`. If the connection stays up (an `unknown` the Mac itself sent: a reason this phone does
+     * not know), there is no retry: the Mac's result is the answer.
      *
      * All of it takes at most [ANSWER_DEADLINE_MS] (the request timeout plus [LIVE_WAIT_MS], about 18 s): on a
      * connection that looks up but is dead, the first answer times out after 10 s, which leaves 8 s for a new
@@ -226,9 +227,15 @@ class BridgeRepository(private val app: Application) {
     suspend fun answerWhenLive(requestId: String, payloadFor: (BridgePending) -> AnswerPayload?): ServerMessage.Result {
         var sending = false
         suspend fun attempts(): ServerMessage.Result {
+            var failed: ServerMessage.Result? = null
             for (attempt in 0..1) {
-                // The socket's end is reported before the state leaves Connected: a retry waits for that first.
-                if (attempt == 1) state.first { it !is ConnState.Connected }
+                if (failed != null) {
+                    // A failure on the phone's side takes the connection down at once (the client drops it on a
+                    // timeout, or it had ended), but the state leaves Connected a moment later: wait for that first.
+                    // Still connected after the grace, the `unknown` came from the Mac itself (a reason this phone
+                    // does not know): that is the answer, with the Mac's own words.
+                    withTimeoutOrNull(LINK_DROP_GRACE_MS) { state.first { it !is ConnState.Connected } } ?: return failed
+                }
                 ensureConnected()
                 when (val found = awaitRequest(requestId)) {
                     LiveRequest.Offline -> return failure(ResultReason.unknown, "没连上电脑，没有发送")
@@ -242,6 +249,7 @@ class BridgeRepository(private val app: Application) {
                         val localFailure = !result.ok && result.reason == ResultReason.unknown &&
                             !InFlight.isAlreadySending(result)
                         if (!localFailure || attempt == 1) return result
+                        failed = result
                     }
                 }
             }
@@ -497,6 +505,12 @@ class BridgeRepository(private val app: Application) {
 
         /** The longest a notification button's answer takes, retry included ([answerWhenLive]). */
         const val ANSWER_DEADLINE_MS = REQUEST_TIMEOUT_MS + LIVE_WAIT_MS
+
+        /**
+         * How long a failed answer's connection gets to leave Connected before the failure counts as the Mac's own
+         * ([answerWhenLive]). A dropped socket is reported within milliseconds.
+         */
+        private const val LINK_DROP_GRACE_MS = 2_000L
 
         /** The snapshot cache is written at most this often while connected. */
         private const val CACHE_EVERY_MS = 30_000L
