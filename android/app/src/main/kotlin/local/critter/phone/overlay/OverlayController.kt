@@ -12,12 +12,15 @@ import android.provider.Settings
 import android.util.DisplayMetrics
 import android.view.Gravity
 import android.view.MotionEvent
+import android.animation.Animator
+import android.animation.ObjectAnimator
 import android.view.View
 import android.view.WindowInsets
 import android.view.WindowManager
 import android.view.animation.AccelerateInterpolator
 import android.view.animation.OvershootInterpolator
 import android.widget.FrameLayout
+import androidx.core.animation.doOnEnd
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import local.critter.core.flock.FlockModel
@@ -70,6 +73,9 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
     private var boardShown = false
     private var hiddenForBoard = false
     private var sinkingForBoard = false
+
+    /** Under reduce motion, the fade that stands in for the sink ([setBoardShown]), while it runs. */
+    private var boardFade: Animator? = null
 
     /** The night mode the content was built for; the View colors follow it. */
     private var night = context.isNight()
@@ -282,17 +288,25 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         boardShown = shown
         hiddenForBoard = shown
         sinkingForBoard = false
+        boardFade?.cancel()
         if (!attached) return
         if (shown) {
             collapseNow()
             val p = pile
             if (p != null && params.alpha == 1f && reduceMotion()) {
-                // It is hidden for the board already: whatever applies the visibility meanwhile (a snapshot, a
-                // rebuild) only hides it sooner.
-                p.animate().alpha(0f).setDuration(FADE_MS).withEndAction {
-                    applyVisibility()
-                    p.alpha = 1f
-                }.start()
+                // Still on screen while it fades, like the sink, so a snapshot or the board's immersive insets
+                // meanwhile do not cut it short. Its end hides it; a rebuild (cancelAnimations) or the board going
+                // again (above) calls it off, which ends it there.
+                sinkingForBoard = true
+                boardFade = ObjectAnimator.ofFloat(p, View.ALPHA, p.alpha, 0f).setDuration(FADE_MS).apply {
+                    doOnEnd {
+                        boardFade = null
+                        sinkingForBoard = false
+                        applyVisibility()
+                        p.alpha = 1f
+                    }
+                    start()
+                }
                 return
             }
             val critters = p?.critters
@@ -311,10 +325,10 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             applyVisibility()
             val p = pile ?: return
             p.critters.riseAll()
-            // Under reduce motion the Critters are up at once and the pile fades in (or back, if still fading out).
-            if (params.alpha == 1f && reduceMotion()) {
-                if (wasHidden) p.alpha = 0f
-                if (p.alpha < 1f) p.animate().alpha(1f).setDuration(FADE_MS).start()
+            // Under reduce motion the Critters are up at once and the pile fades in.
+            if (wasHidden && params.alpha == 1f && reduceMotion()) {
+                p.alpha = 0f
+                p.animate().alpha(1f).setDuration(FADE_MS).start()
             }
         }
     }
@@ -342,6 +356,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         MotionPrefs.manual || Settings.Global.getFloat(context.contentResolver, Settings.Global.ANIMATOR_DURATION_SCALE, 1f) == 0f
 
     private fun cancelAnimations() {
+        boardFade?.cancel()
         pile?.animate()?.cancel()
         column?.animate()?.cancel()
     }
