@@ -209,13 +209,20 @@ class BridgeClient(
     }
 
     /**
+     * The socket requests go out on, once the Mac's `welcome` has come over it; null before (while connecting, too).
+     * OkHttp sends whatever is queued before a socket opens ahead of the `hello` sent on open, and the Mac refuses
+     * any other first frame with `denied(protocol)`: so nothing may be sent on a socket until it is welcomed.
+     */
+    private fun live(): WebSocket? = socket?.takeIf { _state.value is ConnState.Connected }
+
+    /**
      * Sends [msg] with a fresh correlation id and waits for the Mac's `result`. The Mac answers within milliseconds,
      * so none within [requestTimeoutMs] means the connection is broken: it is dropped (and made again) rather than
-     * left looking connected.
+     * left looking connected. Not connected (still connecting, too): "未连接" at once, without sending.
      */
     suspend fun request(msg: ClientMessage.Command): ServerMessage.Result {
         val id = "a${nextId.incrementAndGet()}"
-        val ws = socket ?: return failure(id, "未连接")
+        val ws = live() ?: return failure(id, "未连接")
         val waiting = Waiting<ServerMessage.Result>(ws)
         inFlight[id] = waiting
         try {
@@ -228,12 +235,12 @@ class BridgeClient(
     }
 
     /**
-     * Asks the Mac for a skin's manifest. Null if the Mac has no such skin, the connection is down or it does not
-     * answer in time (which drops the connection, as in [request]).
+     * Asks the Mac for a skin's manifest. Null if the Mac has no such skin, the connection is down (or still being
+     * made) or it does not answer in time (which drops the connection, as in [request]).
      */
     suspend fun requestSkin(name: String): ServerMessage.Skin? {
         val id = "a${nextId.incrementAndGet()}"
-        val ws = socket ?: return null
+        val ws = live() ?: return null
         val waiting = Waiting<ServerMessage.Skin?>(ws)
         skinsInFlight[id] = waiting
         try {
@@ -342,7 +349,7 @@ class BridgeClient(
                 is ServerMessage.Welcome -> {
                     val renew = synchronized(lock) {
                         if (run != mine) return@open
-                        socket = ws // already, unless the welcome beat open()'s return
+                        socket = ws // usable for requests from now on: `hello` went out before the welcome came
                         backoff.reset()
                         offlineSince = null
                         _state.value = ConnState.Connected(msg.macName)
@@ -361,7 +368,8 @@ class BridgeClient(
                 else -> Unit
             }
         }
-        val current = synchronized(lock) { (run == mine).also { if (it) socket = link.ws } }
+        // Not published as [socket] here: only the welcome does that (see [live]).
+        val current = synchronized(lock) { run == mine }
         try {
             if (!current) return End.Dropped(null)
             return link.ended.await()

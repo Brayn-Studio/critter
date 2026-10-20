@@ -10,6 +10,7 @@ import mockwebserver3.RecordedRequest
 import okhttp3.tls.HandshakeCertificates
 import okhttp3.tls.HeldCertificate
 import local.critter.core.protocol.sha256Hex
+import java.util.concurrent.CountDownLatch
 import java.util.concurrent.LinkedBlockingQueue
 import java.util.concurrent.Semaphore
 import java.util.concurrent.TimeUnit
@@ -42,10 +43,18 @@ class FakeMac(val cert: HeldCertificate = newCert()) {
     val overlapped = AtomicBoolean()
     private val turn = Semaphore(1)
 
+    /** While set, an upgrade is answered only once this opens: the phone stays mid-handshake until then. */
+    @Volatile var holdUpgrades: CountDownLatch? = null
+
+    /** How many upgrade requests reached the Mac, answered or still held. */
+    val upgradesAsked = AtomicInteger()
+
     init {
         server.dispatcher = object : QueueDispatcher() {
             override fun dispatch(request: RecordedRequest): MockResponse {
                 if (oneAtATime && !turn.tryAcquire(overlapWaitMs, TimeUnit.MILLISECONDS)) overlapped.set(true)
+                upgradesAsked.incrementAndGet()
+                holdUpgrades?.await(10, TimeUnit.SECONDS)
                 return super.dispatch(request)
             }
         }

@@ -34,6 +34,8 @@ import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
 import java.util.concurrent.ConcurrentLinkedQueue
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
@@ -473,6 +475,56 @@ class BridgeClientTest {
         c.state.await { it !is ConnState.Connected }
         c.state.await { it is ConnState.Connected }
         assertEquals(2, mac.opened.get())
+    }
+
+    /**
+     * A command issued while the connection is still being made (a 做完了 session tapped, a skin asked for) must not
+     * go out ahead of `hello`: the Mac refuses any other first frame with `denied(protocol)`, which would leave the
+     * phone asking to update Critter until it restarts. Until the Mac's `welcome` the client is not connected, so
+     * such a command gets "未连接" (a skin, null) at once, as at any other time the connection is down.
+     */
+    @Test fun commandsDuringTheHandshakeDoNotPrecedeHello() = runBlocking {
+        val release = CountDownLatch(1)
+        val mac = mac().apply { holdUpgrades = release; expectConnection() }
+        val greeted = AtomicBoolean()
+        mac.onFrame = { ws, text ->
+            val obj = BridgeJson.parseToJsonElement(text).jsonObject
+            when {
+                // Like the Mac's BridgeConnection.receiveFirst: a first frame that is not `hello` is refused.
+                !greeted.get() && type(text) != "hello" -> {
+                    ws.send("""{"reason":"protocol","type":"denied"}""")
+                    ws.close(1000, null)
+                }
+                type(text) == "hello" -> {
+                    greeted.set(true)
+                    FakeMac.greet(ws)
+                }
+                type(text) == "skin" ->
+                    ws.send("""{"id":"${obj["id"]!!.jsonPrimitive.content}","name":"custom","type":"skin"}""")
+                else -> ws.send("""{"id":"${obj["id"]!!.jsonPrimitive.content}","ok":true,"type":"result"}""")
+            }
+        }
+        val c = client(CountingEndpoint { mac.address }, mac.fingerprint)
+        c.start()
+        assertTrue(eventually { mac.upgradesAsked.get() == 1 }, "the phone asks to upgrade")
+        delay(100) // the socket exists; the upgrade is held, so the handshake is not done
+        assertIs<ConnState.Connecting>(c.state.value)
+
+        val seen = async(Dispatchers.Default) { c.request(ClientMessage.Seen(null, "s1")) }
+        val skin = async(Dispatchers.Default) { c.requestSkin("custom") }
+        delay(200) // both have been sent, or turned away, while the handshake is in flight
+        release.countDown()
+
+        val settled = c.state.await { it is ConnState.Connected || it is ConnState.NeedsRepair }
+        assertEquals("hello", type(mac.nextFrame()), "the first frame on the wire (the client ended $settled)")
+        assertIs<ConnState.Connected>(settled)
+        assertEquals("未连接", withTimeout(5_000) { seen.await() }.message)
+        assertNull(withTimeout(5_000) { skin.await() })
+
+        delay(300)
+        assertIs<ConnState.Connected>(c.state.value)
+        assertTrue(c.request(ClientMessage.Seen(null, "s1")).ok, "commands go out once connected")
+        assertEquals(1, mac.opened.get())
     }
 
     /** A `skin` reply settles the request that asked for it, whichever way it was asked. */
