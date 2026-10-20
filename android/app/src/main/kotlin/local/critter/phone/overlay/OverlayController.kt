@@ -127,6 +127,19 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
      */
     val inSight: Boolean get() = requestsInSight(attached, screenInUse(), hiding())
 
+    /**
+     * Called once whenever [inSight] turns false (screen off, locked, the pile hidden or switched off, the board gone
+     * with the pile out of sight): what only the pile showed gets its notification then. Main thread.
+     */
+    var onHidden: (() -> Unit)? = null
+    private var wasInSight = false
+
+    private fun noteSight() {
+        val now = inSight
+        if (wasInSight && !now) onHidden?.invoke()
+        wasInSight = now
+    }
+
     private fun screenInUse(): Boolean {
         val power = context.getSystemService(PowerManager::class.java)
         val keyguard = context.getSystemService(KeyguardManager::class.java)
@@ -178,6 +191,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         column = null
         windowManager.removeView(root)
         added = false
+        noteSight()
     }
 
     /** New data and settings: redraws, and makes the front Critter hop for a session that just started waiting. */
@@ -403,6 +417,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             } else {
                 applyPaused()
             }
+            noteSight()
         }
     }
 
@@ -444,6 +459,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             params.alpha = alpha
             if (added) windowManager.updateViewLayout(root, params)
         }
+        noteSight()
     }
 
     // ---- position --------------------------------------------------------------------------------------
