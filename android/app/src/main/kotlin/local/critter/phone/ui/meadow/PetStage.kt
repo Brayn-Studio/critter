@@ -26,7 +26,7 @@ private const val STAGE_DIM = 0.5
  * A patch of meadow with one live Critter standing in the middle, [groundInset] above the bottom edge, [cell]
  * (whole pixels) a cell. [modifier] gives it its size; unbounded (in a scroll), it is [FALLBACK_COLUMNS] ×
  * [FALLBACK_ROWS] cells. Decorative pets are [bright]: no idle dimming (design §8.2). [onView] hands over the
- * view once it exists, for cues like "looks at you".
+ * view once it exists, for cues like "looks at you". [moon] places the night moon ([MeadowBackdrop]).
  */
 @Composable
 fun PetStage(
@@ -39,6 +39,7 @@ fun PetStage(
     groundInset: Dp = 22.dp,
     bright: Boolean = true,
     asleep: Boolean = false,
+    moon: Pair<Float, Float> = DEFAULT_MOON,
     onView: (CritterView) -> Unit = {},
 ) {
     BoxWithConstraints(modifier) {
@@ -53,7 +54,7 @@ fun PetStage(
             sleeping = asleep,
         )
         Box(with(density) { Modifier.size(widthPx.toDp(), heightPx.toDp()) }) {
-            MeadowBackdrop(time, with(density) { groundPx.toDp() }, Modifier.matchParentSize())
+            MeadowBackdrop(time, with(density) { groundPx.toDp() }, Modifier.matchParentSize(), moon = moon)
             AndroidView(
                 factory = { context -> CritterView(context).also(onView) },
                 modifier = Modifier.matchParentSize(),

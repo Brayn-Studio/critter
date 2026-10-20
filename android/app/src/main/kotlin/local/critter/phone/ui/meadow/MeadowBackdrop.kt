@@ -50,7 +50,7 @@ fun MeadowBackdrop(
 }
 
 /** The moon over the home meadow (the mockups' `[0.58, 0.3]`). */
-private val DEFAULT_MOON = 0.58f to 0.3f
+internal val DEFAULT_MOON = 0.58f to 0.3f
 
 private fun meadowImage(
     width: Int,

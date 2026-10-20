@@ -88,7 +88,7 @@ private val COUNTED = setOf(PetState.waiting, PetState.error, PetState.done)
  * its name on a tag at its feet; one in [bubbles] wears an orange bubble with that text above its head. More than
  * fit merge into a pile with "n 个会话" below and the counts that need a look above. [asleep] (offline) puts them
  * all to sleep, greyed like idle ones. With [opening], the first time there are Critters they pop up one by one.
- * A tap on a Critter is [onTap] with its session id. [modifier] gives it its width.
+ * A tap on a Critter is [onTap] with its session id. [modifier] gives it its width; [moon] places the night moon.
  */
 @Composable
 fun Meadow(
@@ -103,6 +103,7 @@ fun Meadow(
     asleep: Boolean = false,
     bubbles: Map<String, String> = emptyMap(),
     opening: Boolean = false,
+    moon: Pair<Float, Float> = DEFAULT_MOON,
 ) {
     BoxWithConstraints(modifier.height(height)) {
         val density = LocalDensity.current
@@ -130,7 +131,7 @@ fun Meadow(
         val tap by rememberUpdatedState(onTap)
         val rise = remember { RiseOnce() }
 
-        MeadowBackdrop(time, ground, Modifier.matchParentSize())
+        MeadowBackdrop(time, ground, Modifier.matchParentSize(), moon = moon)
         AndroidView(
             modifier = Modifier.matchParentSize(),
             factory = { context ->

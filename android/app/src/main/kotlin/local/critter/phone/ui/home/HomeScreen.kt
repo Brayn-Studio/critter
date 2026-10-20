@@ -11,6 +11,7 @@ import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -31,6 +32,7 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyItemScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -52,18 +54,22 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.SpanStyle
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.withStyle
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.em
@@ -91,6 +97,7 @@ import local.critter.phone.ui.folderName
 import local.critter.phone.ui.look.SkyColors
 import local.critter.phone.ui.look.SkyTime
 import local.critter.phone.ui.look.skyColors
+import local.critter.phone.ui.meadow.DEFAULT_MOON
 import local.critter.phone.ui.meadow.Meadow
 import local.critter.phone.ui.meadow.MeadowTag
 import local.critter.phone.ui.meadow.PetStage
@@ -132,6 +139,29 @@ private const val SLIP_LINES = 6
 
 /** The widest a card's folder name gets (icon included). */
 private val FOLDER_MAX = 104.dp
+
+/** The header's padding over the meadow, at the top and the start, and the Mac's name in it (design §8.3). */
+private val HeaderTop = 10.dp
+private val HeaderStart = 18.dp
+private val NameStyle = TextStyle(
+    fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 21.sp, letterSpacing = 0.01.em, lineHeight = 1.25.em,
+)
+
+/** How far the night moon keeps from the Mac's name. */
+private const val MOON_CLEARANCE_DP = 4f
+
+/**
+ * Where the night moon goes on the home meadow, as fractions of [widthDp] and [groundDp] (as the backdrop takes
+ * them): the mockup's spot, unless the Mac's name reaches it there (the name's box ends at [nameRightDp] and
+ * [nameBottomDp], from the meadow's top left); then it drops to just under the name, in the same column, beside
+ * the short connection tag. A long real name ("文博的MacBook Pro") ran over it once the status bar pushed the header
+ * down, and it stays whole this way.
+ */
+internal fun homeMoon(widthDp: Float, groundDp: Float, nameRightDp: Float, nameBottomDp: Float): Pair<Float, Float> {
+    val (x, y) = DEFAULT_MOON
+    val clear = nameRightDp + MOON_CLEARANCE_DP <= widthDp * x || nameBottomDp + MOON_CLEARANCE_DP <= groundDp * y
+    return if (clear) x to y else x to ((nameBottomDp + MOON_CLEARANCE_DP) / groundDp).coerceAtMost(1f)
+}
 
 /**
  * The home screen (mockup "首页"): a meadow with every session's Critter, the Mac's name and connection over it
@@ -199,7 +229,20 @@ fun HomeScreen(
     }
 
     Column(Modifier.fillMaxSize()) {
-        Box(Modifier.fillMaxWidth().height(MeadowHeight)) {
+        BoxWithConstraints(Modifier.fillMaxWidth().height(MeadowHeight)) {
+            // The night moon keeps clear of the Mac's name, measured as the header draws it.
+            val density = LocalDensity.current
+            val measurer = rememberTextMeasurer()
+            val nameStyle = LocalTextStyle.current.merge(NameStyle)
+            val name = remember(macName, nameStyle, density) { measurer.measure(macName, nameStyle, maxLines = 1).size }
+            val safe = WindowInsets.safeDrawing.asPaddingValues()
+            val moon = with(density) {
+                homeMoon(
+                    maxWidth.value, MeadowGround.value,
+                    nameRightDp = (safe.calculateLeftPadding(LayoutDirection.Ltr) + HeaderStart + name.width.toDp()).value,
+                    nameBottomDp = (safe.calculateTopPadding() + HeaderTop + name.height.toDp()).value,
+                )
+            }
             if (hasSessions) {
                 Meadow(
                     sessions = sessions,
@@ -213,9 +256,10 @@ fun HomeScreen(
                     asleep = offline,
                     bubbles = if (offline) emptyMap() else sessions.filter { it.state == PetState.waiting }.associate { it.id to "等你确认" },
                     opening = opening,
+                    moon = moon,
                 )
             } else {
-                EmptyMeadow(library, time)
+                EmptyMeadow(library, time, moon)
             }
             MeadowHeader(
                 macName = macName,
@@ -334,14 +378,13 @@ private fun MeadowHeader(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(WindowInsets.safeDrawing.only(WindowInsetsSides.Top + WindowInsetsSides.Horizontal))
-            .padding(start = 18.dp, end = 14.dp, top = 10.dp),
+            .padding(start = HeaderStart, end = 14.dp, top = HeaderTop),
         verticalAlignment = Alignment.Top,
     ) {
         Column(Modifier.weight(1f)) {
             Text(
                 macName,
-                color = Color(sky.onSky), fontFamily = Nunito, fontWeight = FontWeight.W900, fontSize = 21.sp,
-                letterSpacing = 0.01.em, lineHeight = 1.25.em, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                color = Color(sky.onSky), style = LocalTextStyle.current.merge(NameStyle), maxLines = 1, overflow = TextOverflow.Ellipsis,
             )
             ConnectionTag(connection, connected, sky, Modifier.padding(top = 4.dp))
         }
@@ -405,12 +448,12 @@ private fun HeaderButton(icon: String, label: String, onClick: () -> Unit) {
 
 /** No sessions: one Critter asleep in the grass (the phone's own skin, or the sprout), greyed like an idle one. */
 @Composable
-private fun EmptyMeadow(library: SkinLibrary, time: SkyTime) {
+private fun EmptyMeadow(library: SkinLibrary, time: SkyTime, moon: Pair<Float, Float>) {
     Box(Modifier.fillMaxSize()) {
         PetStage(
             manifest = library.manifest(EMPTY_SKIN), state = PetState.idle, activity = null,
             modifier = Modifier.fillMaxSize(), cell = 3.dp, time = time,
-            groundInset = MeadowHeight - MeadowGround, bright = false, asleep = true,
+            groundInset = MeadowHeight - MeadowGround, bright = false, asleep = true, moon = moon,
         )
         MeadowTag("睡着了", skyColors(time), Modifier.align(Alignment.TopCenter).offset(y = MeadowGround + 5.dp))
     }
