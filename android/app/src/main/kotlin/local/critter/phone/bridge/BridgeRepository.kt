@@ -87,7 +87,7 @@ class BridgeRepository(private val app: Application) {
 
     private val answering = ConcurrentHashMap.newKeySet<String>()
     private val skinsAsked = ConcurrentHashMap.newKeySet<String>()
-    private var client: BridgeClient? = null
+    @Volatile private var client: BridgeClient? = null
     private var clientJob: Job? = null
     private val boards = BoardPresence()
     private val _boardOnScreen = MutableStateFlow(false)
@@ -166,13 +166,14 @@ class BridgeRepository(private val app: Application) {
      * Brings the connection back if it is down. A notification button or a sheet may be the first thing a process
      * runs after vivo killed or froze it, with no client at all: this starts the service (a notification tap is a
      * foreground-service start exemption), starts the client in case the service is not up yet, and skips the
-     * backoff wait. A connection that is up is left alone.
+     * backoff wait if it is offline. A connection that is up, or being made, is left alone.
      */
     fun ensureConnected() {
         BridgeService.sync(app, this)
         if (!BridgeService.shouldRun(this)) return
         startClient()
-        if (_state.value !is ConnState.Connected) client?.reconnectNow()
+        // The client's own state, not the mirror in [state], which lags: reconnectNow drops a connected client.
+        client?.let { if (it.state.value is ConnState.Offline) it.reconnectNow() }
     }
 
     /** What [awaitRequest] found. */
