@@ -51,6 +51,13 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class BridgeRepository(private val app: Application) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+
+    /**
+     * Writes to the pairing and the snapshot cache, off the main thread and one at a time, in the order they were
+     * asked for (an unpair's delete after the last cache write, a new pairing's save after the delete). Only the
+     * first reads stay on the main thread, in the constructor: a few hundred bytes the first frame needs.
+     */
+    private val disk = Dispatchers.IO.limitedParallelism(1)
     private val connectivity = app.getSystemService(Context.CONNECTIVITY_SERVICE) as ConnectivityManager
 
     val pairingStore = PairingStore(app)
@@ -137,7 +144,7 @@ class BridgeRepository(private val app: Application) {
                     if (s !is ConnState.Connected) {
                         _live.value = null
                         skinsAsked.clear()
-                        flushCache()
+                        flushCacheSoon()
                     }
                 }
             }
@@ -150,7 +157,7 @@ class BridgeRepository(private val app: Application) {
 
     @Synchronized
     fun stopClient() {
-        flushCache()
+        flushCacheSoon()
         clientJob?.cancel()
         clientJob = null
         client?.close()
@@ -269,7 +276,12 @@ class BridgeRepository(private val app: Application) {
             unsaved = body to now
             if (now - cacheSavedAt < CACHE_EVERY_MS) return
         }
-        flushCache()
+        flushCacheSoon()
+    }
+
+    /** Writes the newest unsaved snapshot to the cache, on [disk]. */
+    private fun flushCacheSoon() {
+        scope.launch(disk) { flushCache() }
     }
 
     private fun flushCache() {
@@ -390,7 +402,7 @@ class BridgeRepository(private val app: Application) {
                 deviceId = paired.deviceId,
                 token = paired.token,
             )
-            pairingStore.save(p)
+            withContext(disk) { pairingStore.save(p) }
             _pairing.value = p
             BridgeService.sync(app, this)
             // A running service only re-delivers onStartCommand; the client must be restarted here. Restarted, not
@@ -413,12 +425,15 @@ class BridgeRepository(private val app: Application) {
     fun unpair() {
         stopClient()
         Alerts.withdrawAll(app, results = true)
-        pairingStore.clear()
         synchronized(cache) { unsaved = null }
-        cache.clear()
         _pairing.value = null
         _snapshot.value = null
         _lastUpdated.value = null
+        // After stopClient's last cache write, and before any new pairing's save: [disk] keeps the order.
+        scope.launch(disk) {
+            pairingStore.clear()
+            cache.clear()
+        }
         BridgeService.sync(app, this)
     }
 
@@ -437,8 +452,9 @@ class BridgeRepository(private val app: Application) {
         if (reachable(p.host, p.port)) return@withContext p.host to p.port
         val found = nsd.find(p.macName) ?: return@withContext null
         val moved = p.copy(host = found.first, port = found.second)
-        pairingStore.save(moved)
-        _pairing.value = moved
+        // Unpaired or paired anew while NSD was looking: that pairing stays, the found address is not saved over it.
+        if (!_pairing.compareAndSet(p, moved)) return@withContext null
+        withContext(disk) { if (_pairing.value == moved) pairingStore.save(moved) }
         found
     }
 

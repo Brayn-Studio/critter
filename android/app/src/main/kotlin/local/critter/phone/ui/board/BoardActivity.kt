@@ -25,6 +25,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.Lifecycle
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import local.critter.core.flock.SoundTrigger
 import local.critter.core.protocol.PetState
 import local.critter.phone.board.BoardSounds
@@ -167,7 +169,7 @@ class BoardActivity : ComponentActivity() {
                 }
                 val current = body.sessions.associate { it.id to it.state }
                 if (repo.settingsStore.settings.value.boardSounds) {
-                    sounds.prepare(body.prefs.soundTheme)
+                    withContext(Dispatchers.IO) { sounds.prepare(body.prefs.soundTheme) } // reads the files
                     val entered = SoundTrigger.enteredAlertStates(previous, current).firstOrNull()
                     if (entered != null && lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) {
                         sounds.play(entered, body.prefs.soundTheme)
