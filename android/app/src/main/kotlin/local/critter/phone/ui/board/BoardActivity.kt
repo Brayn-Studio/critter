@@ -69,7 +69,8 @@ class BoardActivity : ComponentActivity() {
     /**
      * The user sent the board away (home, recents: [onUserLeaveHint]) since it was last in front. Not an incoming
      * call or another window coming up over it by itself, nor the screen going off. A card the board opens itself
-     * gives no hint ([OWN_CARD]): it floats over the board, which only pauses. Back in front ([onResume]) clears it.
+     * gives no hint ([OWN_CARD]): it floats over the board, which only pauses. Home or recents from such a card
+     * gives the hint to the card, which passes it on ([cardLeftByHand]). Back in front ([onResume]) clears it.
      */
     private var leftByHand = false
 
@@ -89,6 +90,7 @@ class BoardActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        alive += this
         // The board may open by itself over the lock screen (never on a dark screen: BoardTrigger waits for the
         // screen to be on, so it does not turn the screen on itself). Answering from it needs the keyguard gone
         // first: every answer path asks for that.
@@ -126,6 +128,7 @@ class BoardActivity : ComponentActivity() {
     }
 
     override fun onDestroy() {
+        alive -= this
         unregisterReceiver(receiver)
         sounds.release()
         BoardTriggerService.boardShown(false)
@@ -262,6 +265,17 @@ class BoardActivity : ComponentActivity() {
          * board and keep it from opening again on this charge.
          */
         private const val OWN_CARD = Intent.FLAG_ACTIVITY_NO_USER_ACTION
+
+        /** The boards alive now (normally one). Main thread only. */
+        private val alive = mutableSetOf<BoardActivity>()
+
+        /**
+         * Home or recents from a card (answer card, details): the system tells only the card on top, but a board
+         * still showing under it is being left as well, so it takes the hint as its own.
+         */
+        fun cardLeftByHand() {
+            alive.filter { it.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) }.forEach { it.leftByHand = true }
+        }
 
         fun intent(context: Context, auto: Boolean = false): Intent =
             Intent(context, BoardActivity::class.java).putExtra(EXTRA_AUTO, auto)

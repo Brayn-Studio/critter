@@ -72,6 +72,7 @@ import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterView
 import local.critter.phone.repository
 import local.critter.phone.ui.agoText
+import local.critter.phone.ui.board.BoardActivity
 import local.critter.phone.ui.doingText
 import local.critter.phone.ui.meadow.MeadowBackdrop
 import local.critter.phone.ui.meadow.STAGE_PET
@@ -154,6 +155,12 @@ class DetailActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         sessionId = intent.getStringExtra(EXTRA_SESSION_ID)
+    }
+
+    /** Home or recents from this card leaves a board under it too. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        BoardActivity.cardLeftByHand()
     }
 
     override fun onStart() {

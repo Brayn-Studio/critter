@@ -22,6 +22,7 @@ import local.critter.core.net.ConnState
 import local.critter.core.protocol.BridgeSession
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.repository
+import local.critter.phone.ui.board.BoardActivity
 import local.critter.phone.ui.meadow.STAGE_PET
 import local.critter.phone.ui.sheet.LookAtYouCue
 import local.critter.phone.ui.sheet.SheetMessage
@@ -61,6 +62,12 @@ class AnswerActivity : ComponentActivity() {
         super.onNewIntent(intent)
         setIntent(intent)
         requestId = intent.getStringExtra(EXTRA_REQUEST_ID)
+    }
+
+    /** Home or recents from this card leaves a board under it too. */
+    override fun onUserLeaveHint() {
+        super.onUserLeaveHint()
+        BoardActivity.cardLeftByHand()
     }
 
     override fun onStart() {
