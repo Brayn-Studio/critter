@@ -273,8 +273,9 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
 
     /**
      * The board came up ([shown]) or went: the pile sinks into the ground (`vanish`) and then hides, or shows again
-     * and comes up out of it (`appear`). Collapses first, without the animation. While the user has the pile off,
-     * nothing moves; the pile only starts hidden if it is switched on while the board is up.
+     * and comes up out of it (`appear`); a 150 ms fade under reduce motion. Collapses first, without the animation.
+     * While the user has the pile off, nothing moves; the pile only starts hidden if it is switched on while the
+     * board is up.
      */
     fun setBoardShown(shown: Boolean) {
         if (shown == boardShown) return
@@ -284,7 +285,17 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
         if (!attached) return
         if (shown) {
             collapseNow()
-            val critters = pile?.critters
+            val p = pile
+            if (p != null && params.alpha == 1f && reduceMotion()) {
+                // It is hidden for the board already: whatever applies the visibility meanwhile (a snapshot, a
+                // rebuild) only hides it sooner.
+                p.animate().alpha(0f).setDuration(FADE_MS).withEndAction {
+                    applyVisibility()
+                    p.alpha = 1f
+                }.start()
+                return
+            }
+            val critters = p?.critters
             if (critters != null) {
                 // Still on screen while it sinks; a rebuild meanwhile ends the sink (its Critters go) and the new
                 // pile starts hidden.
@@ -296,8 +307,15 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             }
             applyVisibility()
         } else {
+            val wasHidden = params.alpha == 0f
             applyVisibility()
-            pile?.critters?.riseAll()
+            val p = pile ?: return
+            p.critters.riseAll()
+            // Under reduce motion the Critters are up at once and the pile fades in (or back, if still fading out).
+            if (params.alpha == 1f && reduceMotion()) {
+                if (wasHidden) p.alpha = 0f
+                if (p.alpha < 1f) p.animate().alpha(1f).setDuration(FADE_MS).start()
+            }
         }
     }
 
