@@ -46,6 +46,7 @@ import local.critter.phone.critter.CritterView
 import local.critter.phone.critter.PileSlots
 import local.critter.phone.ui.look.SkyColors
 import local.critter.phone.ui.look.SkyTime
+import local.critter.phone.ui.look.labelRoom
 import local.critter.phone.ui.look.skyColors
 import local.critter.phone.ui.stateIcon
 import local.critter.phone.ui.theme.Critter
@@ -56,8 +57,6 @@ import local.critter.phone.ui.theme.Silkscreen
 import local.critter.phone.ui.theme.pixelSurface
 import local.critter.phone.ui.theme.state
 import local.critter.phone.ui.theme.wholePx
-import kotlin.math.abs
-import kotlin.math.min
 
 /** dp per cell on the meadow (design §8.3). */
 private const val SCALE = 3f
@@ -189,8 +188,8 @@ fun Meadow(
             }
         }
         layout.slots.indices.forEach { i ->
-            val tagRoom = labelRoom(centers, tagWidths, i, widthDp, TAG_GAP_DP) { true }
-            val aboveRoom = labelRoom(centers, aboveWidths, i, widthDp, 0f) { above[it] }
+            val tagRoom = labelRoom(centers, tagWidths, i, widthDp, TAG_GAP_DP, EDGE_DP) { true }
+            val aboveRoom = labelRoom(centers, aboveWidths, i, widthDp, 0f, EDGE_DP) { above[it] }
             val tagAt = Modifier.offset((centers[i] - tagRoom / 2).dp, ground + 5.dp).width(tagRoom.dp)
             val aboveAt = Modifier.offset(x = (centers[i] - aboveRoom / 2).dp).width(aboveRoom.dp)
             if (i < shown.size) {
@@ -215,23 +214,6 @@ fun Meadow(
 /** Whether the opening has played in this meadow. */
 private class RiseOnce {
     var done = false
-}
-
-/**
- * How wide a label centred on slot [i] may be. Towards the nearest neighbour on each side with a label at the same
- * height ([taken]) it may use the space between them, less [gap], that the neighbour's label leaves: a neighbour
- * keeps half of it at most, less when its [natural] width needs less. With no neighbour it reaches [EDGE_DP] from
- * the side. Labels stay centred and never overlap; a longer text is cut short.
- */
-private fun labelRoom(centers: List<Float>, natural: List<Float>, i: Int, widthDp: Float, gap: Float, taken: (Int) -> Boolean): Float {
-    val c = centers[i]
-    fun half(j: Int): Float {
-        val space = abs(c - centers[j]) - gap
-        return space - min(natural[j] / 2, space / 2)
-    }
-    val left = (i - 1 downTo 0).firstOrNull(taken)?.let(::half) ?: (c - EDGE_DP)
-    val right = (i + 1..centers.lastIndex).firstOrNull(taken)?.let(::half) ?: (widthDp - EDGE_DP - c)
-    return (2 * min(left, right)).coerceAtLeast(0f)
 }
 
 /** A white name tag on the meadow (dark at night), one line, cut short when there is no room. */
