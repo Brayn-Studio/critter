@@ -163,3 +163,90 @@ private func entry(
     let untracked = SessionCatalog.build(records: [], registry: [entry("b")], dismissed: [:])
     #expect(untracked.first?.activity == nil)
 }
+
+@Test func catalogRecognizesLegacyCodexWithoutAClientGuess() {
+    let id = "11111111-2222-4333-8444-555555555555"
+    var legacy = rec(id)
+    legacy.transcriptPath = "/Users/u/.codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-\(id).jsonl"
+    let result = SessionCatalog.build(records: [legacy], registry: [entry(id, entrypoint: "cli")], dismissed: [:])
+    #expect(result.first?.source.rawValue == "codex")
+    #expect(result.first?.source.label == "Codex")
+
+    var claude = legacy
+    claude.transcriptPath = "/Users/u/.claude/projects/x/\(id).jsonl"
+    #expect(SessionCatalog.build(records: [claude], registry: [entry(id)], dismissed: [:]).first?.source == .terminal)
+    claude.transcriptPath = "/Users/u/.codex/sessions/rollout-aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee.jsonl"
+    #expect(SessionCatalog.build(records: [claude], registry: [], dismissed: [:]).first?.source == .other)
+}
+
+@Test func catalogKeepsPositiveCodexIdentityAndLegacyDismissal() {
+    let rawID = "11111111-2222-4333-8444-555555555555"
+    let id = "codex-" + rawID
+    let record = rec(id, eventTime: 50, claudePid: 42, entrypoint: "codex-desktop")
+    let identified = SessionCatalog.build(records: [record], registry: [entry(id, name: "unrelated Claude")], dismissed: [:])
+    #expect(identified.first?.source == .codexDesktop)
+    #expect(identified.first?.pid == 42)
+    #expect(identified.first?.name == "x")
+    #expect(SessionCatalog.build(records: [record], registry: [entry(id, entrypoint: "sdk-cli")], dismissed: [:]).count == 1)
+    #expect(SessionCatalog.build(records: [record], registry: [], dismissed: [rawID: 50]).isEmpty)
+    var newer = record
+    newer.eventTime = 51
+    #expect(SessionCatalog.build(records: [newer], registry: [], dismissed: [rawID: 50]).count == 1)
+    #expect(SessionCatalog.build(records: [rec(id)], registry: [], dismissed: [:]).first?.source.rawValue == "codex")
+    #expect(SessionCatalog.build(records: [rec("codex-invalid")], registry: [], dismissed: [:]).first?.source == .other)
+}
+
+@Test func catalogCarriesCodexTelemetryToTheVisibleSession() {
+    var record = rec("codex-11111111-2222-4333-8444-555555555555")
+    record.telemetry = CodexTelemetry(model: "gpt-6-sol", usedTokens: 25, contextWindow: 100)
+    let result = SessionCatalog.build(records: [record], registry: [], dismissed: [:])
+    #expect(result.first?.telemetry?.model == "gpt-6-sol")
+    #expect(result.first?.telemetry?.usedTokens == 25)
+    #expect(result.first?.telemetry?.contextWindow == 100)
+}
+
+@Test func catalogCanonicalCodexOwnsPresentationWhenLegacyHookRecordReturns() {
+    let rawID = "11111111-2222-4333-8444-555555555555"
+    let transcript = "/Users/u/.codex/sessions/2026/10/20/rollout-2026-10-20T10-00-00-\(rawID).jsonl"
+    var legacy = rec(rawID, cwd: "/work/legacy", state: .waiting, detail: "请求输入", eventTime: 200, claudePid: 99, activity: "read")
+    legacy.transcriptPath = transcript
+    var canonical = rec("codex-" + rawID, cwd: "/work/current", state: .running, detail: "命令：swift test", eventTime: 100,
+                        claudePid: 42, entrypoint: "codex-desktop", activity: "bash")
+    canonical.transcriptPath = transcript
+
+    for records in [[legacy, canonical], [canonical, legacy]] {
+        let result = SessionCatalog.build(records: records, registry: [], dismissed: [:])
+        #expect(result.count == 1)
+        #expect(result.first?.id == "codex-" + rawID)
+        #expect(result.first?.name == "current")
+        #expect(result.first?.source == .codexDesktop)
+        #expect(result.first?.pid == 42)
+        #expect(result.first?.state == .running)
+        #expect(result.first?.activity == "bash")
+        #expect(result.first?.detail == "命令：swift test")
+        #expect(result.first?.eventTime == 100)
+        #expect(SessionCatalog.build(records: records, registry: [], dismissed: [rawID: 100]).isEmpty)
+    }
+
+    let legacyOnly = SessionCatalog.build(records: [legacy], registry: [], dismissed: [:])
+    #expect(legacyOnly.count == 1)
+    #expect(legacyOnly.first?.id == rawID)
+    #expect(legacyOnly.first?.source == .codex)
+    #expect(legacyOnly.first?.state == .waiting)
+}
+
+@Test func catalogCodexDedupDoesNotHideAnUnconfirmedClaudeUUID() {
+    let rawID = "11111111-2222-4333-8444-555555555555"
+    var claude = rec(rawID, state: .waiting, entrypoint: "cli")
+    claude.transcriptPath = "/Users/u/.claude/projects/x/\(rawID).jsonl"
+    let canonical = rec("codex-" + rawID, entrypoint: "codex-desktop")
+    let result = SessionCatalog.build(records: [claude, canonical], registry: [], dismissed: [:])
+    #expect(Set(result.map(\.id)) == [rawID, "codex-" + rawID])
+    #expect(result.first { $0.id == rawID }?.source == .terminal)
+    #expect(result.first { $0.id == rawID }?.state == .waiting)
+
+    let registryOnly = SessionCatalog.build(records: [canonical], registry: [entry(rawID)], dismissed: [:])
+    #expect(Set(registryOnly.map(\.id)) == [rawID, "codex-" + rawID])
+    let malformed = SessionCatalog.build(records: [rec("not-a-uuid", entrypoint: "codex"), rec("codex-not-a-uuid", entrypoint: "codex")], registry: [], dismissed: [:])
+    #expect(malformed.count == 2)
+}

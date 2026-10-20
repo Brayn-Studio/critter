@@ -84,6 +84,8 @@ import local.critter.phone.ui.board.cardRequests
 import local.critter.phone.ui.connText
 import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
+import local.critter.phone.ui.visibleSessionSource
+import local.critter.phone.ui.waitingHint
 import local.critter.phone.ui.findActivity
 import local.critter.phone.ui.look.SkyColors
 import local.critter.phone.ui.look.SkyTime
@@ -449,6 +451,10 @@ private fun StatusCard(title: String, text: String, action: String, kind: Button
 @Composable
 private fun Limits(limits: BridgeLimits?, now: Long, modifier: Modifier) {
     Column(modifier.padding(horizontal = 14.dp)) {
+        Text(
+            "Claude Code 额度", color = Critter.colors.ink2, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 12.sp,
+            modifier = Modifier.padding(start = 4.dp, bottom = 6.dp),
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
             LimitCard("5 小时额度", limits?.fiveHour, now, Modifier.weight(1f))
             LimitCard("7 天额度", limits?.sevenDay, now, Modifier.weight(1f))
@@ -518,7 +524,7 @@ private fun EmptyList(hasData: Boolean) {
         )
         if (hasData) {
             Text(
-                "在电脑上开一个 Claude Code 会话，它的宠物会从这片草地里钻出来。",
+                "在电脑上开一个 Claude Code 或 Codex 会话，它的宠物会从这片草地里钻出来。",
                 color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 13.5.sp, lineHeight = 1.6.em,
                 textAlign = TextAlign.Center,
             )
@@ -569,10 +575,16 @@ private fun SessionCard(
                     color = c.ink, fontFamily = Nunito, fontWeight = if (request != null) FontWeight.W800 else FontWeight.W600,
                     fontSize = 13.5.sp, maxLines = 1, overflow = TextOverflow.Ellipsis,
                 )
-                PlaceRow(session, Modifier.clipToBounds())
+                PlaceRow(session.copy(source = visibleSessionSource(session)), Modifier.clipToBounds())
             }
         }
         if (request != null) Ask(request, answer, onOpenRequest, onAnswer)
+        waitingHint(session, hasActionableRequest = request != null)?.let { hint ->
+            Text(
+                hint, color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 12.sp,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         session.context?.let { ctx ->
             Row(Modifier.padding(top = 6.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("上下文", color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 11.sp, maxLines = 1)

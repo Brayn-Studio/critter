@@ -33,6 +33,14 @@ final class BridgeController: @unchecked Sendable {
     let pendingStore: PendingStore
     private let statusStore: StatusLineStore
     let inboxStore: InboxStore
+    lazy var codexControl: CodexIPCClient = CodexIPCClient(socketPath: paths.codexHome.appendingPathComponent("ipc/ipc.sock").path) { [weak self] in
+        self?.queue.async { [weak self] in
+            guard let self else { return }
+            let status = codexControl.statusText
+            lock.withLock { codexStatus = status }
+            changed()
+        }
+    }
 
     // Shared with the main thread, only behind `lock`.
     let lock = NSLock()
@@ -42,6 +50,7 @@ final class BridgeController: @unchecked Sendable {
     var pairing: Pairing?
     private var lastSeen: Int64?
     private var deviceList: [DeviceRecord] = []
+    private var codexStatus = "尚未连接 Codex 控制通道"
 
     // Bridge queue only.
     private var enabled = false
@@ -123,6 +132,7 @@ final class BridgeController: @unchecked Sendable {
             self.sessions = sessions
             self.skins = skins
             self.prefs = prefs
+            if enabled { codexControl.update(sessionIDs: sessions.filter { $0.source.isCodex }.map(\.id)) }
             changed()
         }
     }
@@ -223,6 +233,7 @@ final class BridgeController: @unchecked Sendable {
             }
             retryDelay = 0
             startWatchers()
+            codexControl.start(sessionIDs: sessions.filter { $0.source.isCodex }.map(\.id))
             DiagnosticLog.shared.log("bridge listening port=\(port) ready=\(ready) fp=\(fingerprint.prefix(12))")
         } catch {
             DiagnosticLog.shared.log("bridge failed to start: \(error)")
@@ -245,6 +256,7 @@ final class BridgeController: @unchecked Sendable {
 
     private func tearDown() {
         enabled = false
+        codexControl.stop()
         server?.stop()
         server = nil
         for watcher in watchers { watcher.stop() }
@@ -320,10 +332,34 @@ final class BridgeController: @unchecked Sendable {
 
     func buildSnapshot() -> SnapshotBody {
         pendingStore.sweep(now: Self.nowMs(), isAlive: ProcessTools.isAlive)
+        let remote = codexControl.requests.map(\.pending)
+        let telemetry = codexControl.telemetry
+        let waiting = codexControl.waitingSessionIDs
+        let bySession = Dictionary(grouping: remote, by: \.sessionId)
+        let phoneSessions = sessions.map { session in
+            var next = session
+            if let live = telemetry[session.id] {
+                var values = next.telemetry ?? CodexTelemetry()
+                values.model = live.model ?? values.model
+                values.usedTokens = live.usedTokens ?? values.usedTokens
+                values.contextWindow = live.contextWindow ?? values.contextWindow
+                next.telemetry = values
+            }
+            if let pending = bySession[session.id]?.first {
+                next.state = .waiting; next.activity = nil; next.detail = pending.summary
+            } else if waiting.contains(session.id) {
+                next.state = .waiting; next.activity = nil; next.detail = "Codex 等待在电脑端处理"
+            }
+            return next
+        }
         return snapshots.build(
-            sessions: sessions, skins: skins, statuses: statusStore.readAll(), pending: pendingStore.readAll(), prefs: prefs
+            sessions: phoneSessions, skins: skins, statuses: statusStore.readAll(),
+            pending: pendingStore.readAll() + remote, prefs: prefs, capabilities: codexControl.capabilities
         )
     }
+
+    func codexControlStatus() -> String { lock.withLock { codexStatus } }
+    func reconnectCodexControl() { queue.async { [self] in codexControl.reconnect() } }
 
     // MARK: - Pairing
 

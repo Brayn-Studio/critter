@@ -16,6 +16,7 @@ public struct PetSession: Sendable, Equatable, Identifiable {
     public var sortKey: Int64
     /// The tracked record's `WorkActivity` raw value, if any.
     public var activity: String?
+    public var telemetry: CodexTelemetry?
 
     public init(
         id: String,
@@ -29,7 +30,8 @@ public struct PetSession: Sendable, Equatable, Identifiable {
         tracked: Bool,
         eventTime: Int64,
         sortKey: Int64,
-        activity: String? = nil
+        activity: String? = nil,
+        telemetry: CodexTelemetry? = nil
     ) {
         self.id = id
         self.name = name
@@ -43,6 +45,7 @@ public struct PetSession: Sendable, Equatable, Identifiable {
         self.eventTime = eventTime
         self.sortKey = sortKey
         self.activity = activity
+        self.telemetry = telemetry
     }
 }
 
@@ -79,23 +82,37 @@ public enum SessionCatalog {
             var eventTime: Int64
             var sortKey: Int64
             var activity: String?
+            var telemetry: CodexTelemetry?
         }
 
         var drafts: [Draft] = []
         for id in allIds {
-            let registryEntry = registryById[id]
             let record = recordsById[id]
+            let recordSource = SessionSource(entrypoint: record?.entrypoint, sessionId: id, transcriptPath: record?.transcriptPath)
+            // Old hooks can recreate a bare UUID after sync migrates it. The canonical
+            // rollout owns presentation even when that legacy hook event is newer.
+            if recordSource.isCodex, UUID(uuidString: id) != nil,
+               let canonical = recordsById["codex-" + id],
+               SessionSource.codexConversationID(sessionId: canonical.sessionId) == id {
+                continue
+            }
+            // Claude's registry cannot supply ownership or presentation for a confirmed
+            // Codex record, even if an old unprefixed UUID happens to collide.
+            let registryEntry = recordSource.isCodex ? nil : registryById[id]
+            let source = recordSource.isCodex ? recordSource : SessionSource(entrypoint: registryEntry?.entrypoint ?? record?.entrypoint)
 
             // A session that its registry entry *or* its state file identifies as SDK-driven
             // (`claude -p`, the Agent SDK) is never shown as a pet. One whose entrypoint
             // neither source knows is shown normally.
-            if SessionSource.isExcluded(entrypoint: registryEntry?.entrypoint)
-                || SessionSource.isExcluded(entrypoint: record?.entrypoint) {
+            if !source.isCodex && (SessionSource.isExcluded(entrypoint: registryEntry?.entrypoint)
+                || SessionSource.isExcluded(entrypoint: record?.entrypoint)) {
                 continue
             }
 
             let eventTime = record?.eventTime ?? 0
-            if let dismissedAt = dismissed[id], eventTime <= dismissedAt {
+            let legacyID = source.isCodex && id.hasPrefix("codex-") ? SessionSource.codexConversationID(sessionId: id) : nil
+            let dismissedAt = [dismissed[id], legacyID.flatMap { dismissed[$0] }].compactMap { $0 }.max()
+            if let dismissedAt, eventTime <= dismissedAt {
                 continue
             }
 
@@ -116,7 +133,7 @@ public enum SessionCatalog {
             drafts.append(Draft(
                 id: id,
                 baseName: registryEntry?.name ?? URL(fileURLWithPath: cwd).lastPathComponent,
-                source: SessionSource(entrypoint: registryEntry?.entrypoint ?? record?.entrypoint),
+                source: source,
                 state: state,
                 detail: detail,
                 cwd: cwd,
@@ -125,7 +142,8 @@ public enum SessionCatalog {
                 tracked: tracked,
                 eventTime: eventTime,
                 sortKey: registryEntry?.startedAt ?? record?.createdAt ?? 0,
-                activity: record?.activity
+                activity: record?.activity,
+                telemetry: record?.telemetry
             ))
         }
 
@@ -139,7 +157,7 @@ public enum SessionCatalog {
             return PetSession(
                 id: draft.id, name: name, source: draft.source, state: draft.state, detail: draft.detail,
                 cwd: draft.cwd, pid: draft.pid, transcriptPath: draft.transcriptPath, tracked: draft.tracked,
-                eventTime: draft.eventTime, sortKey: draft.sortKey, activity: draft.activity
+                eventTime: draft.eventTime, sortKey: draft.sortKey, activity: draft.activity, telemetry: draft.telemetry
             )
         }
 

@@ -2,7 +2,7 @@ import AppKit
 import CritterCore
 
 /// One session's speech bubble: a white rounded card with a 4 pt state-color stripe on the
-/// left, a small `<来源> · <名字>` header line, and the detail text in at most two lines
+/// left, a small working-directory header line, and the detail text in at most two lines
 /// (truncated with "…"). Hovering shows the full detail as a tooltip.
 final class BubbleView: NSView {
     static let stripeWidth: CGFloat = 4
@@ -56,7 +56,9 @@ final class BubbleView: NSView {
 
     func configure(session: PetSession) {
         let full = session.detail.flatMap { $0.isEmpty ? nil : $0 } ?? session.state.label
-        header.stringValue = "\(session.source.label) · \(session.name)"
+        let directoryName = (session.cwd as NSString).lastPathComponent
+        header.stringValue = directoryName.isEmpty ? session.name : directoryName
+        header.toolTip = session.cwd.isEmpty ? nil : session.cwd
         detail.stringValue = ToolSummary.truncate(full, max: Self.maxDisplayCharacters)
         stripe.layer?.backgroundColor = session.state.color.cgColor
         toolTip = full

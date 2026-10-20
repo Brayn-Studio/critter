@@ -1,6 +1,6 @@
 import Foundation
 
-public enum SayOutcome: Equatable, Sendable { case sent, unavailable, failed }
+public enum SayOutcome: Equatable, Sendable { case sent, unavailable, failed, unconfirmed }
 
 /// What became of an answer handed to `BridgeServices.submitAnswer`. `alreadyAnswered`: the
 /// request had an answer already (another phone was first), so this one was dropped.
@@ -19,8 +19,13 @@ public protocol BridgeServices: AnyObject {
     func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome
     func markSeen(sessionId: String)
     func say(text: String, sessionId: String) -> SayOutcome
+    func interrupt(sessionId: String) -> SayOutcome
     func skinManifest(name: String) -> JSONValue?
     func snapshotMessage() -> ServerMessage
+}
+
+public extension BridgeServices {
+    func interrupt(sessionId: String) -> SayOutcome { .unavailable }
 }
 
 /// The protocol state machine of one phone connection. Pure: it turns frames into outputs
@@ -147,9 +152,17 @@ public final class BridgeConnection {
             case .sent: return result(id, nil)
             case .unavailable: return result(id, .unavailable, "该会话现在无法接收文字")
             case .failed: return result(id, .failed, "发送失败")
+            case .unconfirmed: return result(id, .failed, "电脑端尚未确认结果，请先查看会话，避免重复发送")
             }
         case .skin(let id, let name):
             return [.send(.skin(id: id, name: name, manifest: services.skinManifest(name: name)))]
+        case .interrupt(let id, let sessionId):
+            switch services.interrupt(sessionId: sessionId) {
+            case .sent: return result(id, nil)
+            case .unavailable: return result(id, .unavailable, "该会话当前无法从手机停止")
+            case .failed: return result(id, .failed, "停止失败，请检查电脑端状态")
+            case .unconfirmed: return result(id, .failed, "电脑端尚未确认停止结果，请先查看会话")
+            }
         case .hello, .pair:
             return []
         }

@@ -62,7 +62,10 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import local.critter.core.net.ConnState
+import local.critter.core.logic.LimitsText
 import local.critter.core.protocol.BridgeContext
+import local.critter.core.protocol.BridgeLimits
+import local.critter.core.protocol.BridgePending
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.ResultReason
 import local.critter.core.protocol.ServerMessage
@@ -72,8 +75,12 @@ import local.critter.phone.critter.CritterRenderer.Companion.BASE_COLUMNS
 import local.critter.phone.critter.CritterView
 import local.critter.phone.repository
 import local.critter.phone.ui.agoText
+import local.critter.phone.ui.answer.AnswerActivity
 import local.critter.phone.ui.board.BoardActivity
+import local.critter.phone.ui.canStopTurn
 import local.critter.phone.ui.doingText
+import local.critter.phone.ui.isCodexSession
+import local.critter.phone.ui.messageHint
 import local.critter.phone.ui.meadow.MeadowBackdrop
 import local.critter.phone.ui.meadow.STAGE_PET
 import local.critter.phone.ui.meadow.currentSkyTime
@@ -83,10 +90,17 @@ import local.critter.phone.ui.sheet.SheetPet
 import local.critter.phone.ui.sheet.SheetScaffold
 import local.critter.phone.ui.sourceIcon
 import local.critter.phone.ui.sourceLabel
+import local.critter.phone.ui.supportsAnswers
+import local.critter.phone.ui.supportsMessages
+import local.critter.phone.ui.visibleSessionSource
+import local.critter.phone.ui.waitingHint
+import local.critter.phone.ui.theme.ButtonKind
+import local.critter.phone.ui.theme.ButtonSize
 import local.critter.phone.ui.theme.Critter
 import local.critter.phone.ui.theme.CritterTheme
 import local.critter.phone.ui.theme.Nunito
 import local.critter.phone.ui.theme.PixelField
+import local.critter.phone.ui.theme.PixelButton
 import local.critter.phone.ui.theme.PixelIcon
 import local.critter.phone.ui.theme.SegmentMeter
 import local.critter.phone.ui.theme.Silkscreen
@@ -95,16 +109,26 @@ import local.critter.phone.ui.theme.pixelSurface
 import local.critter.phone.ui.theme.rememberReduceMotion
 import local.critter.phone.ui.theme.wholePx
 import local.critter.phone.ui.withKeyguardDismissed
+import java.time.ZoneId
 import kotlin.math.roundToInt
 
 /** The longest message "发一句" sends. */
 const val MAX_SAY_LENGTH = 4000
 
 /** What the sheet tells the user about the Mac's receipt for a message (spec §6.4). */
-fun sayFeedback(result: ServerMessage.Result): String = when {
+fun sayFeedback(result: ServerMessage.Result, codex: Boolean = false): String = when {
     result.ok -> "已发送"
+    !result.message.isNullOrBlank() -> result.message.orEmpty()
+    result.reason == ResultReason.unavailable && codex -> "尚未连接 Codex 控制通道，请在电脑上继续操作"
     result.reason == ResultReason.unavailable -> "这个会话收不到消息（可能是启动得太早，重启会话后可用）"
     else -> result.message?.takeIf { it.isNotBlank() } ?: "发送失败"
+}
+
+/** A receipt confirms acceptance of the stop request, not that the turn has already stopped. */
+fun interruptFeedback(result: ServerMessage.Result): String = result.message?.takeIf { it.isNotBlank() } ?: when {
+    result.ok -> "已请求停止当前回合"
+    result.reason == ResultReason.unavailable -> "当前会话无法停止，请在电脑上处理"
+    else -> "停止请求未发送成功"
 }
 
 /**
@@ -208,7 +232,10 @@ class DetailActivity : ComponentActivity() {
             if (session == null) {
                 SheetMessage(if (gone) "这个会话已经结束" else "正在连接电脑…")
             } else {
-                DetailSheet(session, library.manifest(session.skin), online = state is ConnState.Connected, now = now, cue = cue)
+                DetailSheet(
+                    session, library.manifest(session.skin), online = state is ConnState.Connected, now = now, cue = cue,
+                    pending = snapshot?.pending?.filter { it.sessionId == session.id }?.minByOrNull { it.createdAt },
+                )
             }
         }
     }
@@ -221,10 +248,13 @@ class DetailActivity : ComponentActivity() {
     }
 
     @Composable
-    private fun DetailSheet(session: BridgeSession, manifest: SkinManifest, online: Boolean, now: Long, cue: LookAtYouCue) {
+    private fun DetailSheet(
+        session: BridgeSession, manifest: SkinManifest, online: Boolean, now: Long, cue: LookAtYouCue, pending: BridgePending?,
+    ) {
         val c = Critter.colors
         val density = LocalDensity.current
         val scope = rememberCoroutineScope()
+        val canMessage = supportsMessages(session)
         val reduce = rememberReduceMotion()
         var text by remember(session.id) { mutableStateOf("") }
         var busy by remember(session.id) { mutableStateOf(false) }
@@ -264,6 +294,7 @@ class DetailActivity : ComponentActivity() {
         }
 
         fun send() {
+            if (!canMessage || !online || busy || text.isBlank()) return
             // Like an answer, nothing goes to the Mac from the lock screen before the phone is unlocked.
             withKeyguardDismissed {
                 busy = true
@@ -272,12 +303,25 @@ class DetailActivity : ComponentActivity() {
                 scope.launch {
                     val result = repository.say(session.id, sent.trim())
                     busy = false
-                    feedback = sayFeedback(result) to result.ok
+                    feedback = sayFeedback(result, codex = isCodexSession(session)) to result.ok
                     if (result.ok) {
                         text = afterSent(text, sent)
                         // Under reduce motion nothing flies: the green line says it.
                         if (!reduce) flyLetter()
                     }
+                }
+            }
+        }
+
+        fun stopTurn() {
+            if (!canStopTurn(session, online) || busy) return
+            withKeyguardDismissed {
+                busy = true
+                feedback = null
+                scope.launch {
+                    val result = repository.interrupt(session.id)
+                    busy = false
+                    feedback = interruptFeedback(result) to result.ok
                 }
             }
         }
@@ -304,31 +348,53 @@ class DetailActivity : ComponentActivity() {
                     }
                     if (!typing) Facts(session, now)
 
-                    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
-                            PixelField(
-                                value = text,
-                                onValueChange = { text = it.take(MAX_SAY_LENGTH) },
-                                placeholder = "发一句…",
-                                modifier = Modifier.weight(1f),
-                                // Not disabled (nor read-only) while sending: either drops the keyboard, and the
-                                // sheet changes shape under the flying letter. The send button waits instead, and
-                                // what is typed meanwhile survives the send (afterSent).
-                                maxLines = 5,
-                                contentDescription = "发一句",
-                            )
-                            SendButton(
-                                enabled = online && !busy && text.isNotBlank(),
-                                onClick = ::send,
-                                modifier = Modifier.onGloballyPositioned { marks.send = it },
+                    if (canMessage) {
+                        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.Bottom) {
+                                PixelField(
+                                    value = text,
+                                    onValueChange = { text = it.take(MAX_SAY_LENGTH) },
+                                    placeholder = "发一句…",
+                                    modifier = Modifier.weight(1f),
+                                    // Not disabled (nor read-only) while sending: either drops the keyboard, and the
+                                    // sheet changes shape under the flying letter. The send button waits instead, and
+                                    // what is typed meanwhile survives the send (afterSent).
+                                    maxLines = 5,
+                                    contentDescription = "发一句",
+                                )
+                                SendButton(
+                                    enabled = online && !busy && text.isNotBlank(),
+                                    onClick = ::send,
+                                    modifier = Modifier.onGloballyPositioned { marks.send = it },
+                                )
+                            }
+                            Text(
+                                messageHint(session),
+                                color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 11.5.sp, lineHeight = 17.sp,
                             )
                         }
-                        feedback?.let { (message, ok) -> Feedback(message, ok) }
+                    } else {
                         Text(
-                            "Claude 会把这句话当成另一个会话发来的消息，它不能用来批准任何东西",
+                            messageHint(session),
                             color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 11.5.sp, lineHeight = 17.sp,
                         )
                     }
+                    if (canStopTurn(session, online)) {
+                        PixelButton(
+                            if (busy) "正在发送…" else "停止当前回合", ::stopTurn,
+                            Modifier.fillMaxWidth(), kind = ButtonKind.Danger, size = ButtonSize.Small, enabled = !busy,
+                        )
+                    }
+                    if (pending != null && supportsAnswers(session)) {
+                        PixelButton(
+                            "打开回答", { startActivity(AnswerActivity.intent(this@DetailActivity, pending.requestId)) },
+                            Modifier.fillMaxWidth(), kind = ButtonKind.Secondary, size = ButtonSize.Small, enabled = online && !busy,
+                        )
+                    }
+                    waitingHint(session, hasActionableRequest = pending != null)?.let { hint ->
+                        Text(hint, color = c.ink2, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 12.sp, lineHeight = 17.sp)
+                    }
+                    feedback?.let { (message, ok) -> Feedback(message, ok) }
                 }
             }
             letter?.let { p ->
@@ -404,7 +470,8 @@ class DetailActivity : ComponentActivity() {
         val pairs = buildList {
             add(FactItem("folder", "目录", session.cwd, path = true))
             session.branch?.takeIf { it.isNotBlank() }?.let { add(FactItem("branch", "分支", it)) }
-            add(FactItem(sourceIcon(session.source), "来源", sourceLabel(session.source)))
+            val source = visibleSessionSource(session)
+            add(FactItem(sourceIcon(source), "来源", sourceLabel(source)))
             session.model?.takeIf { it.isNotBlank() }?.let { add(FactItem("spark", "模型", it)) }
         }.chunked(2)
         Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -416,9 +483,30 @@ class DetailActivity : ComponentActivity() {
             }
             // An estimated context share (the Mac could not read the real one) is marked with ≈.
             session.context?.let { ContextFact(it) }
+            if (isCodexSession(session)) session.limits?.let { LimitsFact(it, now) }
             Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
                 Fact(FactItem("dot", "最后更新", agoText(session.eventTime, now)), Modifier.weight(1f))
                 Spacer(Modifier.weight(1f))
+            }
+        }
+    }
+
+    @Composable
+    private fun LimitsFact(limits: BridgeLimits, now: Long) {
+        val c = Critter.colors
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            FactLabel("battery", "Codex 额度")
+            Row(horizontalArrangement = Arrangement.spacedBy(14.dp)) {
+                for ((name, window) in listOf("5 小时" to limits.fiveHour, "7 天" to limits.sevenDay)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("$name · ${LimitsText.percent(window)}", color = c.ink, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 13.sp)
+                        window?.let { SegmentMeter(it.usedPercentage, segments = 12) }
+                        Text(LimitsText.resets(window, now, ZoneId.systemDefault()), color = c.ink2, fontFamily = Nunito, fontSize = 11.5.sp)
+                    }
+                }
+            }
+            LimitsText.staleness(limits.updatedAt, now)?.let {
+                Text("额度更新于 $it", color = c.ink2, fontFamily = Nunito, fontSize = 11.5.sp)
             }
         }
     }

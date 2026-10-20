@@ -148,3 +148,21 @@ private final class FakeFiles: @unchecked Sendable {
     #expect(SnapshotAssembler.tail(of: big.path, size: UInt64(content.count)) == content.suffix(SnapshotAssembler.transcriptTailBytes))
     #expect(SnapshotAssembler.tail(of: dir.appendingPathComponent("missing").path, size: 1) == nil)
 }
+
+@Test func codexPhoneAssemblerUsesSessionTelemetryWithoutReadingClaudeUsage() {
+    let files = FakeFiles()
+    files.transcripts = ["/codex.jsonl": (100, Date(timeIntervalSince1970: 1), usageLine(999_000))]
+    var codex = session("codex-a", cwd: "", transcript: "/codex.jsonl")
+    codex.source = .codexDesktop
+    codex.telemetry = CodexTelemetry(model: "gpt-6-sol", usedTokens: 12_800, contextWindow: 128_000)
+    let capabilities = BridgeCapabilities(canSay: true, canInterrupt: true)
+    let assembler = SnapshotAssembler(home: home, dependencies: files.dependencies)
+    let body = assembler.build(
+        sessions: [codex], skins: [:], statuses: [], pending: [], prefs: prefs,
+        capabilities: ["codex-a": capabilities]
+    )
+    #expect(body.sessions.first?.model == "gpt-6-sol")
+    #expect(body.sessions.first?.context == BridgeContext(usedPercent: 10, windowSize: 128_000, estimated: false))
+    #expect(body.sessions.first?.capabilities == capabilities)
+    #expect(files.tailReads.isEmpty)
+}

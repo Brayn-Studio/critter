@@ -91,6 +91,8 @@ private final class MonitorEngine: @unchecked Sendable {
 
     private var publish: (@Sendable (MonitorSnapshot) -> Void)?
     private var directoryWatchers: [DirectoryWatcher] = []
+    private var codexWatcher: CodexDirectoryWatcher?
+    private var codexSync = CodexSessionSync()
     private var exitWatcher: ProcessExitWatcher?
     private var transcriptWatchers: [String: (path: String, watcher: FileAppendWatcher)] = [:]
     /// Registry entries (`"<pid>/<sessionId>"`) whose process we saw exit. Claude leaves
@@ -112,6 +114,9 @@ private final class MonitorEngine: @unchecked Sendable {
             self.publish = publish
             sweepDeadSessions()
             exitWatcher = ProcessExitWatcher(queue: queue) { [weak self] pid in self?.handleExit(pid) }
+            codexWatcher = CodexDirectoryWatcher(url: paths.codexSessionsDir, queue: queue) { [weak self] in
+                self?.scheduleRebuild()
+            }
             for dir in [paths.sessionsDir, paths.claudeSessionsDir] {
                 let watcher = DirectoryWatcher(url: dir, queue: queue) { [weak self] in self?.rebuild() }
                 watcher.start()
@@ -172,6 +177,7 @@ private final class MonitorEngine: @unchecked Sendable {
     }
 
     private func rebuild() {
+        codexSync.refresh(owners: CodexDiscovery.openRollouts(in: paths.codexSessionsDir), store: store)
         var records = store.readAll()
 
         let registryAll = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
@@ -206,7 +212,10 @@ private final class MonitorEngine: @unchecked Sendable {
 
         let snapshot = MonitorSnapshot(
             sessions: SessionCatalog.build(records: records, registry: registry, dismissed: DismissedSessions.load()),
-            knownIds: Set(records.map(\.sessionId)).union(registryAll.map(\.sessionId))
+            knownIds: Set(records.flatMap { record in
+                let id = record.sessionId
+                return id.hasPrefix("codex-") ? [id, String(id.dropFirst(6))] : [id]
+            }).union(registryAll.map(\.sessionId))
         )
         guard snapshot != lastPublished else { return }
         lastPublished = snapshot
@@ -265,6 +274,7 @@ private final class MonitorEngine: @unchecked Sendable {
     private func reconcileTranscriptWatchers(_ records: [SessionRecord]) {
         var wanted: [String: String] = [:]
         for record in records where record.state == .running || record.state == .waiting {
+            guard !SessionSource(entrypoint: record.entrypoint).isCodex else { continue }
             if let path = record.transcriptPath, !path.isEmpty {
                 wanted[record.sessionId] = path
             }

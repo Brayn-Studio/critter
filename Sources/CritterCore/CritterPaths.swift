@@ -4,10 +4,12 @@ import Foundation
 public struct CritterPaths: Sendable {
     public let critterHome: URL
     public let claudeHome: URL
+    public let codexHome: URL
 
-    public init(critterHome: URL, claudeHome: URL) {
+    public init(critterHome: URL, claudeHome: URL, codexHome: URL? = nil) {
         self.critterHome = critterHome
         self.claudeHome = claudeHome
+        self.codexHome = codexHome ?? claudeHome.deletingLastPathComponent().appendingPathComponent(".codex")
     }
 
     public var sessionsDir: URL { critterHome.appendingPathComponent("sessions") }
@@ -25,6 +27,7 @@ public struct CritterPaths: Sendable {
     public var claudeSessionsDir: URL { claudeHome.appendingPathComponent("sessions") }
     public var claudeIDEDir: URL { claudeHome.appendingPathComponent("ide") }
     public var claudeSettingsFile: URL { claudeHome.appendingPathComponent("settings.json") }
+    public var codexSessionsDir: URL { codexHome.appendingPathComponent("sessions") }
 
     /// `~/.critter`, overridable with `CRITTER_HOME`; `~/.claude`, overridable with `CLAUDE_CONFIG_DIR`.
     public static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> CritterPaths {
@@ -33,7 +36,9 @@ public struct CritterPaths: Sendable {
             ?? URL(fileURLWithPath: home).appendingPathComponent(".critter")
         let claudeHome = env["CLAUDE_CONFIG_DIR"].map { URL(fileURLWithPath: $0) }
             ?? URL(fileURLWithPath: home).appendingPathComponent(".claude")
-        return CritterPaths(critterHome: critterHome, claudeHome: claudeHome)
+        let codexHome = env["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: home).appendingPathComponent(".codex")
+        return CritterPaths(critterHome: critterHome, claudeHome: claudeHome, codexHome: codexHome)
     }
 
     // Pattern is a fixed, valid literal, so force-try is safe here.

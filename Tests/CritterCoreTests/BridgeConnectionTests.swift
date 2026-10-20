@@ -14,6 +14,7 @@ private final class FakeServices: BridgeServices {
     var submitted: [(AnswerPayload, String)] = []
     var seen: [String] = []
     var said: [(String, String)] = []
+    var interrupted: [String] = []
 
     func verify(deviceId: String, token: String) -> DeviceRecord? {
         token == goodToken ? DeviceRecord(id: deviceId, name: "P", tokenHash: "h", pairedAt: 0) : nil
@@ -24,6 +25,7 @@ private final class FakeServices: BridgeServices {
     func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome { submitted.append((payload, requestId)); return submitResult }
     func markSeen(sessionId: String) { seen.append(sessionId) }
     func say(text: String, sessionId: String) -> SayOutcome { said.append((text, sessionId)); return sayResult }
+    func interrupt(sessionId: String) -> SayOutcome { interrupted.append(sessionId); return .sent }
     func skinManifest(name: String) -> JSONValue? { name == "clawd" ? .object(["name": .string(name)]) : nil }
     func snapshotMessage() -> ServerMessage {
         .snapshot(seq: 1, sentAt: 2, body: SnapshotBody(
@@ -247,4 +249,14 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
     let c = readyConnection(FakeServices())
     #expect(c.receive(Data("garbage".utf8)).isEmpty)
     #expect(c.phase == .ready(deviceId: "dev"))
+}
+
+@Test func codexInterruptCommandRequiresPairingAndRoutesToSession() {
+    let services = FakeServices()
+    let before = BridgeConnection(services: services)
+    let frame = ClientMessage.interrupt(id: "stop-1", sessionId: "codex-thread").encode()
+    #expect(before.receive(frame) == [.send(.denied(reason: .protocolMismatch)), .close])
+    let ready = readyConnection(services)
+    #expect(ready.receive(frame) == [.send(.result(id: "stop-1", ok: true, reason: nil, message: nil))])
+    #expect(services.interrupted == ["codex-thread"])
 }

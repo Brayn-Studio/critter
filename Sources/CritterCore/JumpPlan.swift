@@ -24,6 +24,7 @@ public enum JumpPlan: Equatable, Sendable {
     case activate(pid: Int32)
     /// No hosting app was found, but the source names one (Claude Desktop, VS Code).
     case activateBundle(String)
+    case codexThread(id: String)
     /// Nothing to jump to.
     case none
 }
@@ -44,16 +45,22 @@ public enum JumpPlanner {
     public static let iterm = "com.googlecode.iterm2"
     public static let vscode = "com.microsoft.VSCode"
 
-    public static func plan(guiAncestor: AppHit?, source: SessionSource, cwd: String, tty: String?, ideLocks: [IDELock]) -> JumpPlan {
+    public static func plan(guiAncestor: AppHit?, source: SessionSource, cwd: String, tty: String?, ideLocks: [IDELock], sessionId: String? = nil) -> JumpPlan {
+        if source == .codexDesktop, let sessionId, sessionId.hasPrefix("codex-"),
+           UUID(uuidString: String(sessionId.dropFirst(6))) != nil {
+            return .codexThread(id: String(sessionId.dropFirst(6)))
+        }
         let folder = workspace(for: cwd, locks: ideLocks) ?? cwd
 
         guard let app = guiAncestor else {
             switch source {
             case .desktop:
                 return .activateBundle(claudeDesktop)
-            case .vscode:
+            case .codexDesktop:
+                return .activateBundle("com.openai.codex")
+            case .vscode, .codexVSCode:
                 return folder.isEmpty ? .activateBundle(vscode) : .openFolder(bundleId: vscode, folder: folder)
-            case .terminal, .other:
+            case .terminal, .codexTerminal, .codex, .other:
                 return .none
             }
         }

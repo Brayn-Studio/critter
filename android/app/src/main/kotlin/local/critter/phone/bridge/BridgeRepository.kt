@@ -388,6 +388,11 @@ class BridgeRepository(private val app: Application) {
         return c.request(ClientMessage.Say(null, sessionId, text))
     }
 
+    suspend fun interrupt(sessionId: String): ServerMessage.Result {
+        val c = client ?: return failure(ResultReason.unknown, "未连接，没有发送停止请求")
+        return c.request(ClientMessage.Interrupt(null, sessionId))
+    }
+
     private fun failure(reason: ResultReason, message: String) =
         ServerMessage.Result(id = null, ok = false, reason = reason, message = message)
 

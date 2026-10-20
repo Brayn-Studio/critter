@@ -14,8 +14,10 @@ public struct SessionRecord: Codable, Sendable, Equatable {
     public var eventTime: Int64
     /// Milliseconds since epoch, time of the first write for this session. Preserved across updates.
     public var createdAt: Int64
+    /// Owning agent process. The persisted field name is kept for schema-1 compatibility;
+    /// Codex records use the same lifecycle/reaper machinery as Claude records.
     public var claudePid: Int32?
-    /// Seconds since epoch, the Claude process's start time (for stale-pid detection).
+    /// Seconds since epoch, the owning process's start time (for stale-pid detection).
     public var claudeStartTime: Int64?
     /// How the session was started (`cli`, `claude-vscode`, `sdk-cli`, …): from Claude's
     /// registry entry, else `CLAUDE_CODE_ENTRYPOINT` in the hook's environment. Lets SDK /
@@ -24,6 +26,10 @@ public struct SessionRecord: Codable, Sendable, Equatable {
     /// The `WorkActivity` raw value while the session is running a tool or thinking; nil
     /// otherwise (and in files written before this field existed).
     public var activity: String?
+    /// Codex's latest rollout-reported model, context and account usage; absent in older files.
+    public var telemetry: CodexTelemetry?
+    /// Latest public assistant commentary for the active turn; never internal reasoning.
+    public var progress: String?
 
     public init(
         schema: Int,
@@ -38,7 +44,9 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         claudePid: Int32?,
         claudeStartTime: Int64?,
         entrypoint: String? = nil,
-        activity: String? = nil
+        activity: String? = nil,
+        telemetry: CodexTelemetry? = nil,
+        progress: String? = nil
     ) {
         self.schema = schema
         self.sessionId = sessionId
@@ -53,5 +61,7 @@ public struct SessionRecord: Codable, Sendable, Equatable {
         self.claudeStartTime = claudeStartTime
         self.entrypoint = entrypoint
         self.activity = activity
+        self.telemetry = telemetry
+        self.progress = progress
     }
 }

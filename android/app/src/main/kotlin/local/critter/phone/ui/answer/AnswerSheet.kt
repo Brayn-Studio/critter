@@ -98,6 +98,10 @@ private fun JsonObject.string(key: String): String? =
 internal fun permissionBody(input: JsonObject?): String? =
     listOf("command", "file_path", "url").firstNotNullOfOrNull { input?.string(it)?.takeIf(String::isNotBlank) }
 
+/** Codex approvals accept only a decision; Claude's older requests also accept an optional reason. */
+internal fun acceptsDenyMessage(input: JsonObject?): Boolean =
+    (input?.get("acceptsDenyMessage") as? JsonPrimitive)?.booleanOrNull != false
+
 internal fun planText(input: JsonObject?): String = input?.string("plan").orEmpty()
 
 internal fun parseQuestions(input: JsonObject?): List<Question> =
@@ -229,25 +233,27 @@ private fun ColumnScope.PermissionBody(
 ) {
     var writingReason by remember(request.requestId) { mutableStateOf(false) }
     var reason by remember(request.requestId) { mutableStateOf("") }
+    val canExplain = acceptsDenyMessage(request.input)
+    val showingReason = writingReason && canExplain
 
     permissionBody(request.input)?.let { CommandSlip(it, Modifier.weight(1f, fill = false)) }
-    if (writingReason) {
+    if (showingReason) {
         PixelField(
             reason, { reason = it }, placeholder = "拒绝的理由（可不写）", modifier = Modifier.fillMaxWidth(),
             enabled = enabled, maxLines = 3, contentDescription = "拒绝的理由",
         )
-    } else {
+    } else if (canExplain) {
         PixelButton("拒绝并写理由…", { writingReason = true }, kind = ButtonKind.Ghost, enabled = enabled)
     }
     FailureLine(failure)
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
         // With a reason the deny button says so, and needs the room: the two share the row evenly then.
         PixelButton(
-            if (writingReason) "拒绝并发送理由" else "拒绝",
-            onClick = { draft.deny(reason); onSubmit() },
+            if (showingReason) "拒绝并发送理由" else "拒绝",
+            onClick = { draft.deny(if (canExplain) reason else null); onSubmit() },
             modifier = Modifier.weight(1f), kind = ButtonKind.Secondary, size = ButtonSize.Large, enabled = enabled,
         )
-        PrimaryAnswer("允许", doneLabel, enabled, { draft.allow(); onSubmit() }, Modifier.weight(if (writingReason) 1f else 1.4f))
+        PrimaryAnswer("允许", doneLabel, enabled, { draft.allow(); onSubmit() }, Modifier.weight(if (showingReason) 1f else 1.4f))
     }
 }
 

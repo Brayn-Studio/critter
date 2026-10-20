@@ -65,3 +65,56 @@ private func request(_ id: String, session: String, createdAt: Int64) -> Pending
         prefs: prefs, home: "/"))
     #expect(body.pending.map(\.requestId) == ["r1", "r2"])
 }
+
+@Test func codexPhoneSnapshotUsesLoggedTelemetryAndKeepsProviderLimitsSeparate() {
+    var codex = session("codex-a")
+    codex.source = .codexDesktop
+    codex.telemetry = CodexTelemetry(
+        model: "gpt-6-sol", usedTokens: 25_840, contextWindow: 258_400,
+        fiveHour: RateWindow(usedPercentage: 31, resetsAt: 100), limitsUpdatedAt: 42
+    )
+    let body = SnapshotBuilder.build(SnapshotInputs(
+        sessions: [codex, session("claude")], statuses: [
+            StatusLineRecord(sessionId: "codex-a", updatedAt: 200, modelDisplayName: "Wrong Claude Model",
+                             contextWindowSize: 200_000, contextUsedPercentage: 88,
+                             fiveHour: RateWindow(usedPercentage: 99, resetsAt: 2)),
+            StatusLineRecord(sessionId: "claude", updatedAt: 100,
+                             fiveHour: RateWindow(usedPercentage: 11, resetsAt: 3)),
+        ], estimates: ["codex-a": ContextEstimate(usedTokens: 900_000, model: "Wrong Estimate")],
+        prefs: prefs, home: "/Users/me"
+    ))
+    #expect(body.sessions[0].model == "gpt-6-sol")
+    #expect(body.sessions[0].context == BridgeContext(usedPercent: 10, windowSize: 258_400, estimated: false))
+    #expect(body.sessions[0].limits == BridgeLimits(fiveHour: RateWindow(usedPercentage: 31, resetsAt: 100), updatedAt: 42))
+    #expect(body.sessions[1].limits == nil)
+    #expect(body.limits == BridgeLimits(fiveHour: RateWindow(usedPercentage: 11, resetsAt: 3), updatedAt: 100))
+}
+
+@Test func codexPhoneSnapshotNeverInventsAWindowAndDefaultsToReadOnly() {
+    var codex = session("codex-a")
+    codex.source = .codexTerminal
+    codex.telemetry = CodexTelemetry(model: "gpt-6-astra", usedTokens: 12_000)
+    let body = SnapshotBuilder.build(SnapshotInputs(sessions: [codex, session("claude")], prefs: prefs, home: "/"))
+    #expect(body.sessions[0].model == "gpt-6-astra")
+    #expect(body.sessions[0].context == nil)
+    #expect(body.sessions[0].capabilities == BridgeCapabilities(readOnlyReason: "尚未连接 Codex 控制通道"))
+    #expect(body.sessions[1].capabilities == nil)
+    #expect(body.limits == nil)
+}
+
+@Test func codexPhoneSnapshotUsesReportedControlCapabilities() {
+    var codex = session("codex-a")
+    codex.source = .codexDesktop
+    let capabilities = BridgeCapabilities(canSay: true, canAnswer: false, canInterrupt: true)
+    let body = SnapshotBuilder.build(SnapshotInputs(
+        sessions: [codex], prefs: prefs, home: "/", capabilities: ["codex-a": capabilities]
+    ))
+    #expect(body.sessions[0].capabilities == capabilities)
+}
+
+@Test func codexUnboundedPendingDoesNotBecomeAMaxLongPhoneTimeout() {
+    var prompt = request("codex-request",session:"codex-session",createdAt:10)
+    prompt.expiresAt = .max
+    let body = SnapshotBuilder.build(SnapshotInputs(sessions:[session("codex-session")],pending:[prompt],prefs:prefs,home:"/"))
+    #expect(body.pending.first?.expiresAt == nil)
+}

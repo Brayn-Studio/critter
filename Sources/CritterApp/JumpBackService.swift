@@ -46,7 +46,8 @@ private enum JumpWorker {
             source: session.source,
             cwd: session.cwd,
             tty: tty,
-            ideLocks: ClaudeRegistry.ideLocks(in: ideDir)
+            ideLocks: session.source.isCodex ? [] : ClaudeRegistry.ideLocks(in: ideDir),
+            sessionId: session.id
         )
         let host = ancestor.map { "\($0.pid):\($0.bundleId ?? "-")" } ?? "none"
         DiagnosticLog.shared.log("jump-plan \(session.id) \(describe(plan)) ancestor=\(host)" + (dryRun ? " dry-run" : ""))
@@ -63,6 +64,14 @@ private enum JumpWorker {
             activate(pid: pid, sessionId: session.id)
         case .activateBundle(let bundleId):
             activate(bundleId: bundleId, sessionId: session.id)
+        case .codexThread(let id):
+            if let url = URL(string: "codex://threads/\(id)"), NSWorkspace.shared.open(url) {
+                DiagnosticLog.shared.log("jump-result \(session.id) opened Codex thread")
+            } else if let ancestor {
+                activate(pid: ancestor.pid, sessionId: session.id)
+            } else {
+                activate(bundleId: "com.openai.codex", sessionId: session.id)
+            }
         case .none:
             break
         }
@@ -193,6 +202,7 @@ private enum JumpWorker {
         case .openFolder(let bundleId, let folder): return "plan=openFolder app=\(bundleId) folder=\(folder)"
         case .activate(let pid): return "plan=activate pid=\(pid)"
         case .activateBundle(let bundleId): return "plan=activateBundle app=\(bundleId)"
+        case .codexThread(let id): return "plan=codexThread id=\(id)"
         case .none: return "plan=none"
         }
     }

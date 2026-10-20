@@ -77,7 +77,7 @@ public final class SnapshotAssembler {
 
     public func build(
         sessions: [PetSession], skins: [String: String], statuses: [StatusLineRecord],
-        pending: [PendingRequest], prefs: BridgePrefs
+        pending: [PendingRequest], prefs: BridgePrefs, capabilities: [String: BridgeCapabilities] = [:]
     ) -> SnapshotBody {
         let reported = Set(statuses.filter { $0.contextUsedPercentage != nil }.map(\.sessionId))
 
@@ -90,7 +90,7 @@ public final class SnapshotAssembler {
 
         var estimates: [String: ContextEstimate] = [:]
         var transcripts: Set<String> = []
-        for session in sessions where !reported.contains(session.id) {
+        for session in sessions where !session.source.isCodex && !reported.contains(session.id) {
             guard let path = session.transcriptPath, !path.isEmpty else { continue }
             transcripts.insert(path)
             if let estimate = estimate(transcript: path) { estimates[session.id] = estimate }
@@ -99,7 +99,7 @@ public final class SnapshotAssembler {
 
         return SnapshotBuilder.build(SnapshotInputs(
             sessions: sessions, skins: skins, statuses: statuses, pending: pending,
-            branches: branches, estimates: estimates, prefs: prefs, home: home
+            branches: branches, estimates: estimates, prefs: prefs, home: home, capabilities: capabilities
         ))
     }
 

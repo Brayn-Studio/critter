@@ -33,14 +33,44 @@ fun sourceLabel(source: SessionSource): String = when (source) {
     SessionSource.vscode -> "VS Code"
     SessionSource.desktop -> "桌面版"
     SessionSource.other -> "其它"
+    SessionSource.codex -> "Codex"
+    SessionSource.codex_terminal -> "Codex · 终端"
+    SessionSource.codex_vscode -> "Codex · VS Code"
+    SessionSource.codex_desktop -> "Codex · Desktop"
 }
 
 /** The pixel icon for where a session runs. */
 fun sourceIcon(source: SessionSource): String = when (source) {
-    SessionSource.terminal -> "term"
-    SessionSource.vscode -> "editor"
-    SessionSource.desktop, SessionSource.other -> "laptop"
+    SessionSource.terminal, SessionSource.codex_terminal -> "term"
+    SessionSource.vscode, SessionSource.codex_vscode -> "editor"
+    SessionSource.desktop, SessionSource.other, SessionSource.codex, SessionSource.codex_desktop -> "laptop"
 }
+
+/** Old phones cached Codex as `other`; its namespaced id still identifies the provider. */
+fun isCodexSession(session: BridgeSession): Boolean = session.source in setOf(
+    SessionSource.codex, SessionSource.codex_terminal, SessionSource.codex_vscode, SessionSource.codex_desktop,
+) || (session.source == SessionSource.other && session.id.startsWith("codex-"))
+
+fun visibleSessionSource(session: BridgeSession): SessionSource =
+    if (session.source == SessionSource.other && isCodexSession(session)) SessionSource.codex else session.source
+
+/** Missing capabilities preserve the older Claude route; Codex needs a verified owner. */
+fun supportsMessages(session: BridgeSession): Boolean = session.capabilities?.canSay ?: !isCodexSession(session)
+
+fun supportsAnswers(session: BridgeSession): Boolean = session.capabilities?.canAnswer ?: !isCodexSession(session)
+
+fun canStopTurn(session: BridgeSession, online: Boolean): Boolean = online && session.capabilities?.canInterrupt == true
+
+fun messageHint(session: BridgeSession): String = when {
+    !supportsMessages(session) -> session.capabilities?.readOnlyReason?.takeIf { it.isNotBlank() }
+        ?: if (isCodexSession(session)) "尚未连接 Codex 控制通道，请在电脑上继续操作" else "此会话暂时无法接收消息，请在电脑上继续操作"
+    isCodexSession(session) -> "发送到当前 Codex 会话"
+    else -> "Claude 会把这句话当成另一个会话发来的消息，它不能用来批准任何东西"
+}
+
+fun waitingHint(session: BridgeSession, hasActionableRequest: Boolean): String? =
+    if (isCodexSession(session) && session.state == PetState.waiting && (!supportsAnswers(session) || !hasActionableRequest))
+        "请在电脑上的 Codex 会话中处理这次确认" else null
 
 /** The last path component of [cwd] ("/Users/me/proj" -> "proj"). */
 fun folderName(cwd: String): String = cwd.trimEnd('/').substringAfterLast('/').ifEmpty { cwd }

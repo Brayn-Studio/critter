@@ -51,6 +51,9 @@ import local.critter.phone.ui.contextPercentText
 import local.critter.phone.ui.doingText
 import local.critter.phone.ui.folderName
 import local.critter.phone.ui.sourceLabel
+import local.critter.phone.ui.supportsAnswers
+import local.critter.phone.ui.visibleSessionSource
+import local.critter.phone.ui.waitingHint
 import local.critter.phone.ui.theme.BoardColors
 import local.critter.phone.ui.theme.ButtonKind
 import local.critter.phone.ui.theme.ButtonSize
@@ -87,7 +90,9 @@ data class CardRequest(val request: BridgePending, val what: String, val detail:
 
 /** Every session's [CardRequest], by session id. */
 fun cardRequests(body: SnapshotBody?): Map<String, CardRequest> =
-    body?.pending.orEmpty().groupBy { it.sessionId }.mapValues { (_, requests) ->
+    body?.pending.orEmpty().filter { request ->
+        body?.sessions?.firstOrNull { it.id == request.sessionId }?.let(::supportsAnswers) != false
+    }.groupBy { it.sessionId }.mapValues { (_, requests) ->
         val oldest = requests.minBy { it.createdAt }
         val summary = oldest.summary?.takeIf { it.isNotBlank() } ?: oldest.toolName?.takeIf { it.isNotBlank() }
         val what = when (oldest.kind) {
@@ -169,6 +174,7 @@ fun ProBoard(
                     )
                 }
             }
+            Text("Claude Code 额度", color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 12.sp)
             Gauge("5 小时额度", body?.limits?.fiveHour, data.now)
             Gauge("7 天额度", body?.limits?.sevenDay, data.now)
             body?.limits?.let { LimitsText.staleness(it.updatedAt, data.now) }?.let {
@@ -285,6 +291,12 @@ private fun SessionCard(
             }
         }
         if (card != null && request != null) Ask(card, request, online, onAllow, onDeny, onOpen)
+        waitingHint(session, hasActionableRequest = request != null)?.let { hint ->
+            Text(
+                hint, color = BoardColors.waitInk, fontFamily = Nunito, fontWeight = FontWeight.W700, fontSize = 11.5.sp,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         session.context?.let { ctx ->
             Row(Modifier.padding(top = 5.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 BoardMeter(ctx.usedPercent, 16, 4.dp, Modifier.weight(1f))
@@ -304,7 +316,7 @@ private fun Meta(s: BridgeSession) {
     Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
         MetaPiece("folder", folderName(s.cwd), Modifier.weight(1f, fill = false))
         s.branch?.takeIf { it.isNotBlank() }?.let { MetaPiece("branch", it, Modifier.weight(1f, fill = false)) }
-        Text(sourceLabel(s.source), color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 10.5.sp, maxLines = 1)
+        Text(sourceLabel(visibleSessionSource(s)), color = BoardColors.dim, fontFamily = Nunito, fontWeight = FontWeight.W600, fontSize = 10.5.sp, maxLines = 1)
     }
 }
 

@@ -5,6 +5,7 @@ import local.critter.core.protocol.ServerMessage
 import local.critter.phone.ui.detail.afterSent
 import local.critter.phone.ui.detail.letterPath
 import local.critter.phone.ui.detail.sayFeedback
+import local.critter.phone.ui.detail.interruptFeedback
 import org.junit.jupiter.api.Test
 import kotlin.math.abs
 import kotlin.test.assertEquals
@@ -24,6 +25,22 @@ class SayFeedbackTest {
     @Test fun failedShowsTheReason() = assertEquals("socket 连不上", sayFeedback(result(false, ResultReason.failed, "socket 连不上")))
 
     @Test fun failedWithoutAReasonStillSaysSo() = assertEquals("发送失败", sayFeedback(result(false, ResultReason.failed)))
+
+    @Test fun unavailableKeepsTheActualBridgeExplanation() = assertEquals(
+        "当前 Codex 会话未连接", sayFeedback(result(false, ResultReason.unavailable, "当前 Codex 会话未连接"), codex = true),
+    )
+
+    @Test fun codexUnavailableDoesNotSuggestClaudeSessionRestart() = assertEquals(
+        "尚未连接 Codex 控制通道，请在电脑上继续操作", sayFeedback(result(false, ResultReason.unavailable), codex = true),
+    )
+
+    @Test fun interruptAcknowledgesTheRequestAndPreservesFailures() {
+        assertEquals("已请求停止当前回合", interruptFeedback(result(true)))
+        assertEquals("电脑已接受停止请求", interruptFeedback(result(true, message = "电脑已接受停止请求")))
+        assertEquals("当前会话无法停止，请在电脑上处理", interruptFeedback(result(false, ResultReason.unavailable)))
+        assertEquals("没有收到电脑的回复", interruptFeedback(result(false, ResultReason.unknown, "没有收到电脑的回复")))
+        assertEquals("停止请求未发送成功", interruptFeedback(result(false, ResultReason.failed)))
+    }
 
     @Test
     fun whatWasTypedDuringTheSendStays() {

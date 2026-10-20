@@ -47,6 +47,19 @@ class MessagesTest {
         assertEquals("已在电脑上处理", failed.message)
     }
 
+    @Test fun encodesInterruptForAnAuthenticatedConnection() {
+        assertEquals(BridgeJson.parseToJsonElement("""{"type":"interrupt","id":"stop","sessionId":"codex-thread"}"""),
+            BridgeJson.parseToJsonElement(encode(ClientMessage.Interrupt("stop", "codex-thread"))))
+    }
+
+    @Test fun codexSourcesSurviveSnapshotDecoding() {
+        for (source in listOf("codex", "codex_terminal", "codex_vscode", "codex_desktop")) {
+            val text = resource("server-snapshot.json").replace("\"source\": \"terminal\"", "\"source\": \"$source\"")
+            val snapshot = assertIs<ServerMessage.Snapshot>(decodeServer(text))
+            assertEquals(source, snapshot.body.sessions.single().source.name)
+        }
+    }
+
     @Test fun decodesTheDocumentedSnapshot() {
         val snap = assertIs<ServerMessage.Snapshot>(decodeServer(resource("server-snapshot.json")))
         assertEquals(7, snap.seq)

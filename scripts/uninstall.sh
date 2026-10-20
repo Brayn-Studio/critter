@@ -48,10 +48,10 @@ if still_wrapped; then
 fi
 
 echo "==> Uninstalling the critter plugin"
-claude plugin uninstall critter@critter-pet || true
+command -v claude >/dev/null 2>&1 && claude plugin uninstall critter@critter-pet || true
 
 echo "==> Removing the critter-pet marketplace"
-claude plugin marketplace remove critter-pet || true
+command -v claude >/dev/null 2>&1 && claude plugin marketplace remove critter-pet || true
 
 echo "==> Quitting and removing Critter.app"
 killall Critter >/dev/null 2>&1 || true

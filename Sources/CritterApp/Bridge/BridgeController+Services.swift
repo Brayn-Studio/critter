@@ -27,17 +27,18 @@ extension BridgeController: BridgeServices {
     }
 
     func pendingRequest(_ requestId: String) -> PendingRequest? {
-        pendingStore.read(requestId: requestId)
+        codexControl.requests.first { $0.pending.requestId == requestId }?.pending ?? pendingStore.read(requestId: requestId)
     }
 
     /// The request's input as published; question texts are never truncated in it.
     func originalToolInput(_ requestId: String) -> [String: Any]? {
-        guard let input = pendingStore.read(requestId: requestId)?.input,
+        guard let input = pendingRequest(requestId)?.input,
               let data = try? JSONEncoder().encode(input) else { return nil }
         return (try? JSONSerialization.jsonObject(with: data)) as? [String: Any]
     }
 
     func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome {
+        if requestId.hasPrefix("codex-") { return codexControl.answer(payload, requestID: requestId) }
         do {
             return try pendingStore.writeAnswer(payload, requestId: requestId) ? .accepted : .alreadyAnswered
         } catch {
@@ -53,6 +54,7 @@ extension BridgeController: BridgeServices {
     }
 
     func say(text: String, sessionId: String) -> SayOutcome {
+        if sessionId.hasPrefix("codex-") { return codexControl.say(text: text, sessionID: sessionId) }
         guard let record = inboxStore.read(sessionId: sessionId) else { return .unavailable }
         do {
             try InboxSender.send(text: text.trimmingCharacters(in: .whitespacesAndNewlines), to: record)
@@ -61,6 +63,8 @@ extension BridgeController: BridgeServices {
             return .failed
         }
     }
+
+    func interrupt(sessionId: String) -> SayOutcome { codexControl.interrupt(sessionID: sessionId) }
 
     /// Only plain skin folder names: the name comes off the network, so nothing that could
     /// walk out of the skin directories.

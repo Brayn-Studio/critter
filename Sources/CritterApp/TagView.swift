@@ -45,9 +45,16 @@ final class TagView: NSView {
     }
 
     func configure(session: PetSession) {
+        let sourceText: String
+        switch session.source {
+        case .terminal, .vscode, .desktop:
+            sourceText = "cc · \(session.source.label)"
+        default:
+            sourceText = session.source.label
+        }
         configure(
             name: FlockLayout.tagText(for: session),
-            source: session.source.label,
+            source: sourceText,
             color: session.state.tagColor,
             toolTip: session.tracked ? nil : session.detail
         )

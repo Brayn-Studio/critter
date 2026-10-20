@@ -52,7 +52,7 @@ object DenyReasonSerializer : LenientEnumSerializer<DenyReason>("DenyReason", De
 object ResultReasonSerializer : LenientEnumSerializer<ResultReason>("ResultReason", ResultReason.entries, ResultReason.unknown)
 
 @Serializable(with = SessionSourceSerializer::class)
-enum class SessionSource { terminal, vscode, desktop, other }
+enum class SessionSource { terminal, vscode, desktop, other, codex, codex_terminal, codex_vscode, codex_desktop }
 
 @Serializable(with = PetStateSerializer::class)
 enum class PetState { idle, running, waiting, done, error, unknown }
@@ -92,6 +92,16 @@ data class BridgeSession(
     val eventTime: Long,
     val startedAt: Long,
     val tracked: Boolean,
+    val limits: BridgeLimits? = null,
+    val capabilities: BridgeCapabilities? = null,
+)
+
+@Serializable
+data class BridgeCapabilities(
+    val canSay: Boolean = false,
+    val canAnswer: Boolean = false,
+    val canInterrupt: Boolean = false,
+    val readOnlyReason: String? = null,
 )
 
 @Serializable
@@ -184,6 +194,10 @@ sealed interface ClientMessage {
         override fun withId(id: String) = copy(id = id)
     }
 
+    data class Interrupt(override val id: String?, val sessionId: String) : Command {
+        override fun withId(id: String) = copy(id = id)
+    }
+
     data class SkinRequest(override val id: String?, val name: String) : Command {
         override fun withId(id: String) = copy(id = id)
     }
@@ -255,6 +269,11 @@ private fun toJson(msg: ClientMessage): JsonObject = buildJsonObject {
             msg.id?.let { put("id", it) }
             put("sessionId", msg.sessionId)
             put("text", msg.text)
+        }
+        is ClientMessage.Interrupt -> {
+            put("type", "interrupt")
+            msg.id?.let { put("id", it) }
+            put("sessionId", msg.sessionId)
         }
         is ClientMessage.SkinRequest -> {
             put("type", "skin")

@@ -64,12 +64,15 @@ public struct BridgeSession: Codable, Equatable, Sendable {
     public var eventTime: Int64
     public var startedAt: Int64
     public var tracked: Bool
+    public var limits: BridgeLimits?
+    public var capabilities: BridgeCapabilities?
 
     public init(
         id: String, name: String, source: SessionSource, state: PetState,
         detail: String? = nil, activity: String? = nil, cwd: String,
         branch: String? = nil, model: String? = nil, context: BridgeContext? = nil,
-        skin: String, eventTime: Int64, startedAt: Int64, tracked: Bool
+        skin: String, eventTime: Int64, startedAt: Int64, tracked: Bool,
+        limits: BridgeLimits? = nil, capabilities: BridgeCapabilities? = nil
     ) {
         self.id = id
         self.name = name
@@ -85,6 +88,22 @@ public struct BridgeSession: Codable, Equatable, Sendable {
         self.eventTime = eventTime
         self.startedAt = startedAt
         self.tracked = tracked
+        self.limits = limits
+        self.capabilities = capabilities
+    }
+}
+
+public struct BridgeCapabilities: Codable, Equatable, Sendable {
+    public var canSay: Bool
+    public var canAnswer: Bool
+    public var canInterrupt: Bool
+    public var readOnlyReason: String?
+
+    public init(canSay: Bool = false, canAnswer: Bool = false, canInterrupt: Bool = false, readOnlyReason: String? = nil) {
+        self.canSay = canSay
+        self.canAnswer = canAnswer
+        self.canInterrupt = canInterrupt
+        self.readOnlyReason = readOnlyReason
     }
 }
 
@@ -108,11 +127,11 @@ public struct BridgePending: Codable, Equatable, Sendable {
     public var summary: String
     public var input: JSONValue
     public var createdAt: Int64
-    public var expiresAt: Int64
+    public var expiresAt: Int64?
 
     public init(
         requestId: String, sessionId: String, kind: PendingKind, toolName: String,
-        summary: String, input: JSONValue, createdAt: Int64, expiresAt: Int64
+        summary: String, input: JSONValue, createdAt: Int64, expiresAt: Int64?
     ) {
         self.requestId = requestId
         self.sessionId = sessionId
@@ -163,6 +182,7 @@ public enum ClientMessage: Equatable, Sendable {
     case answer(id: String?, requestId: String, payload: AnswerPayload)
     case seen(id: String?, sessionId: String)
     case say(id: String?, sessionId: String, text: String)
+    case interrupt(id: String?, sessionId: String)
     case skin(id: String?, name: String)
 
     private struct Wire: Codable {
@@ -199,6 +219,9 @@ public enum ClientMessage: Equatable, Sendable {
         case "say":
             guard let s = w.sessionId, let t = w.text else { return nil }
             return .say(id: w.id, sessionId: s, text: t)
+        case "interrupt":
+            guard let s = w.sessionId else { return nil }
+            return .interrupt(id: w.id, sessionId: s)
         case "skin":
             guard let n = w.name else { return nil }
             return .skin(id: w.id, name: n)
@@ -220,6 +243,8 @@ public enum ClientMessage: Equatable, Sendable {
             w = Wire(type: "seen"); w.id = id; w.sessionId = s
         case .say(let id, let s, let t):
             w = Wire(type: "say"); w.id = id; w.sessionId = s; w.text = t
+        case .interrupt(let id, let s):
+            w = Wire(type: "interrupt"); w.id = id; w.sessionId = s
         case .skin(let id, let n):
             w = Wire(type: "skin"); w.id = id; w.name = n
         }

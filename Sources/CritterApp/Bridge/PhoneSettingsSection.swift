@@ -32,6 +32,7 @@ final class PhoneSettingsModel {
     private(set) var statusLineBusy = false
     private(set) var statusLineNote: String?
     private(set) var hookInstalled = true
+    private(set) var codexStatus = "尚未连接 Codex 控制通道"
     /// The offer in the sheet; nil before the first one and while one is being made.
     private(set) var offer: PairingOffer?
     private(set) var offerFailed = false
@@ -56,8 +57,11 @@ final class PhoneSettingsModel {
 
     func refresh() {
         devices = bridge.devices().sorted { $0.pairedAt < $1.pairedAt }
+        codexStatus = bridge.codexControlStatus()
         refreshStatusLine()
     }
+
+    func reconnectCodex() { bridge.reconnectCodexControl() }
 
     private func refreshStatusLine() {
         let file = paths.claudeSettingsFile.resolvingSymlinksInPath()
@@ -244,6 +248,13 @@ struct PhoneSettingsSection: View {
 
             statusLineRow
 
+            LabeledContent {
+                Button("重新连接") { phone.reconnectCodex() }.disabled(!store.bridgeEnabled)
+            } label: {
+                Text("Codex 手机操作")
+                Text(store.bridgeEnabled ? phone.codexStatus : "打开手机连接后，可操作已连接的 Codex 会话")
+            }
+
             if phone.confirmingReset {
                 LabeledContent {
                     HStack {
@@ -278,7 +289,7 @@ struct PhoneSettingsSection: View {
                     .disabled(phone.statusLineBusy || (status == .notInstalled && !phone.hookInstalled))
             }
         } label: {
-            Text("状态栏数据")
+            Text("Claude Code 状态栏数据")
             Text(statusLineDetail)
         }
     }

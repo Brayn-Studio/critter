@@ -1,8 +1,8 @@
 # Critter
 
-Claude Code 的桌面宠物（a desktop pet for Claude Code）。
+Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex）。
 
-一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"），也可以在设置里换成另外四个原创形象：小芽、团子、啾啾、刺球。本机每个 Claude Code 会话都对应一只小 Critter，不管会话开在终端、VS Code 还是 Claude Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
+一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"），也可以在设置里换成另外四个原创形象：小芽、团子、啾啾、刺球。本机每个接入的 Claude Code 或 Codex 会话都对应一只小 Critter，支持终端、VS Code、Claude Desktop 和 Codex Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
 
 这是一个原生 macOS 应用（Swift），没有任何第三方依赖。它只占大约 20 MB 内存，空闲时几乎不占 CPU。
 
@@ -18,7 +18,7 @@ Claude Code 的桌面宠物（a desktop pet for Claude Code）。
 
 每个动作的细节和各种交互见下面的"动画"。
 
-- 每个会话一只 Critter，排成一排。脚下的标签显示会话名和来源（终端 / VS Code / Desktop）。
+- 每个会话一只 Critter，排成一排。气泡顶部只显示工作目录名，悬停可看完整路径；脚下显示会话名和来源（`cc · 终端 / VS Code / Desktop` 或 `Codex · 终端 / VS Code / Desktop`）。
 - 气泡会一直显示，直到该会话的状态再次变化。超长的文字最多显示 2 行，鼠标悬停可以看到全文。
 - 会话数超过合并阈值（默认 4）时，所有 Critter 会合并成"一堆"：
   - 最前面那只显示最急的状态，上方显示各状态的数量。
@@ -95,7 +95,7 @@ hooks 在状态文件里多写一个可选字段 `activity`，表示会话正在
 
 - macOS 14 或更高版本（开发和测试用的是 macOS 27，Apple Silicon）。
 - Swift 6 工具链（Xcode 或 Command Line Tools）。
-- Claude Code CLI，并且 `claude` 命令在 `PATH` 里。
+- Claude Code 或 Codex。接入 Claude Code 需要 `claude` 命令在 `PATH` 里；只使用 Codex 时无需安装 Claude Code。
 
 ## 安装
 
@@ -109,14 +109,36 @@ make install
 2. 把 `Critter.app` 装进 `~/Applications`，并注册 `critter://` URL scheme。
    - 如果 Critter 正在运行，会自动重启，换成新版本。
 3. 把 `critter-hook` 装到 `~/.critter/bin/`。
-4. 把 `/pet` 装成用户级命令：`~/.claude/commands/pet.md`。
-5. 把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `critter` 插件。插件里是上报状态用的 hooks。
+4. 检测到 `claude` 时，把 `/pet` 装成用户级命令：`~/.claude/commands/pet.md`，并接入状态栏数据。
+5. 检测到 `claude` 时，把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `critter` 插件。插件里是上报状态用的 hooks。
    - 插件按版本号缓存在 `~/.claude/plugins/cache/critter-pet/critter/<版本>/`。改了 `plugin/` 里的 hooks，要同时把 `plugin/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 里的版本号加一，重新安装后才会生效。
 
 装完后：
 
 - **已经打开的 Claude Code 会话要重启，才会加载 hooks。** 没重启的会话仍然会出现，但标签上会多一个"·未接入"，状态一直显示为空闲。
 - 在任意会话里输入 `/pet`，或者运行 `open ~/Applications/Critter.app`，就能启动 Critter。
+
+### Codex 接入
+
+安装后运行 `open ~/Applications/Critter.app`，会扫描本机 Codex Desktop、Codex CLI 和 VS Code 扩展进程当前打开的日志，后续在日志变动时自动更新，标签分别为 `Codex · Desktop`、`Codex · 终端`、`Codex · VS Code`。Codex 不需要安装 hooks 或修改 `config.toml`，也不提供 Claude Code 的 `/pet` 命令；显示和隐藏可以使用菜单栏、全局快捷键，或运行 `~/.critter/bin/critter-hook toggle`。
+
+Critter 只读 Codex 进程当前打开的 `~/.codex/sessions/**/rollout-*.jsonl`，由文件系统事件触发更新，首次只读元信息和日志末尾，之后增量读取。历史会话不会因文件仍在磁盘上而出现。运行、工具调用、完成、中断和错误会映射到现有动画；日志中出现审批或提问事件时显示“等你确认”。Codex 的外部 `notify` [目前只支持回合完成通知](https://developers.openai.com/codex/config-advanced/#notifications)，因此这里使用本地 rollout，格式变化时可能需要更新适配器。手机连接打开后，还会接入 Desktop / VS Code 现有的本地会话通道；可以向当前会话发消息、回答支持的提问、确认命令或文件权限，并停止指定的运行回合。运行中的消息会追加到当前回合，空闲时启动新回合，沿用该会话的设置。
+
+使用自定义 `CODEX_HOME` 时，需让 Critter 进程也收到同一个环境变量，例如 `CODEX_HOME=/你的/codex目录 ~/Applications/Critter.app/Contents/MacOS/Critter`。由 Finder 启动的应用通常收不到终端里临时设置的变量。
+
+Codex Desktop 的后台进程可能在关闭聊天视图后继续持有日志，此时宠物会保留；可右键“关闭”隐藏到该会话的下一次事件。退出持有会话的 Codex 进程后，对应宠物会清理。`codex exec`、内部任务和子代理不会单独生成宠物。
+
+仅恢复或卸载一个闲置聊天、后台进程持续存活且没有任何日志写入时，变化可能要等下一次日志更新才反映出来；重启 Critter 也会重新扫描。初次读取会向前补齐跨越末尾窗口的完整行（最多额外回溯 4 MiB），超过 4 MiB 的单行会跳过。模型、有效上下文窗口和最新用量会同步到手机，Codex 额度单独显示，不混入 Claude Code 额度。
+
+Codex 会话的气泡会保留最新一条公开进度文字，例如“测试通过，正在更新桌面版”，工具返回或继续思考不会把它覆盖成“思考中”。命令会话在后台继续运行时仍播放跑命令动画，收到对应结束结果后恢复思考；新一轮任务会清空上一轮进度。真实提问、审批、完成或错误会优先显示对应状态。旧 hook 与 Codex 实时记录并存时只展示实时记录，避免重复宠物和错误的等待提示。
+
+### Codex 手机操作的连接与兼容
+
+- 打开设置中的“允许手机连接”，并在 Codex Desktop 或 VS Code 中打开会话。设置里的“Codex 手机操作”显示本地控制通道状态，可点“重新连接”。
+- 手机详情按当前会话的能力显示“发一句”“停止当前回合”和审批入口。断开控制通道时退回只读；没有可回答卡片的确认会提示到电脑处理。独立 Codex CLI 只读状态，不会被偷偷恢复到另一个 app-server。
+- 命令/文件审批只批准当前请求；原生权限请求仅授予请求中的权限、作用域为当前回合。普通提问保留原始问题 ID；秘密输入、验证、MCP 登录或未识别的请求保留电脑端处理。
+- 消息超时或写出后断线时提示“尚未确认”，不会自动重发。审批卡片绑定参数指纹和当前本地代次，旧卡片不会按复用的数字 ID 授权变化后的操作。
+- 当前适配使用官方 Desktop / VS Code 客户端现有的 `$CODEX_HOME/ipc/ipc.sock` 协调协议，不启动第二个 app-server，不修改 Codex 设置。它是未公开保证稳定的客户端接口；当前版本校验不通过时禁用操作。已在本机客户端和模拟会话上验证；升级 Codex 后应核对状态栏中的连接状态。
 
 ## 卸载
 
@@ -161,6 +183,7 @@ make uninstall
 | VS Code、Cursor、Windsurf、Antigravity | 打开该会话所在的工作区窗口 |
 | 其它终端，例如 Ghostty、Warp | 激活该应用 |
 | Claude Desktop | 激活 Claude.app |
+| Codex Desktop | 用 `codex://threads/<id>` 打开对应聊天；打不开时尝试激活宿主应用 |
 
 第一次跳回 Terminal 或 iTerm2 时，macOS 会弹出"自动化"授权，问是否允许 Critter 控制该终端，选"好"即可。
 
@@ -169,6 +192,7 @@ make uninstall
 ### 哪些会话会显示
 
 - 本机所有交互式 Claude Code 会话都会显示。
+- 本机 Codex 进程当前持有日志的 Desktop、CLI 和 VS Code 会话也会显示。
 - `claude -p` 和 SDK 调用不会显示，这是有意的。
 - 云端会话、其它机器上的会话也不会显示。
 
@@ -402,6 +426,7 @@ make app               # 组装 dist/Critter.app
 - `CRITTER_HOME`：替换 `~/.critter`；`CLAUDE_CONFIG_DIR`：替换 `~/.claude`。单元测试靠它们把文件写进临时目录。
 - 插件 hooks 里写死的是 `$HOME/.critter/bin/critter-hook`，而 `Critter.app` 由 Launch Services 启动，拿不到 shell 里的环境变量，始终读 `~/.critter` 和 `~/.claude`。设了这两个变量，hooks 和 App 就会各看各的目录。
 - 所以 `make install` / `make uninstall` 会忽略 `CRITTER_HOME`（并给出提示），始终使用 `~/.critter`；设了 `CLAUDE_CONFIG_DIR` 时也会提示 App 看不到那些会话。
+- `CODEX_HOME`：替换 Codex 的默认目录 `~/.codex`。这是 Codex 本身支持的配置；Critter 需使用相同值。
 
 调试开关：
 

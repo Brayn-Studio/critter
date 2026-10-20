@@ -59,39 +59,46 @@ echo "==> Building and installing critter-hook to $CRITTER_HOME/bin"
 swift build -c release --product critter-hook
 mkdir -p "$CRITTER_HOME/bin"
 cp "$REPO/.build/release/critter-hook" "$CRITTER_HOME/bin/critter-hook"
-"$CRITTER_HOME/bin/critter-hook" statusline-install || echo "warning: 状态栏数据未接入" >&2
+# Codex is discovered read-only from its open rollouts; it needs no Claude plugin.
+if command -v claude >/dev/null 2>&1; then
+  "$CRITTER_HOME/bin/critter-hook" statusline-install || echo "warning: 状态栏数据未接入" >&2
 
-echo "==> Installing the /pet command"
-mkdir -p "$CLAUDE_CONFIG_DIR/commands"
-PET_CMD="$CLAUDE_CONFIG_DIR/commands/pet.md"
-if [ -f "$PET_CMD" ] && ! grep -qF "$PET_MARKER" "$PET_CMD"; then
-  echo "error: $PET_CMD already exists and wasn't installed by Critter (no $PET_MARKER marker)." >&2
-  echo "Move it aside, then re-run install -- otherwise it would conflict with Critter's /pet." >&2
-  exit 1
-fi
-cp "$REPO/Support/pet-command.md" "$PET_CMD"
+  echo "==> Installing the /pet command"
+  mkdir -p "$CLAUDE_CONFIG_DIR/commands"
+  PET_CMD="$CLAUDE_CONFIG_DIR/commands/pet.md"
+  if [ -f "$PET_CMD" ] && ! grep -qF "$PET_MARKER" "$PET_CMD"; then
+    echo "error: $PET_CMD already exists and wasn't installed by Critter (no $PET_MARKER marker)." >&2
+    echo "Move it aside, then re-run install -- otherwise it would conflict with Critter's /pet." >&2
+    exit 1
+  fi
+  cp "$REPO/Support/pet-command.md" "$PET_CMD"
 
-# Re-runnable: add the marketplace only if it isn't there yet (re-added if it points at another
-# checkout), then refresh it so a bumped plugin version is seen before `plugin update`.
-echo "==> Registering the critter-pet marketplace"
-MARKETPLACES="$(claude plugin marketplace list --json 2>/dev/null || true)"
-if printf '%s' "$MARKETPLACES" | grep -q '"name"[[:space:]]*:[[:space:]]*"critter-pet"'; then
-  if ! printf '%s' "$MARKETPLACES" | grep -qF "\"$REPO\""; then
-    echo "    (it points at another checkout; re-adding it from $REPO)"
-    claude plugin marketplace remove critter-pet || true
+  # Re-runnable: add the marketplace only if it isn't there yet (re-added if it points at another
+  # checkout), then refresh it so a bumped plugin version is seen before `plugin update`.
+  echo "==> Registering the critter-pet marketplace"
+  MARKETPLACES="$(claude plugin marketplace list --json 2>/dev/null || true)"
+  if printf '%s' "$MARKETPLACES" | grep -q '"name"[[:space:]]*:[[:space:]]*"critter-pet"'; then
+    if ! printf '%s' "$MARKETPLACES" | grep -qF "\"$REPO\""; then
+      echo "    (it points at another checkout; re-adding it from $REPO)"
+      claude plugin marketplace remove critter-pet || true
+      claude plugin marketplace add "$REPO"
+    fi
+  else
     claude plugin marketplace add "$REPO"
   fi
-else
-  claude plugin marketplace add "$REPO"
-fi
-claude plugin marketplace update critter-pet
+  claude plugin marketplace update critter-pet
 
-echo "==> Installing/updating the critter plugin"
-if claude plugin list --json 2>/dev/null | grep -q '"id"[[:space:]]*:[[:space:]]*"critter@critter-pet"'; then
-  claude plugin update critter@critter-pet -y
+  echo "==> Installing/updating the critter plugin"
+  if claude plugin list --json 2>/dev/null | grep -q '"id"[[:space:]]*:[[:space:]]*"critter@critter-pet"'; then
+    claude plugin update critter@critter-pet -y
+  else
+    claude plugin install critter@critter-pet -y
+  fi
+
+  echo
+  echo "已打开的 Claude Code 会话需要重启才会加载 hooks。"
 else
-  claude plugin install critter@critter-pet -y
+  echo "未检测到 claude，已跳过 Claude Code 插件和 /pet 命令。"
 fi
 
-echo
-echo "Critter 已安装。已打开的 Claude Code 会话需要重启才会加载 hooks。"
+echo "Critter 已安装，支持 Claude Code 和 Codex。启动：open ~/Applications/Critter.app"

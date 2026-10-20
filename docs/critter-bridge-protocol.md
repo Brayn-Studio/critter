@@ -207,7 +207,7 @@ The complete current state; replace everything you had.
 
 Enums:
 
-- `sessions[].source`: `terminal` | `vscode` | `desktop` | `other`.
+- `sessions[].source`: `terminal` | `vscode` | `desktop` | `other` | `codex` | `codex_terminal` | `codex_vscode` | `codex_desktop`。旧客户端会把不认识的来源显示为 `other`。Codex 会话按可选 `capabilities` 开放手机操作；缺失时为只读。
 - `sessions[].state`: `idle` | `running` | `waiting` | `done` | `error`.
 - `pending[].kind`: `permission` | `question` | `plan`.
 - `prefs.soundTheme`: `voice` | `pixel` | `marimba` | `system`.
@@ -261,3 +261,15 @@ Failure:
 ```
 
 `reason` (present when `ok` is false): `resolved` (the request is already handled / gone, or already has an answer -- only the first answer to a request is accepted, so a second phone, or a second tap, gets `resolved`), `invalid` (the answer or text is not acceptable), `expired` (an answer to a request whose `expiresAt` has come: the hook no longer waits for it, so nothing is written; message `这个请求已经过期了`), `unavailable` (e.g. the session cannot receive text), `failed` (the Mac could not carry it out). `message` is optional human-readable text (Chinese), safe to show.
+
+## Codex control extensions (protocol 1, optional)
+
+`sessions[].capabilities` may contain `canSay`, `canAnswer`, `canInterrupt` booleans and optional `readOnlyReason`. Older clients ignore this field; newer clients treat Codex as read-only when it is absent. `sessions[].limits` uses the existing `BridgeLimits` shape for that session’s provider; the snapshot-level `limits` remains Claude Code’s account quota.
+
+An authenticated phone can send `{"type":"interrupt","id":"stop-1","sessionId":"codex-<uuid>"}`. It receives the normal correlated `result`; `ok:true` acknowledges the stop request, not completion of the turn. Only a currently followed owner with a known active turn ID receives the operation.
+
+Codex messages use the existing `say` command. Current Desktop/VS Code coordination routes start or steer the existing conversation, with inherited thread settings and a fresh user message ID. No second app-server is started and no historical thread is resumed implicitly. Transport loss after writing or a timeout produces an unconfirmed-result message and is never automatically retried.
+
+Supported native Codex pending requests become the existing permission/question cards. Question text keys map back to native question IDs. Approval input sets `acceptsDenyMessage:false`; clients hide the unsupported reason field. One-off permissions never become session-wide grants. Request IDs include canonical parameters and a fresh local generation, so cards from a previous state snapshot cannot authorize a new reused raw request ID. Unmapped/secret/verification requests stay on the computer.
+
+Codex prompts have no synthetic phone expiry: `pending[].expiresAt` is omitted while the live owner holds the request. A maximum integer is not sent as an Android notification timeout. Owner disconnects and resolved requests withdraw the card.
