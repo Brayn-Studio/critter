@@ -47,14 +47,16 @@
             android:screenOrientation="portrait" />
 
         <!-- The sheets float over whatever app is in front: started with NEW_TASK (the floating pile, a
-             notification) they get a task of their own instead of bringing Critter's main screen forward. -->
+             notification) they get a task of their own instead of bringing Critter's main screen forward. Each kind
+             of window has its own affinity (not a shared empty one), so an answer card, a detail sheet and the board
+             each keep their own task and none ends up on top of, or in place of, another. -->
         <activity
             android:name=".ui.answer.AnswerActivity"
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
             android:showWhenLocked="true"
-            android:taskAffinity=""
+            android:taskAffinity="local.critter.phone.answer"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Critter.Sheet" />
 
@@ -64,7 +66,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:launchMode="singleTop"
-            android:taskAffinity=""
+            android:taskAffinity="local.critter.phone.detail"
             android:windowSoftInputMode="adjustResize"
             android:theme="@style/Theme.Critter.Sheet" />
 
@@ -76,7 +78,7 @@
             android:excludeFromRecents="true"
             android:exported="false"
             android:screenOrientation="sensorLandscape"
-            android:taskAffinity=""
+            android:taskAffinity="local.critter.phone.board"
             android:theme="@style/Theme.Critter.Board" />
 
         <service
