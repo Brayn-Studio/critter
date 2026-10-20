@@ -165,6 +165,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
             root.removeAllViews()
             pile = null
             column = null
+            noteSight() // the rebuild above counted it as in sight
             return false
         }
         added = true
