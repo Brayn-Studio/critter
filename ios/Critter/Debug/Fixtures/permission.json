@@ -1,0 +1,91 @@
+{
+  "sessions": [
+    {
+      "id": "s-long",
+      "name": "clawd",
+      "source": "terminal",
+      "state": "waiting",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 35,
+        "windowSize": 1000000,
+        "estimated": false
+      },
+      "skin": "sprig",
+      "eventTime": 1759999950000,
+      "startedAt": 1759997000000,
+      "tracked": true
+    },
+    {
+      "id": "codex-perm",
+      "name": "api-server",
+      "source": "codex_terminal",
+      "state": "waiting",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 35,
+        "windowSize": 1000000,
+        "estimated": false
+      },
+      "skin": "sprig",
+      "eventTime": 1759999950000,
+      "startedAt": 1759997000000,
+      "tracked": true,
+      "capabilities": {
+        "canSay": true,
+        "canAnswer": true,
+        "canInterrupt": true
+      }
+    }
+  ],
+  "limits": {
+    "fiveHour": {
+      "usedPercentage": 37.5,
+      "resetsAt": 1760007800000
+    },
+    "sevenDay": {
+      "usedPercentage": 62,
+      "resetsAt": 1760259200000
+    },
+    "updatedAt": 1759999880000
+  },
+  "pending": [
+    {
+      "requestId": "req-long-1",
+      "sessionId": "s-long",
+      "kind": "permission",
+      "toolName": "Bash",
+      "summary": "Bash: 构建并启动 Critter",
+      "input": {
+        "command": "cd ~/CODESPACE/clawd && \\\n  swift build -c release \\\n    --arch arm64 \\\n    --product Critter && \\\n  mkdir -p build/Critter.app/Contents/MacOS && \\\n  cp .build/release/Critter build/Critter.app/Contents/MacOS/ && \\\n  codesign --force --sign - \\\n    --entitlements Critter.entitlements \\\n    build/Critter.app && \\\n  open build/Critter.app && \\\n  sleep 2 && \\\n  tail -n 40 ~/Library/Logs/Critter.log && \\\n  echo done",
+        "description": "build and run"
+      },
+      "createdAt": 1759999950000,
+      "expiresAt": 1760000540000
+    },
+    {
+      "requestId": "req-codex-1",
+      "sessionId": "codex-perm",
+      "kind": "permission",
+      "toolName": "Bash",
+      "summary": "cargo test",
+      "input": {
+        "command": "cargo test --workspace",
+        "acceptsDenyMessage": false
+      },
+      "createdAt": 1759999960000,
+      "expiresAt": 1760000540000
+    }
+  ],
+  "prefs": {
+    "skin": "sprig",
+    "randomSkins": false,
+    "idleDim": 0.6,
+    "mergeThreshold": 5,
+    "soundTheme": "pixel"
+  }
+}

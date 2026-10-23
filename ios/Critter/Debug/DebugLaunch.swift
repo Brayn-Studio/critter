@@ -12,11 +12,20 @@ import Foundation
 ///   expiries read as written.
 /// - `-critterFixtureResult ok|resolved|expired|failed`: the fake link's reply to every request (default `ok`).
 /// - `-critterOpen answer:<requestId>|detail:<sessionId>|settings`: opens that sheet once launched.
+/// - `-critterAutoSubmit allow|approve|first-option`: one second after an answer card is up, does what its primary
+///   button does: allows a permission request, approves a plan, or chooses the first option of every question.
+///   Together with `-critterFixtureResult` this shows how the card takes each kind of receipt.
 /// - `-critterPairURI <uri>`: pairs with this URI once launched, without asking (for scripts).
 /// - `-critterDeviceName <name>`: the device name pairing sends.
 /// - `-critterOpenURL <url>`: once launched, the app opens this URL itself, so it comes back in through the
 ///   system like a link opened from outside (`xcrun simctl openurl` stops at the system's "在“Critter”中打开?").
 struct DebugLaunch {
+    enum AutoSubmit: Equatable {
+        case allow
+        case approve
+        case firstOption
+    }
+
     enum Open: Equatable {
         case answer(requestId: String)
         case detail(sessionId: String)
@@ -26,6 +35,7 @@ struct DebugLaunch {
     var fixture: String?
     var fixtureResult = CommandResult(ok: true, reason: nil, message: nil)
     var open: Open?
+    var autoSubmit: AutoSubmit?
     var pairURI: URL?
     var deviceName: String?
     var openURL: URL?
@@ -56,6 +66,12 @@ struct DebugLaunch {
             } else if open.hasPrefix("detail:") {
                 self.open = .detail(sessionId: String(open.dropFirst("detail:".count)))
             }
+        }
+        switch value("critterAutoSubmit") {
+        case "allow": autoSubmit = .allow
+        case "approve": autoSubmit = .approve
+        case "first-option": autoSubmit = .firstOption
+        default: break
         }
         pairURI = value("critterPairURI").flatMap(URL.init(string:))
         deviceName = value("critterDeviceName")
@@ -122,9 +138,10 @@ private struct FixtureStorage: PairingStorage {
     func saveSnapshot(_ snapshot: CachedSnapshot) {}
 }
 
-/// Connects at once and sends the fixture; answers every request with the same result after a moment.
+/// Connects at once and sends the fixture; answers every request with the same result after a moment. A request that
+/// is answered (`ok`) leaves the snapshot, as it does on the Mac: its session goes on running.
 private actor FixtureLink: BridgeLink {
-    private let snapshot: SnapshotBody
+    private var snapshot: SnapshotBody
     private let result: CommandResult
     private let onEvent: @Sendable (BridgeEvent) -> Void
     private var seq = 0
@@ -136,8 +153,12 @@ private actor FixtureLink: BridgeLink {
     }
 
     func start() {
-        seq += 1
         onEvent(.state(.connected(macName: DebugLaunch.fixtureMacName)))
+        sendSnapshot()
+    }
+
+    private func sendSnapshot() {
+        seq += 1
         onEvent(.snapshot(seq: seq, sentAt: Int64((Date().timeIntervalSince1970 * 1000).rounded()), body: snapshot))
     }
 
@@ -148,8 +169,25 @@ private actor FixtureLink: BridgeLink {
     func reconnectNow() {}
 
     func request(_ command: BridgeCommand) async -> CommandResult {
-        try? await Task.sleep(for: .milliseconds(200))
+        // The Mac's snapshot without the request comes before its receipt more often than not.
+        if result.ok, case .answer(let requestId, _) = command {
+            try? await Task.sleep(for: .milliseconds(100))
+            answered(requestId)
+            try? await Task.sleep(for: .milliseconds(100))
+        } else {
+            try? await Task.sleep(for: .milliseconds(200))
+        }
         return result
+    }
+
+    private func answered(_ requestId: String) {
+        guard let request = snapshot.pending.first(where: { $0.requestId == requestId }) else { return }
+        snapshot.pending.removeAll { $0.requestId == requestId }
+        if !snapshot.pending.contains(where: { $0.sessionId == request.sessionId }),
+           let i = snapshot.sessions.firstIndex(where: { $0.id == request.sessionId }) {
+            snapshot.sessions[i].state = .running
+        }
+        sendSnapshot()
     }
 }
 #endif

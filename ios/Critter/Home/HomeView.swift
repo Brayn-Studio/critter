@@ -70,6 +70,9 @@ struct HomeView: View {
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView(store: store, onPairAgain: onPairAgain)
             }
+            .sheet(item: answerTarget) { target in
+                AnswerSheet(requestId: target.id, store: store, drafts: drafts)
+            }
         }
         .sheet(item: detailTarget) { target in
             DetailSheet(sessionId: target.id, store: store)
@@ -95,6 +98,8 @@ struct HomeView: View {
         }
         #if DEBUG
         .task {
+            // The sheets look their subject up in the snapshot: let the fixture's arrive first.
+            for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
             switch DebugLaunch.current.open {
             case .answer(let requestId)?: presentedRequestId = requestId
             case .detail(let sessionId)?: presentedSessionId = sessionId
@@ -107,6 +112,10 @@ struct HomeView: View {
 
     private var detailTarget: Binding<Target?> {
         Binding(get: { presentedSessionId.map(Target.init) }, set: { presentedSessionId = $0?.id })
+    }
+
+    private var answerTarget: Binding<Target?> {
+        Binding(get: { presentedRequestId.map(Target.init) }, set: { presentedRequestId = $0?.id })
     }
 
     /// Not connected, and either down or recovering from it (`lost`).
