@@ -18,7 +18,7 @@ struct RootView: View {
                     onClose: store.pairing == nil ? nil : { pairingAgain = false }
                 )
             } else {
-                HomeView(store: store)
+                HomeView(store: store, onPairAgain: { pairingAgain = true })
             }
         }
         .onChange(of: link, initial: true) { _, link in
