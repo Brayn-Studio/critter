@@ -1,0 +1,163 @@
+{
+  "sessions": [
+    {
+      "id": "s-scratch",
+      "name": "scratch",
+      "source": "terminal",
+      "state": "idle",
+      "cwd": "~/tmp/scratch",
+      "model": "Sonnet 5",
+      "skin": "sprig",
+      "eventTime": 1759992800000,
+      "startedAt": 1759985600000,
+      "tracked": true
+    },
+    {
+      "id": "codex-landing",
+      "name": "landing-page",
+      "source": "codex_desktop",
+      "state": "waiting",
+      "detail": "Bash: npm run deploy",
+      "activity": "bash",
+      "cwd": "~/CODESPACE/landing",
+      "branch": "redesign",
+      "model": "gpt-5-codex",
+      "context": { "usedPercent": 71, "windowSize": 400000, "estimated": true },
+      "skin": "sprig",
+      "eventTime": 1759999880000,
+      "startedAt": 1759994600000,
+      "tracked": true
+    },
+    {
+      "id": "s-clawd",
+      "name": "clawd",
+      "source": "terminal",
+      "state": "waiting",
+      "detail": "Bash: swift test --filter BridgeStoreTests",
+      "activity": "bash",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": { "usedPercent": 42.5, "windowSize": 1000000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999940000,
+      "startedAt": 1759996400000,
+      "tracked": true
+    },
+    {
+      "id": "s-notes",
+      "name": "notes",
+      "source": "desktop",
+      "state": "done",
+      "cwd": "~/Documents/notes",
+      "model": "Haiku 4.5",
+      "context": { "usedPercent": 9.5, "windowSize": 200000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999400000,
+      "startedAt": 1759997300000,
+      "tracked": true
+    },
+    {
+      "id": "s-critter-ios",
+      "name": "critter-ios",
+      "source": "vscode",
+      "state": "running",
+      "detail": "Edit: ios/Critter/RootView.swift",
+      "activity": "edit",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Sonnet 5",
+      "context": { "usedPercent": 18, "windowSize": 200000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999995000,
+      "startedAt": 1759998200000,
+      "tracked": true
+    },
+    {
+      "id": "codex-api",
+      "name": "api-server",
+      "source": "codex_terminal",
+      "state": "running",
+      "detail": "Running cargo test",
+      "activity": "bash",
+      "cwd": "~/CODESPACE/api-server",
+      "branch": "main",
+      "model": "gpt-5-codex",
+      "context": { "usedPercent": 33, "windowSize": 400000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999985000,
+      "startedAt": 1759999100000,
+      "tracked": true,
+      "limits": {
+        "fiveHour": { "usedPercentage": 22, "resetsAt": 1760010800000 },
+        "sevenDay": { "usedPercentage": 48, "resetsAt": 1760432000000 },
+        "updatedAt": 1759999985000
+      },
+      "capabilities": { "canSay": true, "canAnswer": true, "canInterrupt": true }
+    },
+    {
+      "id": "s-docs",
+      "name": "docs-site",
+      "source": "terminal",
+      "state": "waiting",
+      "cwd": "~/CODESPACE/docs-site",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": { "usedPercent": 27, "windowSize": 1000000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999970000,
+      "startedAt": 1759999600000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": { "usedPercentage": 37.5, "resetsAt": 1760007800000 },
+    "sevenDay": { "usedPercentage": 62, "resetsAt": 1760259200000 },
+    "updatedAt": 1759999880000
+  },
+  "pending": [
+    {
+      "requestId": "req-perm-1",
+      "sessionId": "s-clawd",
+      "kind": "permission",
+      "toolName": "Bash",
+      "summary": "swift test --filter BridgeStoreTests",
+      "input": { "command": "swift test --filter BridgeStoreTests", "description": "Run the store tests" },
+      "createdAt": 1759999940000,
+      "expiresAt": 1760000530000
+    },
+    {
+      "requestId": "req-ask-1",
+      "sessionId": "s-docs",
+      "kind": "question",
+      "toolName": "AskUserQuestion",
+      "summary": "部署到哪个环境？",
+      "input": {
+        "questions": [
+          {
+            "question": "部署到哪个环境？",
+            "header": "环境",
+            "multiSelect": false,
+            "options": [
+              { "label": "预发布", "description": "先在 staging 上看一眼" },
+              { "label": "正式", "description": "直接发布给所有人" }
+            ]
+          },
+          {
+            "question": "发布前再跑哪些检查？",
+            "header": "检查",
+            "multiSelect": true,
+            "options": [
+              { "label": "冒烟测试", "description": "五分钟，覆盖登录和下单" },
+              { "label": "性能测试", "description": "二十分钟" },
+              { "label": "回滚演练" }
+            ]
+          }
+        ]
+      },
+      "createdAt": 1759999970000,
+      "expiresAt": 1760000560000
+    }
+  ],
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+}

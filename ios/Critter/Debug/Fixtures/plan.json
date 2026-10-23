@@ -1,0 +1,38 @@
+{
+  "sessions": [
+    {
+      "id": "s-plan",
+      "name": "critter-ios",
+      "source": "terminal",
+      "state": "waiting",
+      "cwd": "~/CODESPACE/clawd",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": { "usedPercent": 56, "windowSize": 1000000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999960000,
+      "startedAt": 1759995000000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": { "usedPercentage": 37.5, "resetsAt": 1760007800000 },
+    "sevenDay": { "usedPercentage": 62, "resetsAt": 1760259200000 },
+    "updatedAt": 1759999880000
+  },
+  "pending": [
+    {
+      "requestId": "req-plan-1",
+      "sessionId": "s-plan",
+      "kind": "plan",
+      "toolName": "ExitPlanMode",
+      "summary": "iOS 骨架的实现计划",
+      "input": {
+        "plan": "# iOS 骨架\n\n## 目标\n- 配对：扫码、链接、手动输入\n- 首页：会话列表和两张额度卡\n- 作答：权限、提问、计划\n\n## 步骤\n1. Xcode 工程和 App 外壳（`make ios-sim`）\n2. 配对界面\n3. 首页和会话详情\n4. 作答卡片\n5. 模拟器连真的 Mac\n\n**这一轮不做**：推送、实时活动、像素外观。"
+      },
+      "createdAt": 1759999960000,
+      "expiresAt": 1760000550000
+    }
+  ],
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+}

@@ -1,0 +1,49 @@
+{
+  "sessions": [
+    {
+      "id": "s-design",
+      "name": "design-system",
+      "source": "terminal",
+      "state": "waiting",
+      "cwd": "~/CODESPACE/design-system",
+      "branch": "tokens",
+      "model": "Opus 5.5",
+      "context": { "usedPercent": 35, "windowSize": 1000000, "estimated": false },
+      "skin": "sprig",
+      "eventTime": 1759999950000,
+      "startedAt": 1759997000000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": { "usedPercentage": 37.5, "resetsAt": 1760007800000 },
+    "sevenDay": { "usedPercentage": 62, "resetsAt": 1760259200000 },
+    "updatedAt": 1759999880000
+  },
+  "pending": [
+    {
+      "requestId": "req-question-1",
+      "sessionId": "s-design",
+      "kind": "question",
+      "toolName": "AskUserQuestion",
+      "summary": "按钮圆角用多大？",
+      "input": {
+        "questions": [
+          {
+            "question": "按钮圆角用多大？",
+            "header": "圆角",
+            "multiSelect": false,
+            "options": [
+              { "label": "4 pt", "description": "和现在的输入框一致" },
+              { "label": "8 pt", "description": "更柔和，卡片也跟着改" },
+              { "label": "跟随系统", "description": "用 SwiftUI 默认的按钮样式" }
+            ]
+          }
+        ]
+      },
+      "createdAt": 1759999950000,
+      "expiresAt": 1760000540000
+    }
+  ],
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+}

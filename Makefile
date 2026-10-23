@@ -1,4 +1,4 @@
-.PHONY: build test app install uninstall android android-install android-setup
+.PHONY: build test app install uninstall android android-install android-setup ios-sim
 
 build:
 	swift build
@@ -53,3 +53,7 @@ android: android-setup
 android-install:
 	$(ADB) install -r android/app/build/outputs/apk/release/app-release.apk
 	$(ADB) shell am start -n local.critter.phone/.ui.MainActivity
+
+IOS_SIM ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
+ios-sim:
+	xcodebuild -project ios/Critter.xcodeproj -scheme Critter -destination '$(IOS_SIM)' -derivedDataPath ios/build build

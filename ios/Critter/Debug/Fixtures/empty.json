@@ -1,0 +1,10 @@
+{
+  "sessions": [],
+  "limits": {
+    "fiveHour": { "usedPercentage": 4, "resetsAt": 1760016200000 },
+    "sevenDay": { "usedPercentage": 21, "resetsAt": 1760259200000 },
+    "updatedAt": 1759999700000
+  },
+  "pending": [],
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+}
