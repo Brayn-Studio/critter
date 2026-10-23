@@ -1,3 +1,4 @@
+import CritterKit
 import Foundation
 import os
 
@@ -12,8 +13,9 @@ public final class URLSessionTransport: BridgeTransport {
     public init() {}
 
     /// Each connection gets an ephemeral URLSession of its own; it counts as made once the
-    /// WebSocket is open. A certificate that is not the pinned one -> `.pinMismatch`; any other
-    /// failure before the WebSocket opens -> `.unreachable`.
+    /// WebSocket is open. A host outside the private networks -> `.unreachable` at once, without
+    /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; any
+    /// other failure before the WebSocket opens -> `.unreachable`.
     public func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
         guard let url = Self.url(host: host, port: port) else { throw TransportError.unreachable }
         let socket = URLSessionSocket(url: url, fingerprint: fingerprint)
@@ -27,8 +29,11 @@ public final class URLSessionTransport: BridgeTransport {
     }
 
     /// `wss://<host>:<port>/`; an IPv6 host is bracketed and the `%` of its zone escaped
-    /// (`fe80::1%en0` -> `[fe80::1%25en0]`).
+    /// (`fe80::1%en0` -> `[fe80::1%25en0]`). nil for a host outside the private networks: every
+    /// pairing, connection and probe comes through here, whatever gave the host (a scanned QR
+    /// code, a stored address, typing), so a QR code naming a public host gets nowhere.
     static func url(host: String, port: UInt16) -> URL? {
+        guard PrivateNetwork.isAllowed(host: host) else { return nil }
         let bracketed = host.contains(":") ? "[\(host.replacingOccurrences(of: "%", with: "%25"))]" : host
         return URL(string: "wss://\(bracketed):\(port)/")
     }

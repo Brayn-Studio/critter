@@ -17,6 +17,25 @@ struct TransportTests {
         #expect(URLSessionTransport.url(host: "192.168.1.20", port: 47823)?.absoluteString == "wss://192.168.1.20:47823/")
     }
 
+    @Test func onlyPrivateNetworkHostsGetAnAddress() {
+        // Wherever the host came from (a scanned QR code, a stored address, typed in).
+        for host in ["8.8.8.8", "2001:4860:4860::8888", "example.com", "203.0.113.5"] {
+            #expect(URLSessionTransport.url(host: host, port: 443) == nil, "\(host)")
+        }
+        for host in ["10.0.0.2", "172.16.4.1", "192.168.1.20", "127.0.0.1", "100.64.0.1", "fd00::5", "fe80::1%en0", "::1"] {
+            #expect(URLSessionTransport.url(host: host, port: 47823) != nil, "\(host)")
+        }
+    }
+
+    @Test func connectingToAPublicHostFailsWithoutTouchingTheNetwork() async {
+        let started = ContinuousClock.now
+        await #expect(throws: TransportError.unreachable) {
+            _ = try await URLSessionTransport().connect(host: "8.8.8.8", port: 443, fingerprint: String(repeating: "ab", count: 32))
+        }
+        // Refused before any socket exists: no handshake, no timeout.
+        #expect(ContinuousClock.now - started < .milliseconds(200))
+    }
+
     @Test func discoveredAddressesAreUsableHosts() throws {
         // Network gives resolved addresses the interface they came in on; only a link-local
         // IPv6 address needs it.
