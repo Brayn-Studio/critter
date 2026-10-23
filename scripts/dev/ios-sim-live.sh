@@ -29,7 +29,9 @@ DEVICES="${CRITTER_HOME:-$HOME/.critter}/bridge/devices.json"
 PREV_BRIDGE="$(defaults read "$DOMAIN" bridgeEnabled 2>/dev/null || echo 0)"
 TURNED_ON=0
 SIM=""
+# The critter-bridge-client devices the Mac listed before this run paired, once taken (BEFORE_TAKEN=1).
 BEFORE=""
+BEFORE_TAKEN=0
 
 # wait_for <timeout s> <command...>: polls until the command succeeds or time is up.
 wait_for() {
@@ -45,16 +47,23 @@ import json, sys
 sys.exit(1 if any(d.get("id") == sys.argv[2] for d in json.load(open(sys.argv[1]))) else 0)' "$DEVICES" "$1"
 }
 
-# The ids of the `critter-bridge-client` devices the Mac lists, one per line.
+# The ids of the `critter-bridge-client` devices the Mac lists, one per line (none before it has a devices file).
+# Fails if the file is there and cannot be read.
 bridge_clients() {
+  [ -f "$DEVICES" ] || return 0
   python3 -I -c '
 import json, sys
-print("\n".join(d["id"] for d in json.load(open(sys.argv[1])) if d.get("name") == "critter-bridge-client"))' "$DEVICES" 2>/dev/null || true
+print("\n".join(d["id"] for d in json.load(open(sys.argv[1])) if d.get("name") == "critter-bridge-client"))' "$DEVICES" 2>/dev/null
 }
 
 # The ones that were not there when the run began.
 new_bridge_clients() {
   comm -13 <(printf '%s\n' "$BEFORE" | sort) <(bridge_clients | sort)
+}
+
+# A critter:// URL is only ever opened while Critter runs: opening one would start it.
+critter_running() {
+  pgrep -x Critter >/dev/null
 }
 
 # The iPhone 17 Pro on the newest iOS runtime.
@@ -78,11 +87,20 @@ cleanup() {
   # Stop the app first, so it does not notice the pairing going away.
   if [ -n "$SIM" ]; then xcrun simctl terminate "$SIM" "$BUNDLE" >/dev/null 2>&1; fi
   # Unpair this run's devices (Critter only lets the debug URL revoke a critter-bridge-client one): the one the
-  # app says it paired, and any the Mac lists that were not there before, in case the app never got to say.
+  # app says it paired, and any the Mac lists that were not there before, in case the app never got to say. That
+  # sweep only once the list from before was taken (just before pairing): until then every one would look new.
   local ids id
-  ids="$(cat "$WORK/device" 2>/dev/null)
+  ids="$(cat "$WORK/device" 2>/dev/null)"
+  if [ "$BEFORE_TAKEN" = 1 ]; then
+    ids="$ids
 $(new_bridge_clients)"
+  fi
   for id in $(printf '%s\n' "$ids" | sort -u | grep -v '^$'); do
+    if ! critter_running; then
+      echo "Critter is not running: remove $id under Critter's paired phones"
+      status=1
+      continue
+    fi
     open -g "critter://debug-bridge-revoke?deviceId=$id"
     if wait_for 10 unpaired "$id"; then
       echo "unpaired $id"
@@ -97,7 +115,7 @@ $(new_bridge_clients)"
     if [ -d "$APP" ]; then xcrun simctl install "$SIM" "$APP" >/dev/null 2>&1; fi
   fi
   rm -rf "$WORK"
-  if [ "$TURNED_ON" = 1 ]; then open -g "critter://debug-set?bridgeEnabled=0"; fi
+  if [ "$TURNED_ON" = 1 ] && critter_running; then open -g "critter://debug-set?bridgeEnabled=0"; fi
   exit "$status"
 }
 trap cleanup EXIT
@@ -127,7 +145,8 @@ if [ "$PREV_BRIDGE" != 1 ]; then
   TURNED_ON=1
   sleep 2
 fi
-BEFORE="$(bridge_clients)"
+BEFORE="$(bridge_clients)" || { echo "could not read $DEVICES"; exit 2; }
+BEFORE_TAKEN=1
 # A fresh device for this run (the pairing code is approved without asking).
 open -g "critter://debug-bridge-pair?out=$WORK/pair.json"
 wait_for 20 test -s "$WORK/pair.json" || { echo "could not get a pairing URI"; exit 2; }
