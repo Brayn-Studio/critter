@@ -6,8 +6,8 @@ import SwiftUI
 /// opened with a request id only: the request is looked up in the latest snapshot every time, never taken from "the
 /// session's current request" (`CardState`).
 ///
-/// - A request that is no longer in the snapshot: "已在电脑上处理" (or, for one the card never saw, "这个请求已经不在了"),
-///   and the card closes after two seconds.
+/// - A request that is no longer in the snapshot: "已在电脑上处理" (or, for one the card never saw in a live snapshot,
+///   "这个请求已经不在了"), and the card closes after two seconds.
 /// - What was sent: the primary button turns into the success label ("已允许") and the card closes after 0.9 s; a no
 ///   (a deny, a revise) closes it at once. Too late or answered on the Mac first: the words, then two seconds. Not
 ///   through: the text over the buttons, the card stays and the buttons work again (on a fresh draft).
@@ -18,8 +18,9 @@ struct AnswerSheet: View {
     let drafts: AnswerDrafts
 
     @Environment(\.dismiss) private var dismiss
-    /// The request as it was the last time a snapshot had it: whether the card ever saw it, and what to show while
-    /// an answer is on its way and after it was taken, when the request has left the snapshot.
+    /// The request as it was the last time a live snapshot had it: whether the card ever saw it, and what to show
+    /// while an answer is on its way and after it was taken, when the request has left the snapshot. A cached
+    /// snapshot does not count: the request may have been gone for long, not just answered on the Mac.
     @State private var seen: Seen?
     @State private var busy = false
     @State private var failure: String?
@@ -68,10 +69,9 @@ struct AnswerSheet: View {
             .padding(.bottom, 12)
             .presentationDetents([.medium, .large], selection: $detent)
             .presentationDragIndicator(.visible)
-            .onChange(of: store.snapshot, initial: true) { _, body in
-                guard let request = body?.pending.first(where: { $0.requestId == requestId }) else { return }
-                seen = Seen(request: request, session: body?.sessions.first { $0.id == request.sessionId })
-            }
+            .onChange(of: store.snapshot, initial: true) { noteSeen() }
+            // The first live snapshot can be the cached one over again: going live counts too.
+            .onChange(of: store.isLive) { noteSeen() }
             .task(id: requestId) {
                 try? await Task.sleep(for: .seconds(8))
                 waitedOut = true
@@ -144,6 +144,14 @@ struct AnswerSheet: View {
     }
 
     private static let handledText = "已在电脑上处理"
+
+    /// Remembers the request as the snapshot has it, if the snapshot is live.
+    private func noteSeen() {
+        guard store.isLive, let body = store.snapshot,
+              let request = body.pending.first(where: { $0.requestId == requestId })
+        else { return }
+        seen = Seen(request: request, session: body.sessions.first { $0.id == request.sessionId })
+    }
 
     private func session(of request: BridgePending) -> BridgeSession? {
         store.snapshot?.sessions.first { $0.id == request.sessionId } ?? seen?.session
