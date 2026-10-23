@@ -1,17 +1,5 @@
 import Foundation
 
-/// A usage window from the status line's `rate_limits`. `resetsAt` is epoch milliseconds
-/// (the status line reports seconds).
-public struct RateWindow: Codable, Sendable, Equatable {
-    public var usedPercentage: Double
-    public var resetsAt: Int64
-
-    public init(usedPercentage: Double, resetsAt: Int64) {
-        self.usedPercentage = usedPercentage
-        self.resetsAt = resetsAt
-    }
-}
-
 /// What Claude Code's status line input said about one session: model, context window and
 /// rate limits. Every field except the id and timestamp is optional -- the status line omits
 /// whatever it doesn't know yet.

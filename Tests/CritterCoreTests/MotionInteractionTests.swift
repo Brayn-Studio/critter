@@ -2,6 +2,7 @@ import CoreGraphics
 import Foundation
 import Testing
 @testable import CritterCore
+@testable import CritterKit
 
 private func makeActor(_ skin: SkinManifest = SkinLoader.builtin(), seed: UInt64 = 7, reduceMotion: Bool = false) -> MotionActor {
     MotionActor(skin: skin, rng: MotionRNG(seed: seed), reduceMotion: reduceMotion)

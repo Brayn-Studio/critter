@@ -1,6 +1,7 @@
 import Foundation
 import Testing
 @testable import CritterCore
+@testable import CritterKit
 
 @Test func dustParticleMovesAndDies() {
     var p = ParticleSpawner.spawn(SkinLoader.builtin().effects["dust"]!, cycleIndex: 0, rng: MotionRNG(seed: 1))[0]

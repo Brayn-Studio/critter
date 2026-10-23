@@ -12,6 +12,9 @@ public enum BridgeProtocol {
     public static let bonjourType = "_critter._tcp"
     /// A phone's name, as the Mac shows and keeps it, has at most this many characters.
     public static let maxDeviceNameChars = 64
+    /// How a multi-select question's chosen option labels are joined into its one answer
+    /// string: "A, B". Phones build it; the Mac passes it through.
+    public static let multiSelectSeparator = ", "
 
     /// `pair.deviceName` as the Mac uses it: it comes off the network, so it is made one line
     /// (control characters become spaces), trimmed and cut to `maxDeviceNameChars`; "手机" if

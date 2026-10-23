@@ -1,17 +1,5 @@
 import Foundation
 
-public enum PendingKind: String, Codable, Sendable {
-    case permission, question, plan
-
-    public init(toolName: String) {
-        switch toolName {
-        case "AskUserQuestion": self = .question
-        case "ExitPlanMode": self = .plan
-        default: self = .permission
-        }
-    }
-}
-
 /// A prompt Claude Code is blocked on, published to `~/.critter/pending/<requestId>.json`
 /// for the phone to answer. `input` is for display only (truncated); `matchKey` identifies the
 /// request when the hook for the finished tool call has to retract it.
@@ -41,20 +29,6 @@ public struct PendingRequest: Codable, Sendable, Equatable {
         self.createdAt = createdAt
         self.expiresAt = expiresAt
         self.hookPid = hookPid
-    }
-}
-
-/// What the phone decided, written to `~/.critter/answers/<requestId>.json`. Which fields
-/// are meaningful depends on the request's `kind`.
-public struct AnswerPayload: Codable, Sendable, Equatable {
-    public var decision: String?
-    public var message: String?
-    public var answers: [String: String]?
-
-    public init(decision: String? = nil, message: String? = nil, answers: [String: String]? = nil) {
-        self.decision = decision
-        self.message = message
-        self.answers = answers
     }
 }
 

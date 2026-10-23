@@ -10,7 +10,7 @@ public enum AskDecision {
     /// string: "A, B". Verified against Claude Code 2.1.302 (spec section 13): Claude received
     /// both labels. The Mac passes the string through unchanged (but for trimming its ends);
     /// phones build it.
-    public static let multiSelectSeparator = ", "
+    public static let multiSelectSeparator = BridgeProtocol.multiSelectSeparator
     static let displayLimit = 4096
     static let maxAnswerLength = 4000
 
