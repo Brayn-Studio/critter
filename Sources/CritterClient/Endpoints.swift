@@ -34,8 +34,9 @@ public struct StaticResolver: EndpointResolver {
 }
 
 /// The paired Mac's last good address; when that fails (or there is none), the Mac found on
-/// the network under its name, else the first Mac found. Its IP may change (another Wi-Fi, a
-/// new DHCP lease), its certificate does not: the same pin still holds.
+/// the network under its name (`namesMatch`), and no other: another Mac running Critter is not the
+/// paired one. Its IP may change (another Wi-Fi, a new DHCP lease), its certificate does not: the
+/// same pin still holds.
 public struct FallbackResolver: EndpointResolver {
     private let lastGood: @Sendable () -> Endpoint?
     private let macName: String
@@ -52,7 +53,14 @@ public struct FallbackResolver: EndpointResolver {
     public func resolve(afterFailure: Bool) async -> Endpoint? {
         if !afterFailure, let lastGood = lastGood() { return lastGood }
         let found = await browser.discover()
-        return (found.first { $0.name == macName } ?? found.first)?.endpoint
+        return found.first { Self.namesMatch($0.name, macName) }?.endpoint
+    }
+
+    /// Whether a Bonjour service is the Mac called `macName` (Android `NsdLocator.namesMatch`): the
+    /// same name in any case, or that name with what Bonjour adds to a name that is taken (" (2)").
+    static func namesMatch(_ serviceName: String, _ macName: String) -> Bool {
+        serviceName.compare(macName, options: .caseInsensitive) == .orderedSame
+            || (!macName.isEmpty && serviceName.range(of: "\(macName) (", options: [.caseInsensitive, .anchored]) != nil)
     }
 }
 

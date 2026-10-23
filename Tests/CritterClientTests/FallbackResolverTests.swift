@@ -25,13 +25,41 @@ struct FallbackResolverTests {
         #expect(await fresh.resolve(afterFailure: false) == moved)
     }
 
-    @Test func picksTheFirstMacWhenNoneHasTheName() async {
+    /// Another Mac running Critter is not the paired one (its pin would not match, and that ends in "请重新配对"):
+    /// none with the name is no Mac at all.
+    @Test func noMacWithTheNameIsNil() async {
         let browser = FakeBrowser([
             DiscoveredMac(name: "Office iMac", endpoint: other),
             DiscoveredMac(name: "Studio", endpoint: moved),
+            // Starts with the name, but is another Mac's.
+            DiscoveredMac(name: "Xuan's MacBook Pro", endpoint: other),
+            DiscoveredMac(name: "Xuan's MacBook(2)", endpoint: other),
         ])
         let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
-        #expect(await resolver.resolve(afterFailure: true) == other)
+        #expect(await resolver.resolve(afterFailure: true) == nil)
+    }
+
+    /// As Android's `NsdLocator.namesMatch`: the name in any case.
+    @Test func theNameMatchesInAnyCase() async {
+        let browser = FakeBrowser([
+            DiscoveredMac(name: "Office iMac", endpoint: other),
+            DiscoveredMac(name: "XUAN'S macbook", endpoint: moved),
+        ])
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
+        #expect(await resolver.resolve(afterFailure: true) == moved)
+    }
+
+    /// Bonjour adds " (2)" to a name that is taken on the network.
+    @Test func theNameWithANumberBonjourAddedMatches() async {
+        let browser = FakeBrowser([
+            DiscoveredMac(name: "Office iMac", endpoint: other),
+            DiscoveredMac(name: "xuan's MacBook (2)", endpoint: moved),
+        ])
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
+        #expect(await resolver.resolve(afterFailure: true) == moved)
+        // No name to go by: only a service with no name either, never every "… (n)".
+        let nameless = FallbackResolver(lastGood: { nil }, macName: "", browser: FakeBrowser([DiscoveredMac(name: " (2)", endpoint: moved)]))
+        #expect(await nameless.resolve(afterFailure: true) == nil)
     }
 
     @Test func nothingFoundIsNil() async {
