@@ -277,7 +277,14 @@ struct SettingsView: View {
         }
         .formStyle(.grouped)
         .frame(width: 420)
+        // As tall as the form, but never past the screen: beyond that the form scrolls.
+        .frame(maxHeight: Self.maxHeight)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    /// The screen's visible height less the title bar and a margin.
+    private static var maxHeight: CGFloat {
+        ((NSScreen.main?.visibleFrame.height ?? 800) - 80).rounded(.down)
     }
 
     private var idleDimPercent: Int {
