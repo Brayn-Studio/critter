@@ -27,7 +27,7 @@ import kotlin.test.assertTrue
 class CodexSessionUiTest {
     private fun session(source: SessionSource = SessionSource.codex, id: String = "codex-thread") = BridgeSession(
         id = id, name = "project", source = source, state = PetState.waiting, cwd = "/project",
-        skin = "clawd", eventTime = 0, startedAt = 0, tracked = true,
+        skin = "sprig", eventTime = 0, startedAt = 0, tracked = true,
     )
 
     @Test fun codexSourcesAndOldUnknownSnapshotsAreRecognized() {
@@ -78,7 +78,7 @@ class CodexSessionUiTest {
 
     @Test fun cardsExposeCodexApprovalsOnlyWithAnAnswerCapability() {
         val pending = BridgePending("request", "codex-thread", PendingKind.permission, createdAt = 0)
-        val body = SnapshotBody(listOf(session()), pending = listOf(pending), prefs = BridgePrefs("clawd", false, 0.5, 5))
+        val body = SnapshotBody(listOf(session()), pending = listOf(pending), prefs = BridgePrefs("sprig", false, 0.5, 5))
         assertTrue(cardRequests(body).isEmpty())
         val answerable = body.copy(sessions = listOf(session().copy(capabilities = BridgeCapabilities(canAnswer = true))))
         assertEquals("request", cardRequests(answerable)["codex-thread"]?.request?.requestId)

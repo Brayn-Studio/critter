@@ -13,7 +13,7 @@ import local.critter.core.protocol.SessionSource
 import local.critter.core.protocol.SnapshotBody
 
 fun session(id: String, state: PetState = PetState.idle) = BridgeSession(
-    id = id, name = id, source = SessionSource.terminal, state = state, cwd = "~", skin = "clawd",
+    id = id, name = id, source = SessionSource.terminal, state = state, cwd = "~", skin = "sprig",
     eventTime = 1, startedAt = 1, tracked = true,
 )
 
@@ -27,7 +27,7 @@ fun pending(
 
 fun body(sessions: List<BridgeSession>, pending: List<BridgePending> = emptyList()) = SnapshotBody(
     sessions = sessions, pending = pending,
-    prefs = BridgePrefs(skin = "clawd", randomSkins = false, idleDim = 1.0, mergeThreshold = 4),
+    prefs = BridgePrefs(skin = "sprig", randomSkins = false, idleDim = 1.0, mergeThreshold = 4),
 )
 
 /** An `AskUserQuestion` input; each pair is the question text and whether it is multi-select. */

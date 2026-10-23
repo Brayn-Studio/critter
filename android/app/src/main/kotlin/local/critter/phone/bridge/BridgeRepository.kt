@@ -359,7 +359,7 @@ class BridgeRepository(private val app: Application) {
      * The manifest JSON for skin [name]: a bundled skin straight from assets; otherwise the one the Mac sent
      * before, or else asked for now with a `skin` request, remembered in memory and in the app's private
      * `skins/<name>.json` (this is what feeds [SkinStore.library]). Null if the Mac has no such skin or is out
-     * of reach; the app then draws clawd. A name is only asked for once per connection.
+     * of reach; the app then draws sprig. A name is only asked for once per connection.
      */
     suspend fun skinManifest(name: String): String? {
         skins.bundled(name)?.let { return it }

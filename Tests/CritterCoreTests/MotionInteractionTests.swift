@@ -341,15 +341,15 @@ private func rows(_ k: MotionClip) -> [[String]] {
 
 @Test func ticksUntilChangeWhileFollowing() {
     let a = makeActor()
-    a.enterState(.error, quiet: true)          // slump: a 40-tick key, a still marker
+    a.enterState(.error, quiet: true)          // slump: a 36-tick key, a still marker
     a.startFollow(lookLeft: true)
-    #expect(a.ticksUntilChange() == 40)        // caught up and held: nothing moves
+    #expect(a.ticksUntilChange() == 36)        // caught up and held: nothing moves
     a.followShift(dx: 2, dy: 0)
     #expect(a.ticksUntilChange() == 1)
     a.step()
     a.step()
     #expect(a.snapshot().offsetX == 0)
-    #expect(a.ticksUntilChange() == 38)
+    #expect(a.ticksUntilChange() == 34)
     a.releaseFollow()
     #expect(a.ticksUntilChange() == 1)         // ends (and blinks) on the next tick
 }
@@ -528,7 +528,7 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     #expect(a.snapshot().pose == "shut")       // no gaze over a one-shot
     a.cancelOnce()
     a.setMode("pet")
-    #expect(a.snapshot().pose == "happy")      // nor over a mode
+    #expect(a.snapshot().pose == "happy_l")    // nor over a mode
     a.setMode(nil)
     a.setGaze(nil)
     #expect(a.snapshot().pose == "base")
@@ -536,7 +536,7 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     let d = makeActor()
     d.enterState(.done, quiet: true)
     d.setGaze(.right)
-    #expect(d.snapshot().pose == "look_r")
+    #expect(d.snapshot().pose == "bloom_r")    // done's own gaze poses keep the flower open
 
     let r = makeActor(reduceMotion: true)
     r.enterState(.idle, quiet: true)
@@ -677,8 +677,8 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     a.fidgetIn = 10                            // a fidget is due
     a.holdUnderground(depth: 12)
     #expect(!a.following && a.followOffset.x == 0 && a.lift == 0)
-    a.play("vanish")                           // the sink itself plays over the hold
-    #expect(a.snapshot().bodyY == -2)
+    a.play("burrow")                           // the sink itself plays over the hold
+    #expect(a.snapshot().bodyY == 0)
     stepUntilLoop(a)
     #expect(a.snapshot().bodyY == -12)
     #expect(a.snapshot().pose == "base")
@@ -708,11 +708,11 @@ private func stepWhileTraveling(_ a: MotionActor, limit: Int = 200) {
     a.enterState(.idle, quiet: true)
     a.holdUnderground(depth: 12)
     a.enterState(.waiting)
-    a.play("appear")                           // dropping back in, over the hold
-    #expect(a.snapshot().bodyY == 16)
+    a.play("pop_up")                           // popping back up, over the hold
+    #expect(a.snapshot().bodyY == -12)
     a.releaseUnderground()
     #expect(a.underground == nil)
-    #expect(a.currentClipName == "appear")     // the drop-in carries on...
+    #expect(a.currentClipName == "pop_up")     // the pop-up carries on...
     stepUntilLoop(a)
     #expect(a.currentClipName == "ask")        // ...into the state's loop
     #expect(a.snapshot().bodyY == 0)

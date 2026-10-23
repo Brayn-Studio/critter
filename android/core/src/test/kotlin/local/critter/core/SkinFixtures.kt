@@ -16,8 +16,8 @@ fun bundledSkinJson(name: String): String =
 fun bundledSkin(name: String): SkinManifest =
     SkinJson.decodeFromString(SkinManifest.serializer(), bundledSkinJson(name))
 
-/** Clawd, the builtin skin (Swift's `SkinLoader.builtin()`). */
-fun builtin(): SkinManifest = bundledSkin("clawd")
+/** Sprig, the builtin skin (Swift's `SkinLoader.builtin()`). */
+fun builtin(): SkinManifest = bundledSkin("sprig")
 
 /** The problems of the builtin skin after `change` (Swift's `mutated`, which changes a copy). */
 fun mutated(change: (SkinManifest) -> SkinManifest): List<String> = SkinValidator.validate(change(builtin()))

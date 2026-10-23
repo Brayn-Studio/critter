@@ -22,14 +22,7 @@
 - Bundle ID `local.critter.pet`；URL scheme `critter`（`critter://show`、`critter://hide`、`critter://toggle`、`critter://debug-hang`）。
 - 状态与文案：`idle` 空闲 / `running` 运行中 / `waiting` 等你确认 / `done` 做完了 / `error` 出错；优先级 waiting > error > done > running > idle。
 - 颜色：Critter 身体 `#D97757`，眼睛 `#1D1D1F`；状态色 waiting `#FF9F0A`、done `#34C759`、error `#FF3B30`、running/idle `#8E8E93`。头顶配件：idle `z z`、running `•••`、waiting `?`、done `✓`、error `!`。
-- Critter 像素网格（18×5，像素宽:高 = 1:2）逐字使用：
-  ```
-  ...############...
-  ...##o######o##...
-  .################.
-  ...############...
-  ....#.#....#.#....
-  ```
+- Critter 像素网格（18×5，像素宽:高 = 1:2）。（Clawd 的像素图已于 2026-10-23 随 Clawd 形象一起从项目中移除。）
 - 所有形象素材只放在 `Skins/` 目录（品牌可替换）。
 - 已在 Claude Code 2.1.301 CLI 上实测确认（2026-10-17 spike）：
   - hook 进程的父进程就是 claude 进程；
@@ -496,7 +489,7 @@ Tests/CritterHookTests/HookBinaryTests.swift
 
 ```swift
 @Test func builtinMatchesSpecGrid() {
-    #expect(SkinLoader.builtin().frames["base"] == ["...############...", "...##o######o##...", ".################.", "...############...", "....#.#....#.#...."])
+    // 原先在这里逐行比对 Clawd 的像素图；（Clawd 的像素图已于 2026-10-23 随 Clawd 形象一起从项目中移除。）
     #expect(SkinValidator.problems(SkinLoader.builtin()).isEmpty)
 }
 @Test func bundledFileEqualsBuiltin() throws {

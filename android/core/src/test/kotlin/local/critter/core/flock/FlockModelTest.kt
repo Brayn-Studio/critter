@@ -9,7 +9,7 @@ import kotlin.test.assertIs
 
 /** `startedAt` is the sort key (the Mac's `PetSession.sortKey`). */
 private fun s(id: String, state: PetState, sortKey: Long) = BridgeSession(
-    id = id, name = id, source = SessionSource.terminal, state = state, cwd = "/x", skin = "clawd",
+    id = id, name = id, source = SessionSource.terminal, state = state, cwd = "/x", skin = "sprig",
     eventTime = sortKey, startedAt = sortKey, tracked = true,
 )
 

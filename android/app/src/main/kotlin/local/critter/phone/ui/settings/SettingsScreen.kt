@@ -91,7 +91,7 @@ import local.critter.phone.ui.theme.wholePx
 import kotlin.math.roundToInt
 
 /** The five bundled skins, in the order the settings show them. */
-private val SKINS = listOf("clawd", "sprig", "mochi", "peep", "bristle")
+private val SKINS = listOf("sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet")
 
 /** A row's side padding inside its group card. */
 private val ROW_PADDING = 16.dp
@@ -537,7 +537,7 @@ private fun SkinPicker(selected: String?, onPick: (String?) -> Unit) {
 /** The clip a skin plays on entering `done` (the cheer with petals), if it has one. */
 private fun cheer(manifest: SkinManifest) = manifest.state(PetState.done).enter?.let { manifest.clips[it] }
 
-/** "小芽" from "小芽 Sprig"; "Clawd" for the skin without a title. */
+/** "小芽" from "小芽 Sprig"; the capitalised name ("Mochi") for a skin without a title. */
 private fun shortTitle(manifest: SkinManifest): String =
     manifest.title?.substringBefore(' ')?.ifEmpty { null } ?: manifest.name.replaceFirstChar { it.uppercase() }
 

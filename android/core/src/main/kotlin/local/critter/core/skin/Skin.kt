@@ -304,7 +304,7 @@ data class PropSpec(val glyph: String, val colors: List<String>)
 
 /**
  * Checks a manifest is internally consistent and complete enough to render, so a broken or
- * partial custom skin can be safely rejected (falling back to clawd) instead of crashing or
+ * partial custom skin can be safely rejected (falling back to sprig) instead of crashing or
  * rendering garbage. Effect names starting with "@" are reserved for effects the engine
  * generates at runtime, so a manifest may neither define nor reference them.
  *

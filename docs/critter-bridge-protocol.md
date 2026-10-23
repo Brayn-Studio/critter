@@ -132,7 +132,7 @@ Sends text into a session. Trimmed text must be non-empty and at most 4000 UTF-1
 Asks for a skin's manifest (answered with a `skin` message).
 
 ```json
-{"id":"c7","name":"clawd","type":"skin"}
+{"id":"c7","name":"sprig","type":"skin"}
 ```
 
 ## Mac -> phone
@@ -178,7 +178,7 @@ The complete current state; replace everything you had.
       "branch": "main",
       "model": "Opus 5.5",
       "context": { "usedPercent": 42.5, "windowSize": 1000000, "estimated": false },
-      "skin": "clawd",
+      "skin": "sprig",
       "eventTime": 1760000000000,
       "startedAt": 1759990000000,
       "tracked": true
@@ -201,7 +201,7 @@ The complete current state; replace everything you had.
       "expiresAt": 1760000590000
     }
   ],
-  "prefs": { "skin": "clawd", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
 }
 ```
 
@@ -239,7 +239,7 @@ Field notes (optional = key omitted when absent):
 Reply to a phone `skin` request. `manifest` is the skin's manifest JSON object; absent means the Mac has no such skin.
 
 ```json
-{"id":"c7","manifest":{"name":"clawd"},"name":"clawd","type":"skin"}
+{"id":"c7","manifest":{"name":"sprig"},"name":"sprig","type":"skin"}
 ```
 
 ### result

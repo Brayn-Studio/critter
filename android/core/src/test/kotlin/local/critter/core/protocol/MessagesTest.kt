@@ -33,8 +33,8 @@ class MessagesTest {
 
         val skin = assertIs<ServerMessage.Skin>(decodeServer(resource("server-skin.json")))
         assertEquals("c7", skin.id)
-        assertEquals("clawd", skin.name)
-        assertEquals("clawd", skin.manifest?.get("name")?.jsonPrimitive?.content)
+        assertEquals("sprig", skin.name)
+        assertEquals("sprig", skin.manifest?.get("name")?.jsonPrimitive?.content)
 
         val ok = assertIs<ServerMessage.Result>(decodeServer(resource("server-result-ok.json")))
         assertTrue(ok.ok)
@@ -97,7 +97,7 @@ class MessagesTest {
     }
 
     @Test fun optionalSnapshotFieldsMayBeAbsent() {
-        val s = """{"type":"snapshot","seq":1,"sentAt":2,"sessions":[{"id":"a","name":"n","source":"vscode","state":"idle","cwd":"~","skin":"clawd","eventTime":1,"startedAt":1,"tracked":false}],"pending":[],"prefs":{"skin":"clawd","randomSkins":true,"idleDim":1,"mergeThreshold":4}}"""
+        val s = """{"type":"snapshot","seq":1,"sentAt":2,"sessions":[{"id":"a","name":"n","source":"vscode","state":"idle","cwd":"~","skin":"sprig","eventTime":1,"startedAt":1,"tracked":false}],"pending":[],"prefs":{"skin":"sprig","randomSkins":true,"idleDim":1,"mergeThreshold":4}}"""
         val snap = assertIs<ServerMessage.Snapshot>(decodeServer(s))
         assertNull(snap.body.limits)
         assertNull(snap.body.sessions[0].context)
@@ -120,7 +120,7 @@ class MessagesTest {
         assertEncodes("client-answer-revise.json", ClientMessage.Answer("c4", "req-4", AnswerPayload(decision = "revise", message = "Split step 2")))
         assertEncodes("client-seen.json", ClientMessage.Seen("c5", "s1"))
         assertEncodes("client-say.json", ClientMessage.Say("c6", "s1", "continue"))
-        assertEncodes("client-skin.json", ClientMessage.SkinRequest("c7", "clawd"))
+        assertEncodes("client-skin.json", ClientMessage.SkinRequest("c7", "sprig"))
     }
 
     @Test fun commandsOmitTheIdWhenAbsentAndCanBeGivenOne() {
@@ -132,7 +132,7 @@ class MessagesTest {
     }
 
     @Test fun decodeToleratesUnknownFieldsAndEnums() {
-        val s = """{"type":"snapshot","seq":1,"sentAt":1,"future":true,"sessions":[{"id":"a","name":"n","source":"jetbrains","state":"sleeping","cwd":"~","skin":"clawd","eventTime":1,"startedAt":1,"tracked":true,"newField":[1]}],"pending":[{"requestId":"r","sessionId":"a","kind":"telepathy","createdAt":1}],"prefs":{"skin":"clawd","randomSkins":false,"idleDim":1.0,"mergeThreshold":4,"soundTheme":"theremin"}}"""
+        val s = """{"type":"snapshot","seq":1,"sentAt":1,"future":true,"sessions":[{"id":"a","name":"n","source":"jetbrains","state":"sleeping","cwd":"~","skin":"sprig","eventTime":1,"startedAt":1,"tracked":true,"newField":[1]}],"pending":[{"requestId":"r","sessionId":"a","kind":"telepathy","createdAt":1}],"prefs":{"skin":"sprig","randomSkins":false,"idleDim":1.0,"mergeThreshold":4,"soundTheme":"theremin"}}"""
         val snap = assertIs<ServerMessage.Snapshot>(decodeServer(s))
         assertEquals(SessionSource.other, snap.body.sessions[0].source)
         assertEquals(PetState.unknown, snap.body.sessions[0].state)

@@ -25,7 +25,7 @@ class ProBoardTest {
 
     private fun body(vararg pending: BridgePending) = SnapshotBody(
         sessions = emptyList(), pending = pending.toList(),
-        prefs = BridgePrefs(skin = "clawd", randomSkins = false, idleDim = 1.0, mergeThreshold = 4),
+        prefs = BridgePrefs(skin = "sprig", randomSkins = false, idleDim = 1.0, mergeThreshold = 4),
     )
 
     @Test
@@ -74,7 +74,7 @@ class ProBoardTest {
 
     private fun session(id: String, state: PetState = PetState.running) = BridgeSession(
         id = id, name = id, source = SessionSource.terminal, state = state, cwd = "/p/$id",
-        skin = "clawd", eventTime = 0, startedAt = 0, tracked = true,
+        skin = "sprig", eventTime = 0, startedAt = 0, tracked = true,
     )
 
     @Test

@@ -5,7 +5,7 @@ import Foundation
 public struct SkinChoice: Sendable, Equatable, Identifiable {
     public var name: String
     /// The manifest's `title`, or else the folder name with its first letter uppercased
-    /// ("clawd" → "Clawd").
+    /// ("mine" → "Mine").
     public var title: String
     public var manifest: SkinManifest
 
@@ -21,7 +21,7 @@ public struct SkinChoice: Sendable, Equatable, Identifiable {
 /// Lists the skins on offer, searching the same directories in the same order as
 /// `SkinLoader.load`. Does file I/O, so callers run it off the main thread.
 public enum SkinLibrary {
-    /// The builtin first (under its own name, "clawd"), then every `<dir>/<name>/manifest.json`
+    /// The builtin first (under its own name, "sprig"), then every `<dir>/<name>/manifest.json`
     /// that decodes and passes `SkinValidator`, sorted by name; hidden folders and invalid
     /// skins are left out. A name found in several dirs is taken from the first one where
     /// it's valid, as `SkinLoader.load` would, ignoring case: the default macOS volume does,

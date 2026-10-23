@@ -2,6 +2,8 @@ package local.critter.core.motion
 
 import local.critter.core.builtin
 import local.critter.core.skin.ClipKey
+import local.critter.core.skin.EffectSpec
+import local.critter.core.skin.SkinJson
 import local.critter.core.skin.Span
 import kotlin.test.Test
 import kotlin.test.assertEquals
@@ -14,7 +16,7 @@ class ParticleTest {
     fun dustParticleMovesAndDies() {
         val p = ParticleSpawner.spawn(builtin().effects["dust"]!!, cycleIndex = 0, rng = MotionRNG(seed = 1))[0]
         p.step(dt = 0.06)
-        assertEquals(1, p.draw().x) // 2 - 12*0.06 = 1.28
+        assertEquals(0, p.draw().x) // 1 - 12*0.06 = 0.28
         assertTrue(p.isAlive)
         repeat(3) { p.step(dt = 0.06) }
         assertFalse(p.isAlive) // life 4
@@ -22,7 +24,8 @@ class ParticleTest {
 
     @Test
     fun confettiHasSixteenCyclingColors() {
-        val effect = builtin().effects["confetti"]!!
+        val json = """{"particles": [{"count": 16, "glyph": "dot", "colors": ["#B39DF3", "#34C759", "#FFD60A", "#64D2FF", "#FF7096", "#F2F2F7"], "x": [5, 12], "y": -1, "vx": [-18, 18], "vy": [-34, -16], "ay": 80, "life": [13, 19]}]}"""
+        val effect = SkinJson.decodeFromString(EffectSpec.serializer(), json)
         val colors = effect.particles!![0].colors!!
         val ps = ParticleSpawner.spawn(effect, cycleIndex = 0, rng = MotionRNG(seed = 3))
         assertEquals(16, ps.size)

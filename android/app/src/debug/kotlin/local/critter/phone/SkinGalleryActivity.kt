@@ -17,7 +17,7 @@ import kotlin.math.roundToInt
 
 /**
  * Debug builds only: every bundled skin in every state, for checking the drawing against the desktop
- * (`am start -n local.critter.phone/.SkinGalleryActivity`). `--es mode sleep` shows one dozing Clawd instead;
+ * (`am start -n local.critter.phone/.SkinGalleryActivity`). `--es mode sleep` shows one dozing Sprig instead;
  * it logs `debugFrameCount` every 10 s under the tag `CritterGallery`, to check that a resting Critter
  * barely redraws.
  */
@@ -55,10 +55,10 @@ class SkinGalleryActivity : Activity() {
             override fun onLongDragEnd(sessionId: String) { Log.i(TAG, "dropped $sessionId") }
         }
         val slots = if (sleepOnly) {
-            listOf(CritterSlot("sleeper", library.manifest("clawd"), PetState.idle, null, 1.0, 40 * density, 200 * density, unit, sleeping = true))
+            listOf(CritterSlot("sleeper", library.manifest("sprig"), PetState.idle, null, 1.0, 40 * density, 200 * density, unit, sleeping = true))
         } else {
             val states = listOf(PetState.idle, PetState.running, PetState.waiting, PetState.done, PetState.error)
-            val skins = listOf("clawd", "sprig", "mochi", "peep", "bristle")
+            val skins = listOf("sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet")
             skins.flatMapIndexed { row, skin ->
                 states.mapIndexed { col, state ->
                     CritterSlot(

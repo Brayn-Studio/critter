@@ -47,7 +47,7 @@ class MotionStateTest {
         assertEquals("celebrate", a.currentClipName)
         assertTrue(a.isPlayingOnce)
         assertNull(a.tint)
-        assertEquals(24, stepUntilLoop(a))
+        assertEquals(25, stepUntilLoop(a))
         assertEquals("content", a.currentClipName)
     }
 
@@ -140,7 +140,7 @@ class MotionStateTest {
         a.enterState(PetState.idle)
         assertEquals("seen", a.currentClipName)
         assertEquals(Tint.dim, a.tint)
-        assertEquals(5, stepUntilLoop(a))
+        assertEquals(8, stepUntilLoop(a))
         assertEquals("idle", a.currentClipName)
     }
 
@@ -327,7 +327,7 @@ class MotionStateTest {
     // MARK: - Head markers and props
 
     @Test
-    fun spinnerFollowsCosine() {
+    fun sunFollowsCosine() {
         val a = makeActor()
         a.enterState(PetState.running, quiet = true)
         val frames = mutableMapOf<Int, GlyphDraw?>()
@@ -336,14 +336,14 @@ class MotionStateTest {
             a.step()
         }
         assertEquals(
-            listOf("s0", "s1", "s3", "s5", "s3", "s0"),
+            listOf("sun0", "sun1", "sun3", "sun4", "sun2", "sun0"),
             listOf(0, 5, 10, 17, 25, 33).map { frames[it]?.glyph },
         )
-        assertEquals(7, frames[17]?.x)
-        assertEquals(-7, frames[17]?.y)
-        assertEquals(9, frames[0]?.x) // s0 is 1×1: centred in the 5-row box
-        assertEquals(-5, frames[0]?.y)
-        assertEquals("#D97757", frames[17]?.color)
+        assertEquals(6, frames[17]?.x)
+        assertEquals(-9, frames[17]?.y)
+        assertEquals(9, frames[0]?.x) // sun0 is 1×1: centred in the 7-row box
+        assertEquals(-6, frames[0]?.y)
+        assertEquals("#F2B33D", frames[17]?.color)
     }
 
     @Test
@@ -425,9 +425,9 @@ class MotionStateTest {
         a.enterState(PetState.running, quiet = true)
         assertEquals(
             listOf(
-                GlyphDraw(glyph = "ball", color = "#D97757", x = 3, y = -2, alpha = 1.0),
-                GlyphDraw(glyph = "ball", color = "#F0A487", x = 7, y = -8, alpha = 1.0),
-                GlyphDraw(glyph = "ball", color = "#D97757", x = 10, y = -8, alpha = 1.0),
+                GlyphDraw(glyph = "seed", color = "#6BCB5F", x = 3, y = -2, alpha = 1.0),
+                GlyphDraw(glyph = "seed", color = "#FF8FB8", x = 7, y = -8, alpha = 1.0),
+                GlyphDraw(glyph = "seed", color = "#FFD24A", x = 10, y = -8, alpha = 1.0),
             ),
             a.snapshot().props,
         )
@@ -457,7 +457,7 @@ class MotionStateTest {
         a.lift = 0
 
         a.enterState(PetState.running, quiet = true)
-        assertEquals("dotbig", a.snapshot().accessory?.glyph)
+        assertEquals("sun3", a.snapshot().accessory?.glyph)
         assertEquals("lap_a", a.snapshot().pose)
         assertEquals(0, a.snapshot().bodyX)
         a.setMode("held")
@@ -482,7 +482,7 @@ class MotionStateTest {
         a.enterState(PetState.idle)
         repeat(2000) { a.step() }
         assertTrue(a.asleep)
-        assertEquals("shut", a.snapshot().pose)
+        assertEquals("sleep", a.snapshot().pose)
     }
 
     @Test

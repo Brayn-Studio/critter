@@ -27,11 +27,11 @@ class SkinTest {
     // MARK: - Manifest and decoding
 
     @Test
-    fun bundledManifestIsTheDesignCopy() {
-        val bundled = File("../../Skins/clawd/manifest.json").readBytes()
-        val design = File("../../docs/superpowers/specs/2026-10-17-clawd-manifest-v2.json").readBytes()
-        assertTrue(bundled.contentEquals(design))
-        assertEquals(bundled.toString(Charsets.UTF_8), bundledSkinJson("clawd"))
+    fun builtinIsTheBundledSprig() {
+        val bundled = File("../../Skins/sprig/manifest.json").readBytes()
+        assertEquals(bundled.toString(Charsets.UTF_8), bundledSkinJson("sprig"))
+        assertEquals("sprig", SkinLibrary.FALLBACK)
+        assertEquals(SkinLoader.decode(bundledSkinJson(SkinLibrary.FALLBACK)), builtin())
     }
 
     @Test
@@ -52,26 +52,26 @@ class SkinTest {
 
     /**
      * JSON has one number type: a tool may write a whole number as `60.0`. Swift's decoder takes it for an Int, so
-     * the Mac would show the skin; the phone must not fall back to clawd. A fraction is still no integer.
+     * the Mac would show the skin; the phone must not fall back to sprig. A fraction is still no integer.
      */
     @Test
     fun wholeNumberDoublesReadAsInts() {
-        val text = bundledSkinJson("clawd")
+        val text = bundledSkinJson("sprig")
             .replace("\"tickMs\": 60,", "\"tickMs\": 60.0,")
             .replace("[\"base\", 40],", "[\"base\", 40.0],")
-            .replace("[\"base\", 10, 0, -1]", "[\"base\", 1e1, 0.0, -1.0]")
+            .replace("[\"breathe\", 7],", "[\"breathe\", 7e0],")
             .replace("\"every\": [60, 160],", "\"every\": [60.0, 160],")
             .replace("[\"blink\", 6],", "[\"blink\", 6.0],")
         val m = assertNotNull(SkinLoader.decode(text))
         assertEquals(60, m.tickMs)
-        assertEquals(listOf(ClipKey("base", 40), ClipKey("base", 10, 0, -1)), m.clips["idle"])
+        assertEquals(listOf(ClipKey("base", 40), ClipKey("breathe", 7)), m.clips["idle"]?.take(2))
         assertEquals(listOf(60, 160), m.states["idle"]?.fidget?.every)
         assertEquals(WeightedClip("blink", 6), m.states["idle"]?.fidget?.pick?.first())
         assertEquals(builtin(), m)
 
-        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("\"tickMs\": 60,", "\"tickMs\": 60.5,")))
-        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"base\", 40],", "[\"base\", 3.5],")))
-        assertNull(SkinLoader.decode(bundledSkinJson("clawd").replace("[\"blink\", 6],", "[\"blink\", 6.25],")))
+        assertNull(SkinLoader.decode(bundledSkinJson("sprig").replace("\"tickMs\": 60,", "\"tickMs\": 60.5,")))
+        assertNull(SkinLoader.decode(bundledSkinJson("sprig").replace("[\"base\", 40],", "[\"base\", 3.5],")))
+        assertNull(SkinLoader.decode(bundledSkinJson("sprig").replace("[\"blink\", 6],", "[\"blink\", 6.25],")))
     }
 
     /**
@@ -95,10 +95,11 @@ class SkinTest {
 
     @Test
     fun titleIsOptional() {
-        assertNull(builtin().title)
-        val titled = bundledSkinJson("clawd").replace("\"name\": \"clawd\",", "\"name\": \"clawd\", \"title\": \"小芽 Sprig\",")
-        val m = json.decodeFromString(SkinManifest.serializer(), titled)
-        assertEquals("小芽 Sprig", m.title)
+        assertEquals("小芽 Sprig", builtin().title)
+        val untitled = bundledSkinJson("sprig").replace("\"title\": \"小芽 Sprig\",", "")
+        assertTrue(untitled != bundledSkinJson("sprig"))
+        val m = json.decodeFromString(SkinManifest.serializer(), untitled)
+        assertNull(m.title)
         assertTrue(SkinValidator.validate(m).isEmpty())
     }
 
@@ -152,18 +153,6 @@ class SkinTest {
     // MARK: - Rasterization
 
     @Test
-    fun basePoseIsTheApprovedGridDoubled() {
-        val old = listOf("...############...", "...##o######o##...", ".################.", "...############...", "....#.#....#.#....")
-        val g = SkinRenderer.grid(builtin(), "base")!!
-        for (y in 0 until 10) {
-            for (x in 0 until 18) {
-                val want = old[y / 2][x]
-                assertEquals(if (want == '.') null else want, g.character(x, y))
-            }
-        }
-    }
-
-    @Test
     fun heldPoseHangsBelowGround() { // dangling legs reach row 10
         val g = SkinRenderer.grid(builtin(), "held_a")!!
         assertEquals(11, g.minY + g.height)
@@ -172,7 +161,7 @@ class SkinTest {
     @Test
     fun laterPartsCoverEarlierOnes() {
         val g = SkinRenderer.grid(builtin(), "base")!!
-        assertEquals('o', g.character(5, 2)) // eyes over body
+        assertEquals('o', g.character(6, 4)) // eyes over body
     }
 
     @Test
@@ -310,7 +299,7 @@ class SkinTest {
     @Test
     fun validatorBoundsEveryNumber() {
         // Each would overflow or hog the CPU at runtime; out of range, the skin is rejected
-        // instead, so clawd is used.
+        // instead, so sprig is used.
         val cases: List<Pair<String, (SkinManifest) -> SkinManifest>> = listOf(
             "tickMs" to { m -> m.copy(tickMs = 1) },
             "tickMs" to { m -> m.copy(tickMs = 100_000) },
@@ -326,8 +315,8 @@ class SkinTest {
             "particle vy" to { m -> m.withFirstParticle("dust") { it.copy(vy = Span(1e300)) } },
             "particle ay" to { m -> m.withFirstParticle("dust") { it.copy(ay = Double.NaN) } },
             "particle sway" to { m -> m.withFirstParticle("dust") { it.copy(sway = 1e9) } },
-            "accessory spinner box" to { m -> m.withAccessory("spinner") { it.copy(box = Int.MAX_VALUE) } },
-            "accessory spinner periodMs" to { m -> m.withAccessory("spinner") { it.copy(periodMs = 0) } },
+            "accessory sun box" to { m -> m.withAccessory("sun") { it.copy(box = Int.MAX_VALUE) } },
+            "accessory sun periodMs" to { m -> m.withAccessory("sun") { it.copy(periodMs = 0) } },
             "accessory q bobEvery" to { m -> m.withAccessory("q") { it.copy(bobEvery = Int.MAX_VALUE) } },
             "accessory check twinkleEvery" to { m -> m.withAccessory("check") { it.copy(twinkleEvery = -1) } },
             "fidget.every" to { m -> m.withState("idle") { it.copy(fidget = it.fidget!!.copy(every = listOf(1, Int.MAX_VALUE))) } },
@@ -373,16 +362,16 @@ class SkinTest {
         // that is invalid is skipped for the valid bundled one.
         val invalid = builtin().let { it.copy(states = it.states - "waiting") }
         val library = SkinLibrary(
-            assetReader = { if (it == "skins/clawd/manifest.json") bundledSkinJson("clawd") else null },
-            pushed = mapOf("clawd" to json.encodeToString(SkinManifest.serializer(), invalid)),
+            assetReader = { if (it == "skins/mochi/manifest.json") bundledSkinJson("mochi") else null },
+            pushed = mapOf("mochi" to json.encodeToString(SkinManifest.serializer(), invalid)),
         )
-        assertEquals("clawd", library.manifest("clawd").name)
+        assertEquals("mochi", library.manifest("mochi").name)
         val valid = builtin().copy(name = "second-wins")
         val pushedFirst = SkinLibrary(
-            assetReader = { bundledSkinJson("clawd") },
-            pushed = mapOf("clawd" to json.encodeToString(SkinManifest.serializer(), valid)),
+            assetReader = { bundledSkinJson("mochi") },
+            pushed = mapOf("mochi" to json.encodeToString(SkinManifest.serializer(), valid)),
         )
-        assertEquals("second-wins", pushedFirst.manifest("clawd").name)
+        assertEquals("second-wins", pushedFirst.manifest("mochi").name)
     }
 
     // MARK: - Library
@@ -393,7 +382,7 @@ class SkinTest {
         val mochi = SkinLibrary(reader, forced = "mochi")
         assertEquals("mochi", mochi.manifest("sprig").name)
         assertEquals("mochi", mochi.manifest("not-on-this-phone").name)
-        assertEquals("clawd", SkinLibrary(reader, forced = "nope").manifest("sprig").name)
+        assertEquals("sprig", SkinLibrary(reader, forced = "nope").manifest("mochi").name)
         assertEquals("sprig", SkinLibrary(reader).manifest("sprig").name)
     }
 
@@ -408,7 +397,7 @@ class SkinTest {
         val fast = SkinLibrary(reader, pushed = mapOf("slow" to slowJson), clockSkin = "sprig")
         assertEquals("sprig", fast.manifest("slow").name)
         assertEquals("mochi", fast.manifest("mochi").name)
-        assertEquals(60, fast.manifest("clawd").tickMs)
+        assertEquals(60, fast.manifest("peep").tickMs)
 
         // The default runs at 100 ms: the 60 ms skins don't join, it does.
         val slowRow = SkinLibrary(reader, pushed = mapOf("slow" to slowJson), clockSkin = "slow")
@@ -422,28 +411,30 @@ class SkinTest {
     }
 
     @Test
-    fun unknownOrInvalidSkinFallsBackToClawd() {
+    fun unknownOrInvalidSkinFallsBackToSprig() {
         val broken = builtin().let { it.copy(states = it.states - "waiting") }
         val library = SkinLibrary(
             assetReader = { path -> path.takeIf { it.startsWith("skins/") }?.let { runCatching { bundledSkinJson(it.split('/')[1]) }.getOrNull() } },
             pushed = mapOf("broken" to json.encodeToString(SkinManifest.serializer(), broken), "garbage" to "{"),
         )
-        assertEquals("clawd", library.manifest("nope").name)
-        assertEquals("clawd", library.manifest("broken").name)
-        assertEquals("clawd", library.manifest("garbage").name)
-        assertEquals("clawd", library.manifest("../clawd").name)
-        assertEquals("sprig", library.manifest("sprig").name)
+        assertEquals("sprig", library.manifest("nope").name)
+        assertEquals("sprig", library.manifest("broken").name)
+        assertEquals("sprig", library.manifest("garbage").name)
+        assertEquals("sprig", library.manifest("../mochi").name)
+        assertEquals("mochi", library.manifest("mochi").name)
     }
 
     @Test
     fun bundledSkinsAllValidate() {
-        val names = listOf("bristle", "clawd", "mochi", "peep", "sprig")
-        val dirs = File("../../Skins").listFiles { f -> f.isDirectory }!!.map { it.name }.sorted()
-        assertEquals(names, dirs)
+        // Every bundled skin, whichever ones the repo has: the four the phone has always offered at least.
+        val dirs = File("../../Skins").listFiles { f -> f.isDirectory && !f.name.startsWith(".") }!!.map { it.name }.sorted()
+        assertTrue(dirs.containsAll(listOf("sprig", "mochi", "peep", "bristle")), "$dirs")
+        assertFalse("clawd" in dirs)
         for (name in dirs) {
             val m = SkinLoader.decode(bundledSkinJson(name))
             assertNotNull(m, name)
             assertEquals(name, m.name)
+            assertNotNull(m.title, "$name has no title")
         }
     }
 }

@@ -383,15 +383,15 @@ class MotionInteractionTest {
     @Test
     fun ticksUntilChangeWhileFollowing() {
         val a = makeActor()
-        a.enterState(PetState.error, quiet = true) // slump: a 40-tick key, a still marker
+        a.enterState(PetState.error, quiet = true) // slump: a 36-tick key, a still marker
         a.startFollow(lookLeft = true)
-        assertEquals(40, a.ticksUntilChange()) // caught up and held: nothing moves
+        assertEquals(36, a.ticksUntilChange()) // caught up and held: nothing moves
         a.followShift(dx = 2.0, dy = 0.0)
         assertEquals(1, a.ticksUntilChange())
         a.step()
         a.step()
         assertEquals(0, a.snapshot().offsetX)
-        assertEquals(38, a.ticksUntilChange())
+        assertEquals(34, a.ticksUntilChange())
         a.releaseFollow()
         assertEquals(1, a.ticksUntilChange()) // ends (and blinks) on the next tick
     }
@@ -574,7 +574,7 @@ class MotionInteractionTest {
         assertEquals("shut", a.snapshot().pose) // no gaze over a one-shot
         a.cancelOnce()
         a.setMode("pet")
-        assertEquals("happy", a.snapshot().pose) // nor over a mode
+        assertEquals("happy_l", a.snapshot().pose) // nor over a mode
         a.setMode(null)
         a.setGaze(null)
         assertEquals("base", a.snapshot().pose)
@@ -582,7 +582,7 @@ class MotionInteractionTest {
         val d = makeActor()
         d.enterState(PetState.done, quiet = true)
         d.setGaze(GazeZone.right)
-        assertEquals("look_r", d.snapshot().pose)
+        assertEquals("bloom_r", d.snapshot().pose) // done's own gaze poses keep the flower open
 
         val r = makeActor(reduceMotion = true)
         r.enterState(PetState.idle, quiet = true)
@@ -747,8 +747,8 @@ class MotionInteractionTest {
         a.fidgetIn = 10 // a fidget is due
         a.holdUnderground(depth = 12)
         assertTrue(!a.following && a.followOffset.x == 0 && a.lift == 0)
-        a.play("vanish") // the sink itself plays over the hold
-        assertEquals(-2, a.snapshot().bodyY)
+        a.play("burrow") // the sink itself plays over the hold
+        assertEquals(0, a.snapshot().bodyY)
         stepUntilLoop(a)
         assertEquals(-12, a.snapshot().bodyY)
         assertEquals("base", a.snapshot().pose)
@@ -779,11 +779,11 @@ class MotionInteractionTest {
         a.enterState(PetState.idle, quiet = true)
         a.holdUnderground(depth = 12)
         a.enterState(PetState.waiting)
-        a.play("appear") // dropping back in, over the hold
-        assertEquals(16, a.snapshot().bodyY)
+        a.play("pop_up") // popping back up, over the hold
+        assertEquals(-12, a.snapshot().bodyY)
         a.releaseUnderground()
         assertNull(a.underground)
-        assertEquals("appear", a.currentClipName) // the drop-in carries on...
+        assertEquals("pop_up", a.currentClipName) // the pop-up carries on...
         stepUntilLoop(a)
         assertEquals("ask", a.currentClipName) // ...into the state's loop
         assertEquals(0, a.snapshot().bodyY)

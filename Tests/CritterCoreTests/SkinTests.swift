@@ -5,11 +5,9 @@ import Testing
 
 // MARK: - Manifest and decoding
 
-@Test func bundledManifestIsTheDesignCopy() throws {
+@Test func builtinIsTheBundledSprig() throws {
     let root = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appending(path: "../..").standardized
-    let bundled = try Data(contentsOf: root.appending(path: "Skins/clawd/manifest.json"))
-    let design = try Data(contentsOf: root.appending(path: "docs/superpowers/specs/2026-10-17-clawd-manifest-v2.json"))
-    #expect(bundled == design)
+    let bundled = try Data(contentsOf: root.appending(path: "Skins/sprig/manifest.json"))
     #expect(String(decoding: bundled, as: UTF8.self) == SkinLoader.builtinJSON)
 }
 
@@ -28,10 +26,11 @@ import Testing
 }
 
 @Test func titleIsOptional() throws {
-    #expect(SkinLoader.builtin().title == nil)
-    let titled = SkinLoader.builtinJSON.replacingOccurrences(of: #""name": "clawd","#, with: #""name": "clawd", "title": "小芽 Sprig","#)
-    let m = try JSONDecoder().decode(SkinManifest.self, from: Data(titled.utf8))
-    #expect(m.title == "小芽 Sprig")
+    #expect(SkinLoader.builtin().title == "小芽 Sprig")
+    let untitled = SkinLoader.builtinJSON.replacingOccurrences(of: #""title": "小芽 Sprig","#, with: "")
+    #expect(untitled != SkinLoader.builtinJSON)
+    let m = try JSONDecoder().decode(SkinManifest.self, from: Data(untitled.utf8))
+    #expect(m.title == nil)
     #expect(SkinValidator.problems(m).isEmpty)
 }
 
@@ -72,17 +71,6 @@ import Testing
 
 // MARK: - Rasterization
 
-@Test func basePoseIsTheApprovedGridDoubled() {
-    let old = ["...############...", "...##o######o##...", ".################.", "...############...", "....#.#....#.#...."]
-    let g = SkinRenderer.grid(pose: "base", in: SkinLoader.builtin())!
-    for y in 0..<10 {
-        for x in 0..<18 {
-            let want = Array(old[y / 2])[x]
-            #expect(g.character(atX: x, y: y) == (want == "." ? nil : want))
-        }
-    }
-}
-
 @Test func heldPoseHangsBelowGround() {   // dangling legs reach row 10
     let g = SkinRenderer.grid(pose: "held_a", in: SkinLoader.builtin())!
     #expect(g.minY + g.height == 11)
@@ -90,7 +78,7 @@ import Testing
 
 @Test func laterPartsCoverEarlierOnes() {
     let g = SkinRenderer.grid(pose: "base", in: SkinLoader.builtin())!
-    #expect(g.character(atX: 5, y: 2) == "o")   // eyes over body
+    #expect(g.character(atX: 6, y: 4) == "o")   // eyes over body
 }
 
 @Test func portraitIsTheBasePoseOrElseLookCenter() {
@@ -210,8 +198,8 @@ private func mutated(_ change: (inout SkinManifest) -> Void) -> [String] {
         ("particle vy", { $0.effects["dust"]!.particles![0].vy = Span(1e300) }),
         ("particle ay", { $0.effects["dust"]!.particles![0].ay = .nan }),
         ("particle sway", { $0.effects["dust"]!.particles![0].sway = 1e9 }),
-        ("accessory spinner box", { $0.accessories["spinner"]!.box = Int.max }),
-        ("accessory spinner periodMs", { $0.accessories["spinner"]!.periodMs = 0 }),
+        ("accessory sun box", { $0.accessories["sun"]!.box = Int.max }),
+        ("accessory sun periodMs", { $0.accessories["sun"]!.periodMs = 0 }),
         ("accessory q bobEvery", { $0.accessories["q"]!.bobEvery = Int.max }),
         ("accessory check twinkleEvery", { $0.accessories["check"]!.twinkleEvery = -1 }),
         ("fidget.every", { $0.states["idle"]!.fidget!.every = [1, Int.max] }),
@@ -261,19 +249,19 @@ private func mutated(_ change: (inout SkinManifest) -> Void) -> [String] {
     let dir = FileManager.default.temporaryDirectory.appendingPathComponent("critter-skin-tests-\(UUID().uuidString)")
     let firstDir = dir.appendingPathComponent("first")
     let secondDir = dir.appendingPathComponent("second")
-    try FileManager.default.createDirectory(at: firstDir.appendingPathComponent("clawd"), withIntermediateDirectories: true)
-    try FileManager.default.createDirectory(at: secondDir.appendingPathComponent("clawd"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: firstDir.appendingPathComponent("custom"), withIntermediateDirectories: true)
+    try FileManager.default.createDirectory(at: secondDir.appendingPathComponent("custom"), withIntermediateDirectories: true)
 
     // The first search dir has an invalid skin, so the loader should fall through to the
     // second, valid one, rather than giving up and returning the builtin.
     var invalid = SkinLoader.builtin()
     invalid.states.removeValue(forKey: "waiting")
-    try JSONEncoder().encode(invalid).write(to: firstDir.appendingPathComponent("clawd/manifest.json"))
+    try JSONEncoder().encode(invalid).write(to: firstDir.appendingPathComponent("custom/manifest.json"))
 
     var valid = SkinLoader.builtin()
     valid.name = "second-wins"
-    try JSONEncoder().encode(valid).write(to: secondDir.appendingPathComponent("clawd/manifest.json"))
+    try JSONEncoder().encode(valid).write(to: secondDir.appendingPathComponent("custom/manifest.json"))
 
-    let loaded = SkinLoader.load(name: "clawd", searchDirs: [firstDir, secondDir])
+    let loaded = SkinLoader.load(name: "custom", searchDirs: [firstDir, secondDir])
     #expect(loaded.name == "second-wins")
 }

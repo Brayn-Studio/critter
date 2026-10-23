@@ -14,7 +14,7 @@
       "branch": "main",
       "model": "Opus 5.5",
       "context": { "usedPercent": 42.5, "windowSize": 1000000, "estimated": false },
-      "skin": "clawd",
+      "skin": "sprig",
       "eventTime": 1760000000000,
       "startedAt": 1759990000000,
       "tracked": true
@@ -37,5 +37,5 @@
       "expiresAt": 1760000600000
     }
   ],
-  "prefs": { "skin": "clawd", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
+  "prefs": { "skin": "sprig", "randomSkins": false, "idleDim": 0.6, "mergeThreshold": 5, "soundTheme": "pixel" }
 }

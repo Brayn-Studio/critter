@@ -206,11 +206,11 @@ select { font: inherit; font-size: 13px; color: var(--ink); background: var(--su
     <div class="intro">
       <p class="eyebrow">Critter · Sprig &amp; friends · motion library</p>
       <h1><span class="px" id="skinTitle">Sprig</span> 动作库</h1>
-      <p class="lede">Critter 的四个可选形象：小芽、团子、啾啾、刺球。它们共用同一套动作——静息、工作、提问、完成、出错、各种交互，以及展开与合并；每格 60 毫秒、整像素跳动、不做补间，身体会压扁、拉长。各自不同的是长相，和头顶那样会表达情绪的东西。</p>
+      <p class="lede">Critter 的七个可选形象：小芽、团子、啾啾、刺球、六六、噗噗、菇菇。它们共用同一套动作——静息、工作、提问、完成、出错、各种交互，以及展开与合并；每格 60 毫秒、整像素跳动、不做补间，身体会压扁、拉长。各自不同的是长相，和头顶那样会表达情绪的东西。</p>
       <div class="skinpick" id="skinPick" role="group" aria-label="选择形象"></div>
       <p class="lede" id="skinBlurb"></p>
       <div class="legend">
-        <span><b class="src sig">招牌</b>围绕头顶（叶子、耳朵、呆毛、刺）、开花、压扁拉长设计的动作</span>
+        <span><b class="src sig">招牌</b>围绕头顶（叶子、耳朵、呆毛、刺、鳃、水柱、蘑菇帽）、开花、压扁拉长设计的动作</span>
         <span><b class="src common">通用</b>桌宠常见的动作，按 Sprig 的手感重新画</span>
       </div>
     </div>
@@ -274,8 +274,8 @@ select { font: inherit; font-size: 13px; color: var(--ink); background: var(--su
       <div class="note">
         <h3>形象设定</h3>
         <ul>
-          <li><b>一家四口：</b>小芽（豆芽）、团子（猫）、啾啾（小鸡）、刺球（刺猬）。都是圆滚滚的身体、同一张脸的位置、同样的小短手和脚，所以动作编排只写一份。</li>
-          <li><b>头顶是第二张脸：</b>叶子、耳朵、呆毛、刺各自表达同一组情绪：竖起来 = 有事找你，趴下去 = 出错，收起来 = 睡着，抖一抖或转起来 = 在想，做完了长出花或苹果。</li>
+          <li><b>一家七口：</b>小芽（豆芽）、团子（猫）、啾啾（小鸡）、刺球（刺猬）、六六（六角恐龙）、噗噗（小鲸鱼）、菇菇（蘑菇精灵）。都是圆滚滚的身体、同一张脸的位置、同样的小短手和脚，所以动作编排只写一份。</li>
+          <li><b>头顶是第二张脸：</b>叶子、耳朵、呆毛、刺、鳃、水柱、蘑菇帽各自表达同一组情绪：竖起来 = 有事找你，趴下去 = 出错，收起来 = 睡着，抖一抖或转起来 = 在想，做完了长出花或苹果。</li>
           <li><b>轮廓各不相同：</b>豆子、猫耳、呆毛、锯齿刺团，缩到菜单栏那么小也认得出来。</li>
           <li><b>颜色：</b>身体淡紫、蓝灰、鹅黄、棕配奶油；状态色（橙 ?、绿 ✓、红 !）仍只给头顶标记用。</li>
         </ul>
@@ -293,8 +293,8 @@ select { font: inherit; font-size: 13px; color: var(--ink); background: var(--su
       <div class="note">
         <h3>怎么落到 App 里</h3>
         <ul>
-          <li><b>每个形象一份清单：</b>这页的数据块就是 <code>Skins/sprig</code>、<code>mochi</code>、<code>peep</code>、<code>bristle</code> 四份 <code>manifest.json</code>（schema 2），由 <code>scripts/dev/make-skins-from-preview.js</code> 从本页生成；换形象不用改引擎。</li>
-          <li><b>在设置里挑：</b>App 的设置窗口列出所有形象，默认仍是 Clawd；选中后立即换上，菜单栏图标也跟着换。</li>
+          <li><b>每个形象一份清单：</b>这页的数据块就是 <code>Skins/sprig</code>、<code>mochi</code>、<code>peep</code>、<code>bristle</code>、<code>frill</code>、<code>spout</code>、<code>bonnet</code> 七份 <code>manifest.json</code>（schema 2），由 <code>scripts/dev/make-skins-from-preview.js</code> 从本页生成；换形象不用改引擎。</li>
+          <li><b>在设置里挑：</b>App 的设置窗口列出所有形象，默认是小芽；选中后立即换上，菜单栏图标也跟着换。</li>
           <li><b>引擎只多认一个可选字段：</b>每个状态可以带自己的一组目光姿势 <code>gaze</code>。“做完了”用它让花在目光跟随时也一直开着；没写的状态沿用 <code>interactions</code> 里的那组。</li>
           <li><b>指示符：</b>太阳是 5 帧、放在 7 行高的框里垂直居中（<code>box: 7</code>），按 2 秒余弦来回。</li>
         </ul>
@@ -310,7 +310,7 @@ const TICK = 60;
 const REDUCED = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 /* ======================= skin data: SKIN BEGIN ======================= */
-// Sprig and friends: four skins that share one set of poses, clips and states and differ in their
+// Sprig and friends: seven skins that share one set of poses, clips and states and differ in their
 // bodies, the thing on top of their heads, their colours and what they shed. Each entry of SKINS is
 // exactly what goes into Skins/<name>/manifest.json (schema 2); scripts/dev/make-skins-from-preview.js
 // evaluates this block and writes them.
@@ -352,7 +352,7 @@ const SKINS = (() => {
     eyes_ur: { at: [6, 3], rows: ['wo....wo', 'oo....oo'] },
     eyes_half: { at: [5, 5], rows: ['oo....oo'] },
     eyes_shut: { at: [4, 5], rows: ['ooo....ooo'] },
-    eyes_happy: { at: [4, 4], rows: ['.oo....oo.', 'o..o..o..o'] },
+    eyes_happy: { at: [5, 4], rows: ['wo....wo', 'oo....oo'] },
     eyes_squint: { at: [5, 3], rows: ['o......o', '.o....o.', 'o......o'] },
     eyes_wide: { at: [5, 3], rows: ['wo....wo', 'oo....oo', 'oo....oo'] },
     eyes_wink: { at: [5, 4], rows: ['wo....oo.', 'oo...o..o'] },
@@ -363,8 +363,8 @@ const SKINS = (() => {
     blush: { at: [4, 6], rows: ['pp......pp'] },
     mouth_o: { at: [8, 6], rows: ['mm', 'mm'] },
     mouth_dot: { at: [8, 6], rows: ['mm'] },
-    mouth_smile: { at: [8, 6], rows: ['mm'] },
-    mouth_open: { at: [8, 6], rows: ['mm', 'pp'] },
+    mouth_smile: { at: [7, 6], rows: ['m..m', '.mm.'] },
+    mouth_open: { at: [7, 6], rows: ['mmmm', '.mm.'] },
     mouth_frown: { at: [7, 6], rows: ['.mm.', 'm..m'] },
 
     feet: { at: [4, 9], rows: ['bbb....bbb'] },
@@ -799,35 +799,132 @@ const SKINS = (() => {
     confetti: ['#FF8FB8', '#FFD24A', '#6BCB5F', '#FF8A3D', '#FFFFFF', '#7FB7FF'], seeds: ['#F2B33D', '#C98F3E', '#FFE08A'],
   };
 
-  // ---------- Bristle: a hedgehog, a cream face under a brown ball of quills ----------
+  // ---------- Bristle: a hedgehog, a ball of brown quills with cream tips round a little cream face ----------
+  // the quills wrap the whole body with a zigzag of cream tips at the edge; the face is a small
+  // shield that narrows into a pale snout with the dark nose, which the smile curls under
   const bristleBody = { at: [1, 0], rows: [
-    '...SSTSSTSSTS...',
-    '..STSSTSSTSSTS..',
-    '.TSSTSSTSSTSSTS.',
-    'TSSTbBBBBBBbTSST',
-    '.SSBBBBBBBBBBSS.',
-    'TSSBBBBNNBBBBSST',
-    '.SSBBBBBBBBBBSS.',
-    '..TSBBBBBBBBST..',
-    '...SbbbbbbbbS...'] };
-  const quillsLeft = { at: [3, -2], rows: ['T.T.TT.T.T.', '.SSTSSSSTSS'] };
+    '..TSSSSSSSSSST..',
+    '.TSSSSSSSSSSSST.',
+    'TSSSSSBBBBSSSSST',
+    '.TSSBBBBBBBBSST.',
+    'TSSBBBBBBBBBBSST',
+    '.TSBBBBBBBBBBST.',
+    'TSSSBBWNNWBBSSST',
+    '.TSSSSWWWWSSSST.',
+    '..TSSSbbbbSSST..'] };
+  const quillTips = 'T.T.T..T.T.T', quillBase = 'STSTSSSSTSTS';
   const bristle = {
-    palette: { ...COMMON, B: '#F4DFC2', b: '#D9B98F', h: '#B48A68', S: '#94704F', T: '#6E5039', N: '#3A2A22', G: '#94704F', g: '#6E5039', A: '#E5484D', L: '#6BCB5F' },
+    palette: { ...COMMON, B: '#F3DFC2', b: '#D9C2A3', W: '#FFF6EA', S: '#6F5546', T: '#E2C9A6', N: '#2A1E19', m: '#9A6A55', G: '#6F5546', g: '#E2C9A6', A: '#E5484D', a: '#FF8A80', L: '#6BCB5F' },
     bodies: { body: bristleBody, body_squash: squashOf(bristleBody), body_tall: tallOf(bristleBody) },
-    top: { top: { at: [4, -2], rows: ['T.T.TT.T.T', 'SSTSSSSTSS'] }, up: { at: [4, -3], rows: ['T...TT...T', 'S.S.SS.S.S', 'SSTSSSSTSS'] },
-      droop: { at: [3, -1], rows: ['TSSSSSSSSSST'] }, flat: { at: [4, 0], rows: ['SSSSSSSSSS'] }, swayL: quillsLeft, swayR: mirror(quillsLeft),
-      edge: { at: [4, -2], rows: ['.T.T..T.T.', 'SSTSSSSTSS'] }, bud: { at: [5, -1], rows: ['SSSSSSSS'] },
+    top: { top: { at: [3, -2], rows: [quillTips, quillBase] },
+      up: { at: [3, -3], rows: ['T.T..TT..T.T', 'S.ST.SS.TS.S', 'STSSSSSSSSTS'] },
+      droop: { at: [2, -1], rows: ['TSSSSSSSSSSSST'] }, flat: { at: [3, 0], rows: ['TSSSSSSSSSST'] },
+      swayL: merge({ at: [2, -2], rows: [quillTips] }, { at: [3, -1], rows: [quillBase] }),
+      swayR: merge({ at: [4, -2], rows: [quillTips] }, { at: [3, -1], rows: [quillBase] }),
+      // thinking: the tips twitch to the gaps between them
+      edge: { at: [3, -2], rows: ['.T.T.TT.T.T.', quillBase] }, bud: { at: [4, -1], rows: ['SSSSSSSSSS'] },
       // done: an apple stuck on the quills
-      bloomBase: { at: [4, -2], rows: ['T.T....T.T', 'SSTSSSSTSS'] }, flower: { at: [7, -2], rows: ['.AAL', 'AAAA'] } },
+      bloomBase: { at: [3, -2], rows: ['T.T......T.T', 'STST....TSTS'] }, flower: { at: [7, -3], rows: ['..L.', '.aAA', 'AAAA'] } },
+    // the nose sits inside the smile, so the blush moves in a cell and the frown keeps the nose
+    parts: { blush: { at: [5, 6], rows: ['p......p'] }, mouth_frown: { at: [7, 6], rows: ['.NN.', 'm..m'] } },
     shedGlyph: ['#', '#'], shed: '#6E5039', treat: { glyph: 'seed', color: '#E5484D' },
     confetti: ['#FF8FB8', '#FFD24A', '#6BCB5F', '#E5484D', '#FFFFFF', '#F2994A'], seeds: ['#E5484D', '#6BCB5F', '#F2994A'],
   };
 
-  return { sprig: make('sprig', '小芽 Sprig', sprig), mochi: make('mochi', '团子 Mochi', mochi), peep: make('peep', '啾啾 Peep', peep), bristle: make('bristle', '刺球 Bristle', bristle) };
+  // ---------- Frill: a round pink axolotl with three feathery gills fanning out on each side of its head ----------
+  const frillBody = { at: [2, 0], rows: [
+    '..BBBBBBBBBB..',
+    '.BhhBBBBBBBBB.',
+    'BhBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    '.bBBBBBBBBBBb.',
+    '..bbbbbbbbbb..'] };
+  // the left gills, three fronds (straight up, slanting, sideways) with paler tips and darker roots;
+  // the right ones are their mirror image. Raised, they fan up above the head, clear of the cells
+  // a raised hand uses (column 0 on row 0, column 1 on rows 1 and 2, and their neighbours).
+  const gill = { at: [0, -2], rows: ['F..F', '.G.G', '..Gg', 'FGg.'] };
+  const gillUp = { at: [1, -3], rows: ['F.F..', '.G.G.', '..GGg'] };
+  const gillDown = { at: [0, 0], rows: ['.GGg', 'F.Gg', '.G..', 'F...'] };
+  const frill = {
+    palette: { ...COMMON, B: '#FFC9D9', b: '#F0A2BC', h: '#FFE8F0', p: '#FF8FB0', m: '#7A3550', G: '#FF6F98', g: '#E0507C', F: '#FFA6C0', f: '#FFFFFF', y: '#FFD24A' },
+    bodies: { body: frillBody, body_squash: squashOf(frillBody), body_tall: tallOf(frillBody) },
+    top: { top: both(gill), up: both(gillUp), droop: both(gillDown),
+      flat: both({ at: [0, -1], rows: ['F...', '.GGg', 'F...'] }), swayL: shift(both(gillUp), -1, 0), swayR: shift(both(gillUp), 1, 0),
+      edge: merge(gillUp, mirror(gill)), bud: both({ at: [2, -1], rows: ['.F.', 'F.g'] }),
+      // done: the gills fan up and a little daisy opens between them
+      bloomBase: both(gillUp), flower: { at: [7, -2], rows: ['.ff.', 'fyyf'] } },
+    shedGlyph: ['.#.', '#.#', '.#.'], shed: '#BFE6FF', treat: { glyph: 'shed', color: '#BFE6FF' },
+    confetti: ['#FF8FB8', '#FFD24A', '#FFFFFF', '#BFE6FF', '#FF6F98', '#FFFFFF'], seeds: ['#BFE6FF', '#FFFFFF', '#FFD24A'],
+  };
+
+  // ---------- Spout: a round sky-blue whale with a pale belly and a little fountain on top ----------
+  const spoutBody = { at: [2, 0], rows: [
+    '...BBBBBBBB...',
+    '.BBhhBBBBBBBB.',
+    '.BhBBBBBBBBBB.',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    '.bBBWWWWWWBBb.',
+    '..bbbWWWWbbb..'] };
+  const splashLeft = { at: [6, -2], rows: ['G..G.', '..gg.'] };
+  const spout = {
+    palette: { ...COMMON, B: '#86C5F2', b: '#5E9FD6', h: '#CDEBFF', W: '#C4E6FB', m: '#2E4A7A', G: '#D9F3FF', g: '#9ED8F7', f: '#FF8FB8', y: '#FFD24A' },
+    bodies: { body: spoutBody, body_squash: squashOf(spoutBody), body_tall: tallOf(spoutBody) },
+    top: { top: { at: [7, -2], rows: ['G..G', '.gg.'] }, up: { at: [6, -3], rows: ['GG..GG', '..GG..', '..gg..'] },
+      droop: { at: [6, -1], rows: ['.GGGG.', 'G....G', 'G....G'] }, flat: { at: [6, 0], rows: ['GGggGG'] },
+      swayL: splashLeft, swayR: mirror(splashLeft), edge: { at: [7, -2], rows: ['.GG.', '.gg.'] }, bud: { at: [8, -1], rows: ['gg'] },
+      // done: the fountain holds up a flower
+      bloomBase: { at: [6, -1], rows: ['G....G'] }, flower: { at: [7, -2], rows: ['.ff.', 'fyyf'] } },
+    shedGlyph: ['.#.', '###', '.#.'], shed: '#9ED8F7', treat: { glyph: 'drop', color: '#9ED8F7' },
+    confetti: ['#FF8FB8', '#FFD24A', '#D9F3FF', '#86C5F2', '#FFFFFF', '#6BCB5F'], seeds: ['#FF8FB8', '#FFD24A', '#D9F3FF'],
+  };
+
+  // ---------- Bonnet: an ivory sprite under a glowing mint mushroom cap ----------
+  const bonnetBody = { at: [2, 0], rows: [
+    '..BBBBBBBBBB..',
+    '.BBBBBBBBBBBB.',
+    '.BhBBBBBBBBBB.',
+    'BhBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    'BBBBBBBBBBBBBB',
+    '.bBBBBBBBBBBb.',
+    '..bbbbbbbbbb..'] };
+  const cap = { at: [2, -2], rows: [
+    '....GGGGGG....',
+    '..GGDGGGGGDG..',
+    '.GGGGGGDGGGGG.',
+    'gggggggggggggg'] };
+  const capSpun = { at: [2, -2], rows: [
+    '....GGGGGG....',
+    '..GGGGDGGGGG..',
+    '.GDGGGGGGGGDG.',
+    'gggggggggggggg'] };
+  const bonnet = {
+    palette: { ...COMMON, B: '#F6EBDD', b: '#D9C4AC', h: '#FFFFFF', G: '#5FCDB2', g: '#3E9F8E', D: '#E4FFF6', f: '#FF8FB8', y: '#FFD24A' },
+    bodies: { body: bonnetBody, body_squash: squashOf(bonnetBody), body_tall: tallOf(bonnetBody) },
+    top: { top: cap, up: shift(cap, 0, -1),
+      droop: { at: [2, -1], rows: ['...GGGGGGGG...', '.GGDGGGGGGDGG.', 'GGGGGGGGGGGGGG', 'gg..........gg'] },
+      flat: { at: [1, 0], rows: ['...GGGGGGGGGG...', '.GGDGGGGGGGGDGG.', 'gggggggggggggggg'] },
+      swayL: shift(cap, -1, 0), swayR: shift(cap, 1, 0), edge: capSpun,
+      bud: { at: [2, -1], rows: ['....GGGGGG....', '..GGGGGGGGGG..', '.GGGGGGGGGGGG.', 'gggggggggggggg'] },
+      // done: a flower opens on the cap
+      flower: { at: [7, -2], rows: ['.ff.', 'fyyf'] } },
+    shedGlyph: ['.#.', '###', '.#.'], shed: '#E4FFF6', treat: { glyph: 'shed', color: '#E4FFF6' },
+    confetti: ['#FF8FB8', '#FFD24A', '#5FCDB2', '#E4FFF6', '#FFFFFF', '#B39DF3'], seeds: ['#5FCDB2', '#FF8FB8', '#FFD24A'],
+  };
+
+  return { sprig: make('sprig', '小芽 Sprig', sprig), mochi: make('mochi', '团子 Mochi', mochi), peep: make('peep', '啾啾 Peep', peep), bristle: make('bristle', '刺球 Bristle', bristle),
+    frill: make('frill', '六六 Frill', frill), spout: make('spout', '噗噗 Spout', spout), bonnet: make('bonnet', '菇菇 Bonnet', bonnet) };
 })();
 /* ======================= SKIN END ======================= */
 
-// ---------- which of the four is shown (the page switches in place; #mochi etc. links to one) ----------
+// ---------- which skin is shown (the page switches in place; #mochi etc. links to one) ----------
 const SKIN_INFO = {
   sprig: { en: 'Sprig', zh: '小芽', blurb: '一颗淡紫色的圆豆子，头顶两片嫩叶。叶子竖起来 = 有事找你，蔫下去 = 出错，合拢 = 睡着，像螺旋桨一样转 = 在想，开花 = 做完了。出错时飘落一片小叶子。',
     swatch: { B: '身体', b: '阴影', h: '高光', G: '叶子', g: '茎', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
@@ -835,8 +932,14 @@ const SKIN_INFO = {
     swatch: { B: '身体', b: '阴影', h: '高光', g: '耳朵里', n: '鼻头', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
   peep: { en: 'Peep', zh: '啾啾', blurb: '一只黄色的圆小鸡，奶油色的肚皮、橙色的喙、头顶一撮呆毛。喙会跟着表情张开；呆毛竖起来 = 有事找你，倒下 = 出错，转起来 = 在想，做完了呆毛旁边开一朵小花。出错时掉一根羽毛。',
     swatch: { B: '身体', b: '阴影和脚', h: '高光', W: '肚皮', k: '喙', G: '呆毛', f: '花瓣', o: '眼睛', p: '腮红', m: '喙里' } },
-  bristle: { en: 'Bristle', zh: '刺球', blurb: '一只刺猬：棕色的刺团住奶油色的小脸和黑鼻头。刺竖起来 = 有事找你，趴下去 = 出错，缩成一团 = 睡着，刺尖抖一抖 = 在想，做完了刺上扎着一颗苹果。出错时掉一根刺。',
-    swatch: { S: '刺', T: '刺尖', B: '脸和手', b: '阴影和脚', N: '鼻头', A: '苹果', L: '苹果叶', o: '眼睛', p: '腮红', m: '嘴' } },
+  bristle: { en: 'Bristle', zh: '刺球', blurb: '一只圆滚滚的小刺猬：一身棕色的刺把它团成一个球，刺尖是奶白色的，围出一圈锯齿边；中间一张小小的奶白脸，往下收成浅色的小吻部，顶着黑鼻头，笑起来嘴弯在鼻子下面。刺竖起来 = 有事找你，趴下去 = 出错，缩成光溜溜的一团 = 睡着，刺尖抖一抖 = 在想，做完了刺上扎着一颗苹果。出错时掉一根刺。',
+    swatch: { S: '刺', T: '刺尖', B: '脸和手', W: '吻部', b: '下巴和脚', N: '鼻头', A: '苹果', L: '苹果叶', o: '眼睛', p: '腮红', m: '嘴' } },
+  frill: { en: 'Frill', zh: '六六', blurb: '一只圆圆的粉色六角恐龙，脑袋两侧各有三根羽毛鳃——一根朝上、一根斜着、一根朝外，像一把小扇子，鳃根深、鳃尖浅。鳃一起向上扬起 = 有事找你，垂到脸两边 = 出错，收成两个小点 = 睡着，一边的鳃扑扇 = 在想，做完了鳃扬起来、中间开一朵小雏菊。出错时吐出一个小泡泡。',
+    swatch: { B: '身体', b: '阴影和脚', h: '高光', G: '鳃', g: '鳃根', F: '鳃尖', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
+  spout: { en: 'Spout', zh: '噗噗', blurb: '一头天蓝色的圆滚滚小鲸鱼，浅蓝的肚皮，头顶一股小水柱。水柱喷高 = 有事找你，哗地塌下来淋一头 = 出错，只剩一个小水泡 = 睡着，咕嘟咕嘟一开一合 = 在想，做完了水柱顶起一朵小花。出错时溅出一颗水珠。',
+    swatch: { B: '身体', b: '阴影和脚', h: '高光', W: '肚皮', G: '水花', g: '水柱', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
+  bonnet: { en: 'Bonnet', zh: '菇菇', blurb: '一个奶白色的小蘑菇精灵，戴着一顶带荧光斑点的薄荷色蘑菇帽。帽子跳起来 = 有事找你，帽檐耷拉 = 出错，帽子拉低盖住额头 = 睡着，帽上斑点转圈 = 在想，做完了帽子上开一朵小花。出错时飘落一粒发光的孢子。',
+    swatch: { B: '身体', b: '阴影和脚', h: '高光', G: '帽子', g: '帽檐', D: '荧光斑点', f: '花瓣', y: '花心', o: '眼睛', p: '腮红', m: '嘴' } },
 };
 let SKIN = SKINS[location.hash.slice(1)] ? location.hash.slice(1) : 'sprig';
 let M = SKINS[SKIN];
@@ -2069,7 +2172,7 @@ function renderSkinChrome() {
   document.getElementById('skinBlurb').textContent = `${info.zh}：${info.blurb}`;
   const note = document.getElementById('skinNote');
   note.hidden = SKIN === 'sprig';
-  note.textContent = `下面卡片里的说明按小芽写。${info.zh}的动作完全相同，只是把叶子换成了它自己的${{ mochi: '耳朵', peep: '呆毛', bristle: '刺' }[SKIN] || '头顶'}，开花换成了${SKIN === 'bristle' ? '扎在刺上的苹果' : '一朵小花'}。`;
+  note.textContent = `下面卡片里的说明按小芽写。${info.zh}的动作完全相同，只是把叶子换成了它自己的${{ mochi: '耳朵', peep: '呆毛', bristle: '刺', frill: '鳃', spout: '水柱', bonnet: '蘑菇帽' }[SKIN] || '头顶'}，开花换成了${{ bristle: '扎在刺上的苹果', frill: '鳃间的一朵小雏菊', spout: '水柱顶起的一朵小花', bonnet: '帽子上开的一朵小花' }[SKIN] || '一朵小花'}。`;
   for (const { name, b } of pickButtons) b.setAttribute('aria-pressed', String(name === SKIN));
 }
 requestAnimationFrame(() => pickButtons.forEach(({ name, b }) => drawThumb(b.querySelector('canvas'), SKINS[name])));

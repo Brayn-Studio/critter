@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import CritterCore
 
-private let prefs = BridgePrefs(skin: "clawd", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")
+private let prefs = BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")
 
 private func session(_ id: String, cwd: String = "/Users/me/proj") -> PetSession {
     PetSession(id: id, name: id, source: .terminal, state: .idle, detail: nil, cwd: cwd, pid: nil,
@@ -52,7 +52,7 @@ private func request(_ id: String, session: String, createdAt: Int64) -> Pending
         skins: ["a": "robot"], branches: ["/Users/me/proj": "main"], prefs: prefs, home: "/Users/me"))
     #expect(body.sessions.map(\.id) == ["b", "a"])
     #expect(body.sessions[0].cwd == "~/proj")
-    #expect(body.sessions[0].skin == "clawd")
+    #expect(body.sessions[0].skin == "sprig")
     #expect(body.sessions[0].branch == "main")
     #expect(body.sessions[1].cwd == "/elsewhere")
     #expect(body.sessions[1].skin == "robot")

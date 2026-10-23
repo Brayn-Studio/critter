@@ -8,7 +8,7 @@ func sampleBody() -> SnapshotBody {
             id: "s1", name: "critter", source: .terminal, state: .waiting, detail: "Bash: swift test",
             activity: "bash", cwd: "~/CODESPACE/clawd", branch: "main", model: "Opus 5.5",
             context: BridgeContext(usedPercent: 42.5, windowSize: 1_000_000, estimated: false),
-            skin: "clawd", eventTime: 1_760_000_000_000, startedAt: 1_759_990_000_000, tracked: true
+            skin: "sprig", eventTime: 1_760_000_000_000, startedAt: 1_759_990_000_000, tracked: true
         )],
         limits: BridgeLimits(
             fiveHour: RateWindow(usedPercentage: 12.5, resetsAt: 1_760_003_600_000),
@@ -16,7 +16,7 @@ func sampleBody() -> SnapshotBody {
         pending: [BridgePending(
             requestId: "r1", sessionId: "s1", kind: .permission, toolName: "Bash", summary: "swift test",
             input: .object(["command": .string("swift test")]), createdAt: 1_760_000_000_000, expiresAt: 1_760_000_600_000)],
-        prefs: BridgePrefs(skin: "clawd", randomSkins: false, idleDim: 0.6, mergeThreshold: 5, soundTheme: "pixel")
+        prefs: BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 0.6, mergeThreshold: 5, soundTheme: "pixel")
     )
 }
 
@@ -28,7 +28,7 @@ func sampleBody() -> SnapshotBody {
         .answer(id: nil, requestId: "r", payload: AnswerPayload(decision: "allow")),
         .seen(id: "2", sessionId: "s"),
         .say(id: nil, sessionId: "s", text: "hi"),
-        .skin(id: "3", name: "clawd"),
+        .skin(id: "3", name: "sprig"),
     ]
     for m in messages { #expect(ClientMessage.decode(m.encode()) == m) }
 }
@@ -39,7 +39,7 @@ func sampleBody() -> SnapshotBody {
         .paired(deviceId: "d", token: "t", macName: "Mac"),
         .denied(reason: .protocolMismatch),
         .snapshot(seq: 3, sentAt: 5, body: sampleBody()),
-        .skin(id: "1", name: "clawd", manifest: .object(["a": .number(1)])),
+        .skin(id: "1", name: "sprig", manifest: .object(["a": .number(1)])),
         .result(id: nil, ok: false, reason: .resolved, message: "x"),
         .result(id: "1", ok: true, reason: nil, message: nil),
     ]

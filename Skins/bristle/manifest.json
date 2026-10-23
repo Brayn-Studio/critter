@@ -8,99 +8,100 @@
     "o": "#2A2140",
     "w": "#FFFFFF",
     "p": "#F7A1C0",
-    "m": "#5B3A8E",
+    "m": "#9A6A55",
     "l": "#E4E7EB",
     "s": "#C9CED6",
     "d": "#7D848E",
     "r": "#C98F3E",
     "e": "#CFEFFF",
-    "B": "#F4DFC2",
-    "b": "#D9B98F",
-    "h": "#B48A68",
-    "S": "#94704F",
-    "T": "#6E5039",
-    "N": "#3A2A22",
-    "G": "#94704F",
-    "g": "#6E5039",
+    "B": "#F3DFC2",
+    "b": "#D9C2A3",
+    "W": "#FFF6EA",
+    "S": "#6F5546",
+    "T": "#E2C9A6",
+    "N": "#2A1E19",
+    "G": "#6F5546",
+    "g": "#E2C9A6",
     "A": "#E5484D",
+    "a": "#FF8A80",
     "L": "#6BCB5F"
   },
   "parts": {
     "body": {
       "at": [1, 0],
-      "rows": ["...SSTSSTSSTS...", "..STSSTSSTSSTS..", ".TSSTSSTSSTSSTS.", "TSSTbBBBBBBbTSST", ".SSBBBBBBBBBBSS.", "TSSBBBBNNBBBBSST", ".SSBBBBBBBBBBSS.", "..TSBBBBBBBBST..", "...SbbbbbbbbS..."]
+      "rows": ["..TSSSSSSSSSST..", ".TSSSSSSSSSSSST.", "TSSSSSBBBBSSSSST", ".TSSBBBBBBBBSST.", "TSSBBBBBBBBBBSST", ".TSBBBBBBBBBBST.", "TSSSBBWNNWBBSSST", ".TSSSSWWWWSSSST.", "..TSSSbbbbSSST.."]
     },
     "body_squash": {
       "at": [0, 1],
-      "rows": ["...SSSTSSTSSTSS...", "..STTSSTSSTSSTTS..", ".TSSSTSSTSSTSSSTS.", "TSSTTbBBBBBBbTTSST", "TSSBBBBBNNBBBBBSST", ".SSBBBBBBBBBBBBSS.", "..TSSBBBBBBBBSST..", "...SSbbbbbbbbSS..."]
+      "rows": ["..TSSSSSSSSSSSST..", ".TSSSSSSSSSSSSSST.", "TSSSSSSBBBBSSSSSST", ".TSSSBBBBBBBBSSST.", ".TSBBBBBBBBBBBBST.", "TSSSSBBWNNWBBSSSST", ".TSSSSSWWWWSSSSST.", "..TSSSSbbbbSSSST.."]
     },
     "body_tall": {
       "at": [2, -1],
-      "rows": ["...STSSTSST...", "..SSSTSSTSSS..", ".TSTSSTSSTSTS.", "TSSbBBBBBBbSST", "TSSbBBBBBBbSST", ".SSBBBBBBBBSS.", "TSSBBBNNBBBSST", ".SSBBBBBBBBSS.", "..TBBBBBBBBT..", "...bbbbbbbb..."]
+      "rows": ["..TSSSSSSSST..", ".TSSSSSSSSSST.", "TSSSSBBBBSSSST", ".TSBBBBBBBBST.", ".TSBBBBBBBBST.", "TSSBBBBBBBBSST", ".TSBBBBBBBBST.", "TSSBBWNNWBBSST", ".TSSSWWWWSSST.", "..TSSbbbbSST.."]
     },
     "top": {
-      "at": [4, -2],
-      "rows": ["T.T.TT.T.T", "SSTSSSSTSS"]
+      "at": [3, -2],
+      "rows": ["T.T.T..T.T.T", "STSTSSSSTSTS"]
     },
     "top_low": {
-      "at": [4, -1],
-      "rows": ["T.T.TT.T.T", "SSTSSSSTSS"]
+      "at": [3, -1],
+      "rows": ["T.T.T..T.T.T", "STSTSSSSTSTS"]
     },
     "top_up": {
-      "at": [4, -3],
-      "rows": ["T...TT...T", "S.S.SS.S.S", "SSTSSSSTSS"]
+      "at": [3, -3],
+      "rows": ["T.T..TT..T.T", "S.ST.SS.TS.S", "STSSSSSSSSTS"]
     },
     "top_up_tall": {
-      "at": [4, -4],
-      "rows": ["T...TT...T", "S.S.SS.S.S", "SSTSSSSTSS"]
+      "at": [3, -4],
+      "rows": ["T.T..TT..T.T", "S.ST.SS.TS.S", "STSSSSSSSSTS"]
     },
     "top_droop": {
-      "at": [3, -1],
-      "rows": ["TSSSSSSSSSST"]
+      "at": [2, -1],
+      "rows": ["TSSSSSSSSSSSST"]
     },
     "top_flat_low": {
+      "at": [3, 0],
+      "rows": ["TSSSSSSSSSST"]
+    },
+    "top_sway_l": {
+      "at": [2, -2],
+      "rows": ["T.T.T..T.T.T.", ".STSTSSSSTSTS"]
+    },
+    "top_sway_r": {
+      "at": [3, -2],
+      "rows": [".T.T.T..T.T.T", "STSTSSSSTSTS."]
+    },
+    "top_edge": {
+      "at": [3, -2],
+      "rows": [".T.T.TT.T.T.", "STSTSSSSTSTS"]
+    },
+    "top_bud": {
+      "at": [4, -1],
+      "rows": ["SSSSSSSSSS"]
+    },
+    "top_bud_low": {
       "at": [4, 0],
       "rows": ["SSSSSSSSSS"]
     },
-    "top_sway_l": {
-      "at": [3, -2],
-      "rows": ["T.T.TT.T.T.", ".SSTSSSSTSS"]
-    },
-    "top_sway_r": {
-      "at": [4, -2],
-      "rows": [".T.T.TT.T.T", "SSTSSSSTSS."]
-    },
-    "top_edge": {
-      "at": [4, -2],
-      "rows": [".T.T..T.T.", "SSTSSSSTSS"]
-    },
-    "top_bud": {
-      "at": [5, -1],
-      "rows": ["SSSSSSSS"]
-    },
-    "top_bud_low": {
-      "at": [5, 0],
-      "rows": ["SSSSSSSS"]
-    },
     "top_bloom": {
-      "at": [4, -2],
-      "rows": ["T.T.AALT.T", "SSTAAAATSS"]
+      "at": [3, -3],
+      "rows": ["......L.....", "T.T..aAA.T.T", "STSTAAAATSTS"]
     },
     "top_bloom_l": {
-      "at": [3, -2],
-      "rows": ["T.T.AALT.T.", ".SSAAAASTSS"]
+      "at": [2, -3],
+      "rows": ["......L......", "T.T.TaAA.T.T.", ".STSAAAASTSTS"]
     },
     "top_bloom_r": {
-      "at": [4, -2],
-      "rows": [".T.T.AALT.T", "SSTSAAAASS."]
+      "at": [3, -3],
+      "rows": [".......L.....", ".T.T.TaAA.T.T", "STSTSAAAASTS."]
     },
     "top_bloom_low": {
-      "at": [4, -1],
-      "rows": ["T.T.AALT.T", "SSTAAAATSS"]
+      "at": [3, -2],
+      "rows": ["......L.....", "T.T..aAA.T.T", "STSTAAAATSTS"]
     },
     "top_bloom_tall": {
-      "at": [4, -3],
-      "rows": ["T.T.AALT.T", "SSTAAAATSS"]
+      "at": [3, -4],
+      "rows": ["......L.....", "T.T..aAA.T.T", "STSTAAAATSTS"]
     },
     "eyes_open": {
       "at": [5, 4],
@@ -139,8 +140,8 @@
       "rows": ["ooo....ooo"]
     },
     "eyes_happy": {
-      "at": [4, 4],
-      "rows": [".oo....oo.", "o..o..o..o"]
+      "at": [5, 4],
+      "rows": ["wo....wo", "oo....oo"]
     },
     "eyes_squint": {
       "at": [5, 3],
@@ -167,8 +168,8 @@
       "rows": ["wo", "oo"]
     },
     "blush": {
-      "at": [4, 6],
-      "rows": ["pp......pp"]
+      "at": [5, 6],
+      "rows": ["p......p"]
     },
     "mouth_o": {
       "at": [8, 6],
@@ -179,16 +180,16 @@
       "rows": ["mm"]
     },
     "mouth_smile": {
-      "at": [8, 6],
-      "rows": ["mm"]
+      "at": [7, 6],
+      "rows": ["m..m", ".mm."]
     },
     "mouth_open": {
-      "at": [8, 6],
-      "rows": ["mm", "pp"]
+      "at": [7, 6],
+      "rows": ["mmmm", ".mm."]
     },
     "mouth_frown": {
       "at": [7, 6],
-      "rows": [".mm.", "m..m"]
+      "rows": [".NN.", "m..m"]
     },
     "feet": {
       "at": [4, 9],

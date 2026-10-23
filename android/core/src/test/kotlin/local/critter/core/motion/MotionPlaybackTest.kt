@@ -67,8 +67,9 @@ class MotionPlaybackTest {
         a.setLoop("idle")
         a.setMode("pet")
         var ok: Boolean? = null
-        a.play("notice") { ok = it } // 2 ticks
+        a.play("notice") { ok = it } // 3 ticks
         assertEquals("notice", a.currentClipName)
+        a.step()
         a.step()
         a.step()
         assertEquals(true, ok)
@@ -79,17 +80,17 @@ class MotionPlaybackTest {
     fun effectFiresAtKeyStart() {
         val a = makeActor()
         a.setLoop("idle")
-        a.play("jump") // key 0 fires "dust" (2 particles)
+        a.play("burrow") // key 0 fires "dust_small" (2 particles)
         assertEquals(2, a.particles.size)
-        a.step() // key 1 fires "tilde" (2 more)
-        assertEquals(4, a.particles.size)
+        a.step() // key 1 fires "dirt" (4 more)
+        assertEquals(6, a.particles.size)
     }
 
     @Test
     fun reduceMotionEmitsNoParticles() {
         val a = makeActor(reduceMotion = true)
         a.setLoop("idle")
-        a.play("jump")
+        a.play("burrow") // fires "dust_small" without reduced motion
         assertTrue(a.particles.isEmpty())
         a.emit("dust")
         assertTrue(a.particles.isEmpty())
@@ -155,7 +156,7 @@ class MotionPlaybackTest {
         a.lift = 2
         val s = a.snapshot()
         assertEquals(2, s.particles.size)
-        assertEquals(2 + 2 + 1, s.particles[0].x)
+        assertEquals(1 + 2 + 1, s.particles[0].x)
         assertEquals(9 - 2, s.particles[0].y)
         assertEquals("#B4BAC4", s.particles[0].color)
     }

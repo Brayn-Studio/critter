@@ -19,7 +19,7 @@ final class SettingsStore {
     static let idleDimStep = 0.05
     static let mergeThresholdRange: ClosedRange<Int> = 2...10
     /// The builtin skin's name (`SkinLoader.builtinJSON`).
-    static let defaultSkin = "clawd"
+    static let defaultSkin = "sprig"
 
     private enum Key {
         static let skin = "skin"
@@ -39,7 +39,7 @@ final class SettingsStore {
     }
 
     /// The skin the pet wears ("形象"): a skin directory name (`SkinChoice.name`), the
-    /// builtin "clawd" by default. One that can't be loaded shows the builtin.
+    /// builtin "sprig" by default. One that can't be loaded shows the builtin.
     var skin: String {
         didSet { save(skin, Key.skin, changed: skin != oldValue, .skin) }
     }

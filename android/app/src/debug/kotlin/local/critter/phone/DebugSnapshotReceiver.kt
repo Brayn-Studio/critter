@@ -39,7 +39,7 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
         val states = intent.getStringExtra("states")?.split(',')?.mapNotNull { name -> PetState.entries.firstOrNull { it.name == name.trim() } }
             ?.takeIf { it.isNotEmpty() }
             ?: listOf(PetState.waiting, PetState.running, PetState.done, PetState.idle, PetState.error)
-        val skins = listOf("clawd", "sprig", "mochi", "peep", "bristle")
+        val skins = listOf("sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet")
         val command = if (long) LONG_COMMAND else "npm test"
         val now = System.currentTimeMillis()
         val sessions = List(count) { i ->
@@ -82,7 +82,7 @@ class DebugSnapshotReceiver : BroadcastReceiver() {
                 )
             }
         }
-        val body = SnapshotBody(sessions, null, pending, BridgePrefs("clawd", false, 0.6, 5))
+        val body = SnapshotBody(sessions, null, pending, BridgePrefs("sprig", false, 0.6, 5))
         val repo = context.applicationContext.repository
         val hold = intent.getIntExtra("hold", 0)
         handler.removeCallbacksAndMessages(null)

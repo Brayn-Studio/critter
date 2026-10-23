@@ -32,6 +32,7 @@ import local.critter.core.overlay.Rect
 import local.critter.core.protocol.BridgeSession
 import local.critter.core.protocol.PetState
 import local.critter.core.protocol.SnapshotBody
+import local.critter.core.skin.SkinLibrary
 import local.critter.phone.bridge.BridgeRepository
 import local.critter.phone.critter.CritterTouchListener
 import local.critter.phone.critter.MotionPrefs
@@ -387,7 +388,7 @@ class OverlayController(private val context: Context, private val repo: BridgeRe
 
     private fun dim(): Double = settings.overlayIdleDim?.toDouble() ?: body?.prefs?.idleDim ?: 1.0
 
-    private fun skinName(): String = body?.prefs?.skin ?: "clawd"
+    private fun skinName(): String = body?.prefs?.skin ?: SkinLibrary.FALLBACK
 
     /** Builds the collapsed or expanded content from scratch (a size, an edge or the mode changed). */
     private fun rebuild() {

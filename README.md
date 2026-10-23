@@ -2,7 +2,7 @@
 
 Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex）。
 
-一只常驻在屏幕最上层的小家伙，默认形象是 Clawd（Claude Code 的吉祥物，见文末"品牌说明"），也可以在设置里换成另外四个原创形象：小芽、团子、啾啾、刺球。本机每个接入的 Claude Code 或 Codex 会话都对应一只小 Critter，支持终端、VS Code、Claude Desktop 和 Codex Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
+一只常驻在屏幕最上层的小家伙，默认形象是小芽，也可以在设置里换成团子、啾啾、刺球、六六、噗噗、菇菇等其他原创形象。本机每个接入的 Claude Code 或 Codex 会话都对应一只小 Critter，支持终端、VS Code、Claude Desktop 和 Codex Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
 
 这是一个原生 macOS 应用（Swift），没有任何第三方依赖。它只占大约 20 MB 内存，空闲时几乎不占 CPU。
 
@@ -11,9 +11,9 @@ Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex�
 | 状态 | 头顶 | 动作 | 气泡 |
 |---|---|---|---|
 | 空闲 | 无（睡着后飘出 z） | 变灰、慢慢呼吸，偶尔眨眼、张望、点脚；空闲满 2 分钟就睡着 | 无 |
-| 运行中 | 橙色、转动的星号 | 按正在用的工具换动作：敲笔记本、思考、读文件、跑命令、抛球 | 当前在做什么，例如 `Bash: npm test` |
+| 运行中 | 一颗一胀一缩的小太阳 | 按正在用的工具换动作：敲笔记本、思考、读文件、跑命令、抛种子 | 当前在做什么，例如 `Bash: npm test` |
 | 等你确认 | 橙色 `?`，右上角常驻一个橙色 `!` | 蹦一下、举手等你；等了 30 秒还没处理就着急地点脚 | 需要你确认的内容 |
-| 做完了 | 绿色 `✓`，旁边不时闪一下 | 欢呼撒彩纸，然后开心地待着 | 最后一条回复的第一句 |
+| 做完了 | 绿色 `✓`，旁边不时闪一下 | 欢呼开花、撒花瓣，然后开心地待着 | 最后一条回复的第一句 |
 | 出错 | 红色 `!` | 变灰，"哎呀"抖一下，然后沮丧地沉下去 | 错误信息 |
 
 每个动作的细节和各种交互见下面的"动画"。
@@ -39,23 +39,25 @@ Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex�
 
 | 形象 | 样子 | 头顶那样东西 |
 |---|---|---|
-| Clawd（默认） | Claude Code 的吉祥物 | — |
-| 小芽 Sprig | 淡紫色的圆豆子 | 两片嫩叶：有事时竖起、出错时蔫下、睡觉时合拢、思考时像螺旋桨一样转；做完了开一朵花 |
+| 小芽 Sprig（默认） | 淡紫色的圆豆子 | 两片嫩叶：有事时竖起、出错时蔫下、睡觉时合拢、思考时像螺旋桨一样转；做完了开一朵花 |
 | 团子 Mochi | 蓝灰色的圆猫 | 一对耳朵：竖起、压成飞机耳、收起、抖一只；做完了头上别一朵花 |
 | 啾啾 Peep | 黄色的圆小鸡 | 一撮呆毛，喙会跟着表情张开；做完了呆毛旁开一朵花 |
 | 刺球 Bristle | 刺猬 | 一排刺：竖起、趴下、缩起；做完了刺上扎一颗苹果 |
+| 六六 Frill | 粉色的六角恐龙 | 两侧三对羽毛鳃：张开、垂到脸边、收成一小撮、一边扑扇；做完了鳃中间开一朵小雏菊 |
+| 噗噗 Spout | 天蓝色的圆鲸鱼 | 一股小水柱：喷高、塌下来淋一头、睡着只剩一个水泡、咕嘟咕嘟；做完了水柱顶起一朵小花 |
+| 菇菇 Bonnet | 戴薄荷色蘑菇帽的小精灵 | 一顶带荧光斑点的蘑菇帽：跳起来、帽檐耷拉、拉低盖住额头、斑点转圈；做完了帽子上开一朵小花 |
 
-后四个是为本项目原创的形象，共用同一套动作：起跳前压扁、腾空时拉长；"运行中"头顶是一颗一胀一缩的小太阳；读文件时举放大镜、跑命令时原地小跑、派子任务时抛种子；新会话从地里钻出来，结束时钻回地里。每个动作都能在可交互的设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html` 里看到（用浏览器打开，顶部可以切换形象）。下面几节描述的是默认的 Clawd。
+所有形象都是为本项目原创的，共用同一套动作，只是头顶那样东西各不相同。每个动作都能在可交互的设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html` 里看到（用浏览器打开，顶部可以切换形象）。下面几节以默认的小芽为例。
 
 ### 状态 → 动作
 
 | 状态 | 进入时 | 持续 | 随机小动作 |
 |---|---|---|---|
-| 空闲 | — | 慢慢呼吸：身体下沉一格再回来 | 每 3.6–9.6 秒一次：眨眼、张望、点脚、横着碎步、伸懒腰、打喷嚏、原地跳……空闲满 2 分钟先打瞌睡，然后睡着，呼吸变慢、每次飘出一个 z |
-| 运行中 | 开工（笔记本是掏出来、一格格翻开） | 按 `activity` 换动作，见下表 | 偶尔眨眼 |
-| 等你确认 | 眼睛瞪圆、原地一弹，右上角蹦出橙色 `!`；这个 `!` 一直留到你处理为止 | 举手挥几下、看着你；等了 30 秒改成着急地点脚、挥手，`!` 也蹦得更勤 | — |
-| 做完了 | 欢呼：连跳两次，第一跳到顶时撒一把彩纸 | 开心眼加腮红，张望；`✓` 旁边隔一会儿闪一下 | 眨眼、张望 |
-| 出错 | 眯眼抖几下、冒一滴汗，然后沉下去 | 低头、身体沉一格，偶尔叹一口气 | — |
+| 空闲 | — | 慢慢呼吸：身体隔几秒软软地压扁一格再弹回来，叶子偶尔晃一晃 | 每 3.6–9.6 秒一次：眨眼、张望、点脚、蹦着散步、打哈欠、打喷嚏、抖叶子、晒太阳……空闲满 2 分钟先打盹，叶子合拢成一个小芽睡着，一呼一吸、每次飘出一个 z |
+| 运行中 | 开工（一压扁，掏出笔记本一格格翻开）；头顶一颗一胀一缩的小太阳 | 按 `activity` 换动作，见下表 | 偶尔眨眼 |
+| 等你确认 | 眼睛瞪圆、叶子竖起，一压扁弹起来，右上角蹦出橙色 `!`；这个 `!` 一直留到你处理为止 | 举手挥几下、竖着叶子看着你；等了 30 秒改成着急地点脚、挥手，`!` 也蹦得更勤 | — |
+| 做完了 | 开花：压扁蓄力跳起，到顶时芽里开出一朵花，撒出花瓣和叶子，落地再小跳一次 | 顶着花笑眯眯，张望；`✓` 旁边隔一会儿闪一下。你点开会话看过之后，花收回芽里 | 眨眼、张望、晃一晃 |
+| 出错 | 眼睛变成 × ×、左右抖几下、冒一滴汗，然后叶子蔫下来，飘落一片小叶子 | 低头、垂手、身体沉一格，偶尔叹一口气 | — |
 
 从"运行中"切到别的状态时，如果它正抱着笔记本，会先把笔记本合上收起来，再播新状态的进场。
 
@@ -65,26 +67,26 @@ hooks 在状态文件里多写一个可选字段 `activity`，表示会话正在
 
 | 事件 / 工具 | `activity` | 动作 |
 |---|---|---|
-| 提交提示词；工具调用结束（`PostToolUse`、`PostToolUseFailure`、`PermissionDenied`） | `think` | 思考：眼睛往上看、身体慢慢沉浮 |
+| 提交提示词；工具调用结束（`PostToolUse`、`PostToolUseFailure`、`PermissionDenied`） | `think` | 思考：望向右上方，两片叶子像螺旋桨一样转起来 |
 | Edit / MultiEdit / Write / NotebookEdit，以及其它工具（包括 `mcp__*`） | `laptop` | 抱着笔记本敲代码，敲一阵按一下回车 |
-| Read / Grep / Glob / LS / WebFetch / WebSearch | `read` | 读文件：眼睛从左到右一行行扫 |
-| Bash / BashOutput / KillShell | `bash` | 跑命令：左右挪小碎步，盯着命令跑完 |
-| Agent / Task | `juggle` | 派子任务：抛接三颗小球 |
+| Read / Grep / Glob / LS / WebFetch / WebSearch | `read` | 读文件：举起放大镜凑到眼前，边看边往旁边挪 |
+| Bash / BashOutput / KillShell | `bash` | 跑命令：原地小跑，脚后扬起小灰尘，跑久了冒一滴汗 |
+| Agent / Task | `juggle` | 派子任务：抛接三颗种子 |
 
 没有这个字段时按 `laptop`。换动作有防抖：新的 `activity` 要持续 1.2 秒、当前动作至少放了 2.4 秒才换，工具一个接一个快速调用时不会来回闪。
 
 ### 交互
 
 - **目光**：指针在宠物附近（约 170 pt 内）时，醒着的空闲 Critter 和做完了的 Critter 眼睛跟着指针往左、右、上、下看；忙着的不分心。
-- **注意到你**：指针移到某只身上，它抬手往上一顶；睡着的会被吵醒。
+- **注意到你**：指针移到某只身上，它叶子一竖、往上一顶；睡着的会被吵醒。
 - **来回蹭**：在同一只身上左右来回晃（1 秒内换向 3 次以上），它会眯眼脸红、冒小爱心；停手 0.7 秒后结束。
 - **按下 / 点击**：按下时它眯眼蹲下、扬起灰尘；松开时如果没拖动，它往左看一眼，同时执行原来的点击（跳回会话；点那一堆则展开）。
 - **拎起来**：按住拖动超过 3 pt，被按的那只被拎高 3 格、两脚乱蹬，身体比指针慢半拍，往拖动的反方向甩。合并成一堆时只有最前面那只被拎起，后面那一堆整体跟着窗口走。
 - **其余的跟着走**：没被抓住的几只先留在原地，再迈小碎步追上来（落后超过 6 格改成小跑，最多落后 12 格；往上拖时跳着跟上，追平那一格落地扬尘），气泡和标签跟着各自的 Critter；追上后转头看着被拎着的那只。
 - **放下**：松手后被拎的那只落地扬尘、左右看看；其余的追平后眨眨眼。
 - **展开 / 合并**：展开时离那一堆最近的先跳，一只接一只蹦到自己的位置；合并时大家一只只蹦回去，落地就坐进那一堆的后排、变暗垫高，最急的那只站在最前面。
-- **加入 / 离开**：新会话的 Critter 从地面下探头、蹦上来；会话结束时它挥挥手、沉进地面，噗一下没了，旁边的跳过来补位。
-- **显示 / 隐藏**：显示时一只只从天上掉下来；隐藏时一只只沉进地面。
+- **加入 / 离开**：新会话的 Critter 像种子发芽一样，先从地里钻出叶子、探出头，再整个蹦出来；会话结束时它挥挥手、钻回地里，噗一下没了，旁边的跳过来补位。
+- **显示 / 隐藏**：显示时一只只从地里蹦出来；隐藏时一只只钻回地里。
 - 正在跳（展开、合并、补位）或正在加入、离开的 Critter 不理会悬停和按下，拖动时也不跟着走；窗口随时都能拖。
 
 ### 减少动态效果
@@ -202,7 +204,7 @@ make uninstall
 
 | 项 | 默认 | 说明 |
 |---|---|---|
-| 形象 | Clawd | 列出所有形象（带缩略图），点一下立即换上，菜单栏图标也跟着换。`~/.critter/skins/` 里的自定义皮肤也会出现在这里 |
+| 形象 | 小芽 | 列出所有形象（带缩略图），点一下立即换上，菜单栏图标也跟着换。`~/.critter/skins/` 里的自定义皮肤也会出现在这里 |
 | 随机宠物 | 关 | 打开后每个会话随机分到一个形象，尽量不和同时在场的会话重样；分到的形象在会话结束前不变。关掉后全部换回上面选中的形象 |
 | Critter 大小 | 中（1.0） | 滑块，范围 0.5–2.0，拖动时实时生效 |
 | 空闲淡化 | 100% | 空闲和出错时变灰、变透明的程度，0%–100%，拖动时实时生效。0% 时和忙碌时一样鲜艳 |
@@ -458,20 +460,16 @@ make app               # 组装 dist/Critter.app
 - **重装后可能要重新授权。** App 用的是本地 ad-hoc 签名，重新编译安装后，macOS 可能会再次请求"自动化"授权。
 - **只支持 macOS。** 状态文件格式和 hooks 与平台无关，以后做 Windows 版只需要重写界面层。
 
-## 品牌说明
+## 自定义形象
 
-Critter 是非官方的粉丝作品，与 Anthropic 无关联，也未获其认可或背书。默认皮肤画的是 Clawd，Anthropic 为 Claude Code 设计的吉祥物，形象归 Anthropic 所有；另外四个可选形象（小芽、团子、啾啾、刺球）是为本项目原创的。Claude 和 Claude Code 是 Anthropic 的商标。
-
-Critter is an unofficial fan project, not affiliated with or endorsed by Anthropic. The default skin depicts Clawd, the Claude Code mascot, which is the property of Anthropic; the four other characters you can pick (Sprig, Mochi, Peep and Bristle) are original to this project. Claude and Claude Code are trademarks of Anthropic.
-
-所有形象素材都只放在 `Skins/` 目录，每个形象一个子目录。以 `Skins/clawd/manifest.json` 为例，这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.critter/skins/<名字>/`，它会出现在设置的形象列表里；名字和自带的相同时优先用它。清单不完整或有错的皮肤不会出现在列表里，已选中的皮肤出了错会退回 Clawd。
+所有形象素材都只放在 `Skins/` 目录，每个形象一个子目录。以 `Skins/sprig/manifest.json` 为例，这份数据清单（schema 2）描述了全部形象和动画：像素部件和由它们拼成的姿势、按格写的动作片段、粒子效果、头顶标记、每个状态的进场 / 循环 / 随机小动作和工作动作，以及每种交互用哪个动作。引擎只实现播放、跳跃、跟随这些规则，所以整体替换形象（连同所有动画）不需要改代码。也可以把自定义皮肤放进 `~/.critter/skins/<名字>/`，它会出现在设置的形象列表里；名字和自带的相同时优先用它。清单不完整或有错的皮肤不会出现在列表里，已选中的皮肤出了错会退回小芽。
 
 给皮肤作者：
 
 - 自定义皮肤必须是 schema 2。第一版（schema 1）的自定义皮肤现在一律当作无效，会悄悄退回内置形象。
 - 可以写一个 `title`（1–40 个字符），设置的形象列表里显示它，不写就显示目录名。
 - 每个状态可以写一组自己的目光姿势 `gaze`（`left` / `right` / `up` / `down` / `center`），目光跟随时就用它们，不写则用 `interactions` 里的 `look*`。小芽它们"做完了"时用它让花一直开着。
-- 小芽、团子、啾啾、刺球的数据在设计稿里，改完后用 `node scripts/dev/make-skins-from-preview.js docs/superpowers/specs/2026-10-17-sprig-motion-preview.html Skins` 重新生成四份清单。
+- 自带形象的数据都在设计稿里，改完后用 `node scripts/dev/make-skins-from-preview.js docs/superpowers/specs/2026-10-17-sprig-motion-preview.html Skins` 重新生成全部清单。
 - 校验比较严格，任何一条不满足，整份皮肤都退回内置：
   - 所有引用（部件、姿势、动作、特效、字形、颜色字符）都必须存在，五个状态齐全；
   - `grid` 必须是 `[18, 10]`，`tickMs` 在 16–1000 之间；
@@ -481,10 +479,8 @@ Critter is an unofficial fan project, not affiliated with or endorsed by Anthrop
 
 ## 许可
 
-代码以 [MIT 许可证](LICENSE) 发布。
-
-例外：`Skins/clawd/` 里的 Clawd 形象（包括 `SkinLoader.builtinJSON` 里内置的那份副本，以及 `docs/superpowers/specs/` 里由它生成的清单和预览）不在 MIT 许可范围内，形象归 Anthropic 所有。`Skins/` 里的小芽、团子、啾啾、刺球（`sprig`、`mochi`、`peep`、`bristle`，以及设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html`）是本项目原创，`Sounds/` 里的提示音由 `scripts/dev/make-sounds.py` 合成，都随代码一起以 MIT 发布。
+代码以 [MIT 许可证](LICENSE) 发布。`Skins/` 里的全部形象（以及设计稿 `docs/superpowers/specs/2026-10-17-sprig-motion-preview.html`）都是本项目原创，`Sounds/` 里的提示音由 `scripts/dev/make-sounds.py` 合成，都随代码一起以 MIT 发布。
 
 手机端随 App 打包的字体 Nunito、Silkscreen 以 SIL Open Font License 1.1 发布，许可文本在 `android/fonts/`。
 
-The source code is released under the [MIT License](LICENSE). The Clawd character artwork in `Skins/clawd/` (including its embedded copy in `SkinLoader.builtinJSON`, and the manifest and preview derived from it under `docs/superpowers/specs/`) is not covered by the MIT License; the character is the property of Anthropic. The Sprig, Mochi, Peep and Bristle skins in `Skins/` (and their design preview) are original to this project and released under the MIT License, like the alert sounds in `Sounds/`. The Nunito and Silkscreen fonts bundled with the Android app are released under the SIL Open Font License 1.1; the license texts are in `android/fonts/`.
+The source code is released under the [MIT License](LICENSE). All characters in `Skins/` (and their design preview) are original to this project and released under the MIT License, like the alert sounds in `Sounds/`. The Nunito and Silkscreen fonts bundled with the Android app are released under the SIL Open Font License 1.1; the license texts are in `android/fonts/`.

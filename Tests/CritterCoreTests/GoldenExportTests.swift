@@ -40,10 +40,11 @@ private func stateTour(activity: String) -> [[String: Any]] {
 
 private func scenarios() throws -> [Scenario] {
     let mochi = try bundledSkin("mochi").interactions
+    let sprig = try bundledSkin("sprig").interactions
     return [
         // Fidgets, dozing off at tick 2000, sleeping, then waking.
-        Scenario(name: "clawd-idle-2400", skin: "clawd", seed: 1, ticks: 2400, ops: [op(2200, "wake")]),
-        Scenario(name: "clawd-states", skin: "clawd", seed: 2, ticks: 1800, ops: stateTour(activity: "read")),
+        Scenario(name: "sprig-idle-2400", skin: "sprig", seed: 1, ticks: 2400, ops: [op(2200, "wake")]),
+        Scenario(name: "bristle-states", skin: "bristle", seed: 2, ticks: 1800, ops: stateTour(activity: "read")),
         Scenario(name: "sprig-running-variants", skin: "sprig", seed: 3, ticks: 600, ops: [
             op(0, "setActivity", ["activity": "think"]),
             op(0, "enterState", ["state": "running", "quiet": false]),
@@ -71,7 +72,7 @@ private func scenarios() throws -> [Scenario] {
                  ops: stateTour(activity: "think")),
         // Beyond the five required scenarios: hops, follow, pile seat, gaze, under ground, hidden
         // and toggling reduced motion mid-run.
-        Scenario(name: "clawd-travel-follow", skin: "clawd", seed: 6, ticks: 700, ops: [
+        Scenario(name: "sprig-travel-follow", skin: "sprig", seed: 6, ticks: 700, ops: [
             op(0, "enterState", ["state": "done", "quiet": false]),
             op(20, "travel", ["fromDx": 20, "fromDy": 0, "delay": 0]),
             op(100, "startFollow", ["lookLeft": true]),
@@ -83,10 +84,10 @@ private func scenarios() throws -> [Scenario] {
             op(300, "setGaze", ["zone": "left"]),
             op(340, "setGaze", ["zone": NSNull()]),
             op(360, "holdUnderground", ["depth": 12]),
-            op(380, "play", ["clip": "vanish"]),
+            op(380, "play", ["clip": sprig.vanish]),
             op(440, "enterState", ["state": "waiting", "quiet": false]),
             op(460, "releaseUnderground"),
-            op(480, "play", ["clip": "appear"]),
+            op(480, "play", ["clip": sprig.appear]),
             op(520, "setHidden", ["value": true]),
             op(560, "setHidden", ["value": false]),
             op(600, "setReduceMotion", ["value": true]),

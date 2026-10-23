@@ -2,7 +2,7 @@ import Foundation
 import Testing
 @testable import CritterCore
 
-private let prefs = BridgePrefs(skin: "clawd", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")
+private let prefs = BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")
 private let home = "/Users/me"
 
 private func session(_ id: String, cwd: String, transcript: String? = nil) -> PetSession {
@@ -66,10 +66,10 @@ private final class FakeFiles: @unchecked Sendable {
                                  input: .null, matchKey: "k", createdAt: 1, expiresAt: 2, hookPid: 1)
     let assembler = SnapshotAssembler(home: home, dependencies: files.dependencies)
 
-    let body = assembler.build(sessions: sessions, skins: ["a": "clawd"], statuses: [reported], pending: [request], prefs: prefs)
+    let body = assembler.build(sessions: sessions, skins: ["a": "sprig"], statuses: [reported], pending: [request], prefs: prefs)
 
     #expect(body == SnapshotBuilder.build(SnapshotInputs(
-        sessions: sessions, skins: ["a": "clawd"], statuses: [reported], pending: [request],
+        sessions: sessions, skins: ["a": "sprig"], statuses: [reported], pending: [request],
         branches: ["/Users/me/a": "main"], estimates: ["a": ContextEstimate(usedTokens: 5210, model: "claude-opus-5-5")],
         prefs: prefs, home: home
     )))

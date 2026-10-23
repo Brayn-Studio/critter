@@ -28,7 +28,7 @@ import kotlin.test.assertTrue
 class PresentationTest {
     private fun session(branch: String? = "main", cwd: String = "/Users/me/proj/") = BridgeSession(
         id = "s1", name = "proj", source = SessionSource.terminal, state = PetState.waiting, cwd = cwd,
-        branch = branch, skin = "clawd", eventTime = 0, startedAt = 0, tracked = true,
+        branch = branch, skin = "sprig", eventTime = 0, startedAt = 0, tracked = true,
     )
 
     private fun pending(kind: PendingKind, summary: String? = "运行 npm test") =
@@ -88,7 +88,7 @@ class PresentationTest {
     fun serviceStatusLine() {
         val body = local.critter.core.protocol.SnapshotBody(
             listOf(session(), session()), null, emptyList(),
-            local.critter.core.protocol.BridgePrefs("clawd", false, 0.0, 3),
+            local.critter.core.protocol.BridgePrefs("sprig", false, 0.0, 3),
         )
         assertEquals("已连接 · 2 个会话" to "Mac", BridgeService.statusText(ConnState.Connected("Mac"), body, "Mac"))
         assertEquals("未连接", BridgeService.statusText(ConnState.Offline(2000, 0), null, "Mac").first)

@@ -137,8 +137,8 @@
       "rows": ["ooo....ooo"]
     },
     "eyes_happy": {
-      "at": [4, 4],
-      "rows": [".oo....oo.", "o..o..o..o"]
+      "at": [5, 4],
+      "rows": ["wo....wo", "oo....oo"]
     },
     "eyes_squint": {
       "at": [5, 3],
@@ -177,12 +177,12 @@
       "rows": ["mm"]
     },
     "mouth_smile": {
-      "at": [8, 6],
-      "rows": ["mm"]
+      "at": [7, 6],
+      "rows": ["m..m", ".mm."]
     },
     "mouth_open": {
-      "at": [8, 6],
-      "rows": ["mm", "pp"]
+      "at": [7, 6],
+      "rows": ["mmmm", ".mm."]
     },
     "mouth_frown": {
       "at": [7, 6],

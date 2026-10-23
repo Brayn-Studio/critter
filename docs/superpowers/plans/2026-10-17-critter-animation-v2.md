@@ -132,7 +132,7 @@ README.md                                 # 改：动画说明、实测数字
     #expect(SkinValidator.problems(m).isEmpty)
 }
 @Test func basePoseIsTheApprovedGridDoubled() {
-    let old = ["...############...", "...##o######o##...", ".################.", "...############...", "....#.#....#.#...."]
+    // 原先在这里逐行比对 Clawd 的像素图；（Clawd 的像素图已于 2026-10-23 随 Clawd 形象一起从项目中移除。）
     let g = SkinRenderer.grid(pose: "base", in: SkinLoader.builtin())!
     for y in 0..<10 { for x in 0..<18 {
         let want = Array(old[y / 2])[x]

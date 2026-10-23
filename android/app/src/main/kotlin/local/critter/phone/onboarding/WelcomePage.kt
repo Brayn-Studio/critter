@@ -42,8 +42,8 @@ import local.critter.phone.ui.theme.WordmarkImage
 import kotlin.math.max
 import kotlin.math.roundToInt
 
-/** The five bundled skins, left to right. */
-private val WELCOME_SKINS = listOf("clawd", "sprig", "mochi", "peep", "bristle")
+/** Five of the skins: the mockup spreads the welcome row in fifths, and seven would crowd a phone-width meadow. */
+private val WELCOME_SKINS = listOf("sprig", "mochi", "peep", "frill", "spout")
 
 /** The meadow is 470 of the mockup's 800 dp, less on a shorter screen; the pets stand 52 dp above its bottom. */
 private const val MEADOW_SHARE = 470f / 800f
@@ -67,7 +67,7 @@ fun WelcomePage(onStart: () -> Unit) {
                 Column(Modifier.weight(1f).verticalScroll(rememberScrollState()).padding(top = 26.dp, bottom = 12.dp)) {
                     StepTitle("电脑上的会话，在手机上也看得到", size = 21.sp)
                     Spacer(Modifier.height(8.dp))
-                    StepBody("每个 Claude Code 会话都是一只宠物。它们在做什么、卡在哪、要不要你确认，拿起手机就知道，还能直接回答。")
+                    StepBody("每个 Agent 会话都是一只宠物。它们在做什么、卡在哪、要不要你确认，拿起手机就知道，还能直接回答。")
                 }
                 PixelButton("开始配对", onStart, Modifier.fillMaxWidth(), size = ButtonSize.Large)
                 Spacer(Modifier.height(12.dp))
@@ -118,7 +118,7 @@ private fun WelcomeMeadow(time: SkyTime, height: Dp) {
             ) {
                 WordmarkImage(cell = 6.dp, ink = onSky, shade = shade)
                 Spacer(Modifier.height(10.dp))
-                Text("for Claude Code", color = onSky.copy(alpha = 0.8f), fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 14.sp)
+                Text("a pet for every agent", color = onSky.copy(alpha = 0.8f), fontFamily = Nunito, fontWeight = FontWeight.W800, fontSize = 14.sp)
             }
         }
     }

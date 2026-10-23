@@ -116,9 +116,9 @@ class GoldenTest {
         assertTrue(compared >= minTicks, "$name compares at least $minTicks ticks")
     }
 
-    @Test fun clawdIdle2400() = check("clawd-idle-2400", 2400)
+    @Test fun sprigIdle2400() = check("sprig-idle-2400", 2400)
 
-    @Test fun clawdStates() = check("clawd-states", 1800)
+    @Test fun bristleStates() = check("bristle-states", 1800)
 
     @Test fun sprigRunningVariants() = check("sprig-running-variants", 600)
 
@@ -126,7 +126,7 @@ class GoldenTest {
 
     @Test fun peepReducedMotion() = check("peep-reduced-motion", 1800)
 
-    @Test fun clawdTravelFollow() = check("clawd-travel-follow", 700)
+    @Test fun sprigTravelFollow() = check("sprig-travel-follow", 700)
 
     @Test
     fun goldenSnapshotsAreNotTrivial() {
@@ -137,8 +137,8 @@ class GoldenTest {
             val doc = json.parseToJsonElement(text).jsonObject
             return doc.getValue("frames").jsonArray.map { it.jsonObject.getValue("snapshot").jsonObject.str("pose") }.toSet()
         }
-        assertTrue("shut" in poses("clawd-idle-2400"), "the idle scenario falls asleep")
-        assertTrue(poses("clawd-states").size > 8)
+        assertTrue("shut" in poses("sprig-idle-2400"), "the idle scenario falls asleep")
+        assertTrue(poses("bristle-states").size > 8)
         assertTrue(poses("mochi-interactions").size > 4)
     }
 }

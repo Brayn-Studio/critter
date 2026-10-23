@@ -14,7 +14,7 @@ import kotlin.test.assertEquals
 class OverlayLookTest {
     private fun session(id: String, state: PetState) = BridgeSession(
         id = id, name = id, source = SessionSource.terminal, state = state, cwd = "/p/$id",
-        skin = "clawd", eventTime = 0, startedAt = 0, tracked = true,
+        skin = "sprig", eventTime = 0, startedAt = 0, tracked = true,
     )
 
     /** The pile's count tag reads like the desktop's markers: waiting, running, done, error, idle; no zeros. */

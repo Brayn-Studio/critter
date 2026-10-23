@@ -33,7 +33,7 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     #expect(a.currentClipName == "celebrate")
     #expect(a.isPlayingOnce)
     #expect(a.tint == nil)
-    #expect(stepUntilLoop(a) == 24)
+    #expect(stepUntilLoop(a) == 25)
     #expect(a.currentClipName == "content")
 }
 
@@ -122,7 +122,7 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     a.enterState(.idle)
     #expect(a.currentClipName == "seen")
     #expect(a.tint == .dim)
-    #expect(stepUntilLoop(a) == 5)
+    #expect(stepUntilLoop(a) == 8)
     #expect(a.currentClipName == "idle")
 }
 
@@ -297,7 +297,7 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
 
 // MARK: - Head markers and props
 
-@Test func spinnerFollowsCosine() {
+@Test func sunFollowsCosine() {
     let a = makeActor()
     a.enterState(.running, quiet: true)
     var frames: [Int: GlyphDraw] = [:]
@@ -305,12 +305,12 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
         frames[a.clock] = a.snapshot().accessory
         a.step()
     }
-    #expect([0, 5, 10, 17, 25, 33].map { frames[$0]?.glyph } == ["s0", "s1", "s3", "s5", "s3", "s0"])
-    #expect(frames[17]?.x == 7)
-    #expect(frames[17]?.y == -7)
-    #expect(frames[0]?.x == 9)                 // s0 is 1×1: centred in the 5-row box
-    #expect(frames[0]?.y == -5)
-    #expect(frames[17]?.color == "#D97757")
+    #expect([0, 5, 10, 17, 25, 33].map { frames[$0]?.glyph } == ["sun0", "sun1", "sun3", "sun4", "sun2", "sun0"])
+    #expect(frames[17]?.x == 6)
+    #expect(frames[17]?.y == -9)
+    #expect(frames[0]?.x == 9)                 // sun0 is 1×1: centred in the 7-row box
+    #expect(frames[0]?.y == -6)
+    #expect(frames[17]?.color == "#F2B33D")
 }
 
 @Test func accessoryHiddenWhenAsleepHeldOrMerged() {
@@ -388,9 +388,9 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     a.setActivity("juggle")
     a.enterState(.running, quiet: true)
     #expect(a.snapshot().props == [
-        GlyphDraw(glyph: "ball", color: "#D97757", x: 3, y: -2, alpha: 1),
-        GlyphDraw(glyph: "ball", color: "#F0A487", x: 7, y: -8, alpha: 1),
-        GlyphDraw(glyph: "ball", color: "#D97757", x: 10, y: -8, alpha: 1),
+        GlyphDraw(glyph: "seed", color: "#6BCB5F", x: 3, y: -2, alpha: 1),
+        GlyphDraw(glyph: "seed", color: "#FF8FB8", x: 7, y: -8, alpha: 1),
+        GlyphDraw(glyph: "seed", color: "#FFD24A", x: 10, y: -8, alpha: 1),
     ])
     a.lag = 1
     a.lift = 2
@@ -417,7 +417,7 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     a.lift = 0
 
     a.enterState(.running, quiet: true)
-    #expect(a.snapshot().accessory?.glyph == "dotbig")
+    #expect(a.snapshot().accessory?.glyph == "sun3")
     #expect(a.snapshot().pose == "lap_a")
     #expect(a.snapshot().bodyX == 0)
     a.setMode("held")
@@ -442,7 +442,7 @@ private func stepUntilLoop(_ a: MotionActor, limit: Int = 500) -> Int {
     a.enterState(.idle)
     for _ in 0..<2000 { a.step() }
     #expect(a.asleep)
-    #expect(a.snapshot().pose == "shut")
+    #expect(a.snapshot().pose == "sleep")
 }
 
 @Test func reduceMotionSwitchesVariantWithoutExit() {

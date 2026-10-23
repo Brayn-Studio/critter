@@ -26,11 +26,11 @@ private final class FakeServices: BridgeServices {
     func markSeen(sessionId: String) { seen.append(sessionId) }
     func say(text: String, sessionId: String) -> SayOutcome { said.append((text, sessionId)); return sayResult }
     func interrupt(sessionId: String) -> SayOutcome { interrupted.append(sessionId); return .sent }
-    func skinManifest(name: String) -> JSONValue? { name == "clawd" ? .object(["name": .string(name)]) : nil }
+    func skinManifest(name: String) -> JSONValue? { name == "sprig" ? .object(["name": .string(name)]) : nil }
     func snapshotMessage() -> ServerMessage {
         .snapshot(seq: 1, sentAt: 2, body: SnapshotBody(
             sessions: [], pending: [],
-            prefs: BridgePrefs(skin: "clawd", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")))
+            prefs: BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 0.5, mergeThreshold: 5, soundTheme: "pixel")))
     }
 }
 
@@ -227,8 +227,8 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
 
 @Test func skinRequestRepliesWithManifest() {
     let c = readyConnection(FakeServices())
-    #expect(c.receive(ClientMessage.skin(id: "1", name: "clawd").encode())
-        == [.send(.skin(id: "1", name: "clawd", manifest: .object(["name": .string("clawd")])))])
+    #expect(c.receive(ClientMessage.skin(id: "1", name: "sprig").encode())
+        == [.send(.skin(id: "1", name: "sprig", manifest: .object(["name": .string("sprig")])))])
 }
 
 @Test func broadcastOnlyWhenReady() {

@@ -114,7 +114,7 @@ class FakeMac(val cert: HeldCertificate = newCert()) {
         fun greet(ws: WebSocket) {
             ws.send("""{"macName":"Test Mac","type":"welcome","version":"1.4.0"}""")
             ws.send(
-                """{"type":"snapshot","seq":1,"sentAt":1,"sessions":[],"pending":[],"prefs":{"skin":"clawd","randomSkins":false,"idleDim":1,"mergeThreshold":4}}""",
+                """{"type":"snapshot","seq":1,"sentAt":1,"sessions":[],"pending":[],"prefs":{"skin":"sprig","randomSkins":false,"idleDim":1,"mergeThreshold":4}}""",
             )
         }
     }

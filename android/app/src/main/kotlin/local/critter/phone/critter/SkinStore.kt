@@ -14,7 +14,7 @@ import java.util.concurrent.ConcurrentHashMap
  * Where the phone gets skins: the bundled ones from assets, and the custom ones the Mac has sent (asked for
  * with a `skin` request, remembered in memory and in the app's private `skins/<name>.json`). [library] is
  * rebuilt whenever a new manifest arrives, so screens that read it redraw with the real skin instead of the
- * clawd fallback. The new library takes over the old one's manifests whose source did not change, so only the
+ * sprig fallback. The new library takes over the old one's manifests whose source did not change, so only the
  * Critters wearing the new skin are rebuilt.
  */
 class SkinStore(private val context: Context) {

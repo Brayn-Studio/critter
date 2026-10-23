@@ -55,8 +55,9 @@ private func makeActor(reduceMotion: Bool = false) -> MotionActor {
     a.setLoop("idle")
     a.setMode("pet")
     var ok: Bool?
-    a.play("notice") { ok = $0 }          // 2 ticks
+    a.play("notice") { ok = $0 }          // 3 ticks
     #expect(a.currentClipName == "notice")
+    a.step()
     a.step()
     a.step()
     #expect(ok == true)
@@ -66,16 +67,16 @@ private func makeActor(reduceMotion: Bool = false) -> MotionActor {
 @Test func effectFiresAtKeyStart() {
     let a = makeActor()
     a.setLoop("idle")
-    a.play("jump")                         // key 0 fires "dust" (2 particles)
+    a.play("burrow")                       // key 0 fires "dust_small" (2 particles)
     #expect(a.particles.count == 2)
-    a.step()                               // key 1 fires "tilde" (2 more)
-    #expect(a.particles.count == 4)
+    a.step()                               // key 1 fires "dirt" (4 more)
+    #expect(a.particles.count == 6)
 }
 
 @Test func reduceMotionEmitsNoParticles() {
     let a = makeActor(reduceMotion: true)
     a.setLoop("idle")
-    a.play("jump")
+    a.play("burrow")
     #expect(a.particles.isEmpty)
     a.emit("dust")
     #expect(a.particles.isEmpty)
@@ -136,7 +137,7 @@ private func makeActor(reduceMotion: Bool = false) -> MotionActor {
     a.lift = 2
     let s = a.snapshot()
     #expect(s.particles.count == 2)
-    #expect(s.particles[0].x == 2 + 2 + 1)
+    #expect(s.particles[0].x == 1 + 2 + 1)
     #expect(s.particles[0].y == 9 - 2)
     #expect(s.particles[0].color == "#B4BAC4")
 }
