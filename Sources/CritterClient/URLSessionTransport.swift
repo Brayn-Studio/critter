@@ -24,8 +24,9 @@ public final class URLSessionTransport: BridgeTransport {
 
     /// Each connection gets an ephemeral URLSession of its own; it counts as made once the
     /// WebSocket is open. A host `url(host:port:)` refuses -> `.unreachable` at once, without
-    /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; not open
-    /// within `connectTimeout`, or any other failure before the WebSocket opens -> `.unreachable`.
+    /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; no
+    /// certificate to check the pin against, not open within `connectTimeout`, or any other
+    /// failure before the WebSocket opens -> `.unreachable`.
     public func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
         guard let url = Self.url(host: host, port: port) else { throw TransportError.unreachable }
         let socket = URLSessionSocket(url: url, fingerprint: fingerprint)
@@ -69,7 +70,7 @@ public final class URLSessionTransport: BridgeTransport {
 /// One WebSocket, with the URLSession that owns it.
 final class URLSessionSocket: BridgeSocket {
     let task: URLSessionWebSocketTask
-    private let session: URLSession
+    let session: URLSession
     private let events: SocketEvents
 
     /// Sets the task up without starting it (`open` does).
@@ -221,7 +222,8 @@ private final class SocketEvents: Sendable {
 }
 
 /// Trusts the server only if its leaf certificate's SHA-256 is the pinned fingerprint (any
-/// certificate without a pin), and records the fingerprint it saw.
+/// certificate without a pin), and records the fingerprint it saw. A pinned connection fails
+/// closed: a challenge with no certificate to check the pin against is refused too.
 private final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     let fingerprint: String?
     let events: SocketEvents
@@ -239,7 +241,8 @@ private final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Send
               let trust = challenge.protectionSpace.serverTrust,
               let leaf = (SecTrustCopyCertificateChain(trust) as? [SecCertificate])?.first
         else {
-            completionHandler(.performDefaultHandling, nil)
+            // Refused as unreachable, not as a mismatch: nothing says the Mac's certificate changed.
+            completionHandler(fingerprint == nil ? .performDefaultHandling : .cancelAuthenticationChallenge, nil)
             return
         }
         let der = SecCertificateCopyData(leaf) as Data

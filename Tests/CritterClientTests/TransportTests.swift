@@ -78,6 +78,38 @@ struct TransportTests {
         #expect(took < .seconds(3))
     }
 
+    /// The pin can only be checked against a certificate: a server-trust challenge with none to read fails a pinned
+    /// connection closed (as `.unreachable`: nothing says it is another Mac). Unpinned (the probe), URLSession decides.
+    @Test func aPinnedConnectionWithNoCertificateToCheckIsRefused() async throws {
+        let url = try #require(URL(string: "wss://127.0.0.1:47823/"))
+        let cases: [(String?, URLSession.AuthChallengeDisposition)] = [
+            (String(repeating: "ab", count: 32), .cancelAuthenticationChallenge),
+            (nil, .performDefaultHandling),
+        ]
+        for (pin, expected) in cases {
+            let socket = URLSessionSocket(url: url, fingerprint: pin)
+            defer { socket.close() }
+            let delegate = try #require(socket.session.delegate)
+            // A server-trust challenge that carries no trust to read a certificate from.
+            let space = URLProtectionSpace(
+                host: "127.0.0.1", port: 47823, protocol: NSURLProtectionSpaceHTTPS, realm: nil,
+                authenticationMethod: NSURLAuthenticationMethodServerTrust
+            )
+            #expect(space.serverTrust == nil)
+            let challenge = URLAuthenticationChallenge(
+                protectionSpace: space, proposedCredential: nil, previousFailureCount: 0, failureResponse: nil, error: nil,
+                sender: NoChallengeSender()
+            )
+            let disposition = await withCheckedContinuation { continuation in
+                delegate.urlSession?(socket.session, didReceive: challenge) { disposition, _ in
+                    continuation.resume(returning: disposition)
+                }
+            }
+            #expect(disposition == expected, "pin: \(String(describing: pin))")
+            #expect(socket.peerFingerprint == nil)
+        }
+    }
+
     @Test func discoveredAddressesAreUsableHosts() throws {
         // Network gives resolved addresses the interface they came in on; only a link-local
         // IPv6 address needs it.
@@ -138,4 +170,11 @@ private final class SilentListener {
     deinit {
         close(socket)
     }
+}
+
+/// A challenge's sender, for a challenge handed straight to a delegate.
+private final class NoChallengeSender: NSObject, URLAuthenticationChallengeSender {
+    func use(_ credential: URLCredential, for challenge: URLAuthenticationChallenge) {}
+    func continueWithoutCredential(for challenge: URLAuthenticationChallenge) {}
+    func cancel(_ challenge: URLAuthenticationChallenge) {}
 }
