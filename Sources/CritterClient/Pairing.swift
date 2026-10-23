@@ -86,6 +86,8 @@ public struct Pairer: Sendable {
 
     /// Sends `pair` as the first frame and waits for `paired` (what follows it is not needed:
     /// the connection is closed). `onAwaitingApproval` is called once the connection is open.
+    /// Cancelling the task closes the connection at once (the Mac withdraws its request); the
+    /// attempt then fails.
     public func pair(
         _ target: PairingTarget, deviceName: String, onAwaitingApproval: @escaping @Sendable () -> Void
     ) async -> PairResult {
@@ -110,17 +112,22 @@ public struct Pairer: Sendable {
         defer { timer.cancel() }
 
         do {
-            let pair = ClientMessage.pair(code: target.code, deviceName: deviceName)
-            try await socket.send(String(decoding: pair.encode(), as: UTF8.self))
-            while true {
-                switch ServerMessage.decode(Data(try await socket.receive().utf8)) {
-                case .paired(let deviceId, let token, let macName):
-                    return .paired(deviceId: deviceId, token: token, macName: macName)
-                case .denied(let reason):
-                    return .failed(pairFailure(denied: reason, pinMismatch: false, timedOut: false, closedCleanly: false))
-                default:
-                    continue
+            // `receive` does not end by itself when the task is cancelled: closing the socket ends it.
+            return try await withTaskCancellationHandler {
+                let pair = ClientMessage.pair(code: target.code, deviceName: deviceName)
+                try await socket.send(String(decoding: pair.encode(), as: UTF8.self))
+                while true {
+                    switch ServerMessage.decode(Data(try await socket.receive().utf8)) {
+                    case .paired(let deviceId, let token, let macName):
+                        return .paired(deviceId: deviceId, token: token, macName: macName)
+                    case .denied(let reason):
+                        return .failed(pairFailure(denied: reason, pinMismatch: false, timedOut: false, closedCleanly: false))
+                    default:
+                        continue
+                    }
                 }
+            } onCancel: {
+                socket.close()
             }
         } catch {
             return .failed(failure(after: error, timedOut: timedOut.withLock { $0 }))

@@ -100,6 +100,23 @@ struct PairingTests {
         #expect(await eventually { mac.openSockets == 0 })
     }
 
+    /// The pairing screen's 「取消」 while the Mac is waited for: the connection closes at once (so the Mac
+    /// withdraws its request), not when the 120 s run out, and nothing is paired.
+    @Test func cancellingClosesTheConnectionAtOnce() async throws {
+        let mac = FakeMac()
+        let attempt = Task {
+            await Pairer(transport: mac, timeout: .seconds(30)).pair(target, deviceName: "iPhone", onAwaitingApproval: {})
+        }
+        _ = try #require(await mac.nextFrame())
+        let start = ContinuousClock.now
+        attempt.cancel()
+        let result = await attempt.value
+        #expect(ContinuousClock.now - start < .seconds(5))
+        #expect(result != .paired(deviceId: "d1", token: "t1", macName: "Mac"))
+        if case .paired = result { Issue.record("a cancelled attempt paired") }
+        #expect(await eventually { mac.openSockets == 0 })
+    }
+
     @Test func pinMismatchIsCertMismatch() async throws {
         let mac = FakeMac()
         mac.failNextConnects(.pinMismatch)
