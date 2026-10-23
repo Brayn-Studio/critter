@@ -135,6 +135,7 @@ struct HomeView: View {
                 Text(verbatim: macName)
                     .font(.largeTitle.bold())
                     .lineLimit(1)
+                    .minimumScaleFactor(0.6)
                 HStack(alignment: .top, spacing: 6) {
                     Circle()
                         .fill(connectionTint)
