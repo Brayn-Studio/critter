@@ -16,7 +16,9 @@ struct CritterApp: App {
         #if DEBUG
         let launch = DebugLaunch.current
         _store = State(initialValue: launch.fixtureStore() ?? Self.makeStore())
-        _link = State(initialValue: launch.pairURI.map { IncomingPairLink(url: $0, confirmed: true) })
+        _link = State(initialValue: launch.pairURI
+            .flatMap { PairingURI(string: $0.absoluteString) }
+            .map { IncomingPairLink(uri: $0, confirmed: true) })
         deviceName = launch.deviceName ?? UIDevice.current.name
         #else
         _store = State(initialValue: Self.makeStore())
@@ -28,9 +30,18 @@ struct CritterApp: App {
         WindowGroup {
             RootView(store: store, deviceName: deviceName, link: $link)
                 .onOpenURL { url in
-                    guard url.scheme == "critter-pair" else { return }
-                    link = IncomingPairLink(url: url, confirmed: false)
+                    // Not a pairing link (or a broken one): ignored.
+                    guard let uri = PairingURI(string: url.absoluteString) else { return }
+                    link = IncomingPairLink(uri: uri, confirmed: false)
                 }
+                #if DEBUG
+                .task {
+                    guard let url = DebugLaunch.current.openURL else { return }
+                    // Once the scene is up: the system hands the URL back through `onOpenURL`.
+                    try? await Task.sleep(for: .seconds(1))
+                    await UIApplication.shared.open(url)
+                }
+                #endif
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
@@ -71,7 +82,7 @@ struct CritterApp: App {
 
 /// A `critter-pair://` link the app was opened with, for the pairing screen to take.
 struct IncomingPairLink: Equatable {
-    let url: URL
+    let uri: PairingURI
     /// Pair without asking first: only `-critterPairURI` (DEBUG builds). A link from outside is always confirmed.
     let confirmed: Bool
 }

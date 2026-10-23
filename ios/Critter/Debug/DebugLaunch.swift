@@ -14,6 +14,8 @@ import Foundation
 /// - `-critterOpen answer:<requestId>|detail:<sessionId>|settings`: opens that sheet once launched.
 /// - `-critterPairURI <uri>`: pairs with this URI once launched, without asking (for scripts).
 /// - `-critterDeviceName <name>`: the device name pairing sends.
+/// - `-critterOpenURL <url>`: once launched, the app opens this URL itself, so it comes back in through the
+///   system like a link opened from outside (`xcrun simctl openurl` stops at the system's "在“Critter”中打开?").
 struct DebugLaunch {
     enum Open: Equatable {
         case answer(requestId: String)
@@ -26,6 +28,7 @@ struct DebugLaunch {
     var open: Open?
     var pairURI: URL?
     var deviceName: String?
+    var openURL: URL?
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -56,6 +59,7 @@ struct DebugLaunch {
         }
         pairURI = value("critterPairURI").flatMap(URL.init(string:))
         deviceName = value("critterDeviceName")
+        openURL = value("critterOpenURL").flatMap(URL.init(string:))
     }
 
     /// With `-critterFixture`: a store on the fake storage and link, already paired; nil without it.
