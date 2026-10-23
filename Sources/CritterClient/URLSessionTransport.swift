@@ -13,7 +13,7 @@ public final class URLSessionTransport: BridgeTransport {
     public init() {}
 
     /// Each connection gets an ephemeral URLSession of its own; it counts as made once the
-    /// WebSocket is open. A host outside the private networks -> `.unreachable` at once, without
+    /// WebSocket is open. A host `url(host:port:)` refuses -> `.unreachable` at once, without
     /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; any
     /// other failure before the WebSocket opens -> `.unreachable`.
     public func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
@@ -28,14 +28,31 @@ public final class URLSessionTransport: BridgeTransport {
         return socket
     }
 
-    /// `wss://<host>:<port>/`; an IPv6 host is bracketed and the `%` of its zone escaped
-    /// (`fe80::1%en0` -> `[fe80::1%25en0]`). nil for a host outside the private networks: every
-    /// pairing, connection and probe comes through here, whatever gave the host (a scanned QR
-    /// code, a stored address, typing), so a QR code naming a public host gets nowhere.
+    /// `wss://<host>:<port>/` for an IP address on a private network (`PrivateNetwork`), else nil.
+    /// Every pairing, connection and probe comes through here, wherever the host came from (a
+    /// scanned QR code, a stored address, typing).
+    ///
+    /// The host must be an IP literal: IPv4, or IPv6 (brackets optional) with at most a zone made of
+    /// `A-Z a-z 0-9 . _ ~ -` (`fe80::1%en0` -> `[fe80::1%25en0]`). `PrivateNetwork` ignores what
+    /// follows a `%`, so `10.0.0.1%2Eevil.com` would pass it while the URL named
+    /// `10.0.0.1.evil.com`. The zone is therefore checked here, and the host the URL ends up naming
+    /// must be the host that was checked.
     static func url(host: String, port: UInt16) -> URL? {
-        guard PrivateNetwork.isAllowed(host: host) else { return nil }
+        let host = host.hasPrefix("[") && host.hasSuffix("]") ? String(host.dropFirst().dropLast()) : host
+        guard hasInterfaceZoneAtMost(host), PrivateNetwork.isAllowed(host: host) else { return nil }
         let bracketed = host.contains(":") ? "[\(host.replacingOccurrences(of: "%", with: "%25"))]" : host
-        return URL(string: "wss://\(bracketed):\(port)/")
+        guard let url = URL(string: "wss://\(bracketed):\(port)/"),
+              let named = url.host(percentEncoded: false), named == host, PrivateNetwork.isAllowed(host: named)
+        else { return nil }
+        return url
+    }
+
+    /// No `%`, or an IPv6 address followed by `%` and a non-empty interface name.
+    private static func hasInterfaceZoneAtMost(_ host: String) -> Bool {
+        guard let percent = host.firstIndex(of: "%") else { return true }
+        let zone = host[host.index(after: percent)...]
+        return host[..<percent].contains(":") && !zone.isEmpty
+            && zone.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber || "._~-".contains($0)) }
     }
 }
 

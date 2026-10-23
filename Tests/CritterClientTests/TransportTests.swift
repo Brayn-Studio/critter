@@ -1,4 +1,5 @@
 @testable import CritterClient
+import CritterKit
 import Foundation
 import Network
 import Testing
@@ -25,6 +26,31 @@ struct TransportTests {
         for host in ["10.0.0.2", "172.16.4.1", "192.168.1.20", "127.0.0.1", "100.64.0.1", "fd00::5", "fe80::1%en0", "::1"] {
             #expect(URLSessionTransport.url(host: host, port: 47823) != nil, "\(host)")
         }
+    }
+
+    @Test func aPrivateLookingHostThatResolvesElsewhereGetsNoAddress() {
+        // Each would pass a check that stops at "%", but the URL would name another host:
+        // 10.0.0.1.evil.com, 192.168.1.5.nip.io, evil.com.
+        for host in ["10.0.0.1%2Eevil.com", "192.168.1.5%2Enip.io", "192.168.1.5%40@evil.com"] {
+            #expect(URLSessionTransport.url(host: host, port: 443) == nil, "\(host)")
+        }
+        // A zone only on an IPv6 address, and only an interface name.
+        for host in ["10.0.0.1%en0", "fe80::1%", "fe80::1%en0%x", "fe80::1%en0/x", "fe80::1%en0@evil.com"] {
+            #expect(URLSessionTransport.url(host: host, port: 443) == nil, "\(host)")
+        }
+        // Brackets around an IPv6 address are fine.
+        #expect(URLSessionTransport.url(host: "[fe80::1%en0]", port: 47823)?.absoluteString == "wss://[fe80::1%25en0]:47823/")
+    }
+
+    @Test func aCraftedPairingCodeGetsNowhere() async throws {
+        let fp = String(repeating: "ab", count: 32)
+        let uri = try #require(PairingURI(string: "critter-pair://10.0.0.1%252Eevil.com:443?fp=\(fp)&code=K7M2QX9P&name=n"))
+        #expect(uri.host == "10.0.0.1%2Eevil.com")
+        let target = PairingTarget(uri: uri)
+        // Checked first, so a broken check never reaches the network.
+        try #require(URLSessionTransport.url(host: target.endpoint.host, port: target.endpoint.port) == nil)
+        let result = await Pairer(transport: URLSessionTransport()).pair(target, deviceName: "iPhone", onAwaitingApproval: {})
+        #expect(result == .failed(.unreachable))
     }
 
     @Test func connectingToAPublicHostFailsWithoutTouchingTheNetwork() async {
