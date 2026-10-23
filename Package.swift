@@ -7,17 +7,20 @@ let package = Package(
     products: [
         .library(name: "CritterKit", targets: ["CritterKit"]),
         .library(name: "CritterCore", targets: ["CritterCore"]),
+        .library(name: "CritterClient", targets: ["CritterClient"]),
         .executable(name: "critter-hook", targets: ["critter-hook"]),
         .executable(name: "Critter", targets: ["CritterApp"]),
     ],
     targets: [
         .target(name: "CritterKit"),
         .target(name: "CritterCore", dependencies: ["CritterKit"]),
+        .target(name: "CritterClient", dependencies: ["CritterKit"]),
         .executableTarget(name: "critter-hook", dependencies: ["CritterCore"]),
         .executableTarget(name: "CritterApp", dependencies: ["CritterCore"]),
         .executableTarget(name: "critter-bridge-client", dependencies: ["CritterCore"]),
         .testTarget(name: "CritterKitTests", dependencies: ["CritterKit"]),
         .testTarget(name: "CritterCoreTests", dependencies: ["CritterCore"]),
+        .testTarget(name: "CritterClientTests", dependencies: ["CritterClient"]),
         .testTarget(name: "CritterHookTests", dependencies: ["critter-hook", "CritterCore"]),
     ]
 )
