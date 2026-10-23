@@ -1,23 +1,5 @@
 import CritterClient
-import os
 import Testing
-
-/// Finds what it was given, and counts how often it was asked.
-private final class FakeBrowser: MacBrowser {
-    let macs: [DiscoveredMac]
-    private let asked = OSAllocatedUnfairLock(initialState: 0)
-
-    init(_ macs: [DiscoveredMac]) {
-        self.macs = macs
-    }
-
-    var discoveries: Int { asked.withLock { $0 } }
-
-    func discover() async -> [DiscoveredMac] {
-        asked.withLock { $0 += 1 }
-        return macs
-    }
-}
 
 private let last = Endpoint(host: "192.168.1.20", port: 47823)
 private let moved = Endpoint(host: "192.168.1.31", port: 47823)
@@ -26,7 +8,7 @@ private let other = Endpoint(host: "192.168.1.40", port: 47824)
 struct FallbackResolverTests {
     @Test func usesTheLastAddressFirst() async {
         let browser = FakeBrowser([DiscoveredMac(name: "Xuan's MacBook", endpoint: moved)])
-        let resolver = FallbackResolver(lastGood: last, macName: "Xuan's MacBook", browser: browser)
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
         #expect(await resolver.resolve(afterFailure: false) == last)
         #expect(browser.discoveries == 0)
     }
@@ -36,10 +18,10 @@ struct FallbackResolverTests {
             DiscoveredMac(name: "Office iMac", endpoint: other),
             DiscoveredMac(name: "Xuan's MacBook", endpoint: moved),
         ])
-        let resolver = FallbackResolver(lastGood: last, macName: "Xuan's MacBook", browser: browser)
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
         #expect(await resolver.resolve(afterFailure: true) == moved)
         // No last address at all: Bonjour straight away.
-        let fresh = FallbackResolver(lastGood: nil, macName: "Xuan's MacBook", browser: browser)
+        let fresh = FallbackResolver(lastGood: { nil }, macName: "Xuan's MacBook", browser: browser)
         #expect(await fresh.resolve(afterFailure: false) == moved)
     }
 
@@ -48,12 +30,12 @@ struct FallbackResolverTests {
             DiscoveredMac(name: "Office iMac", endpoint: other),
             DiscoveredMac(name: "Studio", endpoint: moved),
         ])
-        let resolver = FallbackResolver(lastGood: last, macName: "Xuan's MacBook", browser: browser)
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: browser)
         #expect(await resolver.resolve(afterFailure: true) == other)
     }
 
     @Test func nothingFoundIsNil() async {
-        let resolver = FallbackResolver(lastGood: last, macName: "Xuan's MacBook", browser: FakeBrowser([]))
+        let resolver = FallbackResolver(lastGood: { last }, macName: "Xuan's MacBook", browser: FakeBrowser([]))
         #expect(await resolver.resolve(afterFailure: true) == nil)
     }
 

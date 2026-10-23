@@ -740,6 +740,46 @@ struct BridgeStoreWithTheClientTests {
         store.unpair()
         #expect(await becomes { mac.openSockets == 0 })
     }
+
+    /// The Mac moved (another Wi-Fi, a new DHCP lease) and was found again with Bonjour: from then on, in the same
+    /// run, every connection tries the new address first, not the dead one it was paired at.
+    @Test func theNextConnectGoesToTheAddressTheMacMovedTo() async throws {
+        let mac = FakeMac()
+        mac.autoWelcome = "Mac"
+        let storage = FakeStorage(journal: Journal(), pairing: stored, snapshot: nil)
+        let browser = FakeBrowser([DiscoveredMac(name: "Mac", endpoint: moved)])
+        let store = BridgeStore(
+            storage: storage,
+            makeLink: { pairing, onEvent in
+                BridgeClient(
+                    transport: mac,
+                    // As the app does: the stored address, read before each connection.
+                    endpoint: FallbackResolver(
+                        lastGood: { storage.load()?.0.endpoint }, macName: pairing.macName, browser: browser
+                    ),
+                    fingerprint: pairing.fingerprint, credentials: { storage.load()?.1 }, app: "critter-ios/test",
+                    onEvent: onEvent, sleep: Sleeper().sleep
+                )
+            },
+            pairer: Pairer(transport: mac), background: ImmediateRunner()
+        )
+
+        // Nothing answers at the paired address any more; Bonjour finds the Mac at `moved`, which is remembered.
+        mac.failNextConnects(.unreachable)
+        store.sceneBecameActive()
+        #expect(await becomes { store.conn == connected })
+        #expect(await becomes { storage.endpointUpdates == [moved] })
+        #expect(browser.discoveries == 1)
+
+        // The connection drops: the very next one goes to `moved`, without browsing again.
+        mac.drop()
+        #expect(await mac.waitForConnects(3))
+        #expect(await becomes { store.conn == connected })
+        #expect(mac.connects.map { Endpoint(host: $0.host, port: $0.port) } == [home, moved, moved])
+        #expect(browser.discoveries == 1)
+        store.unpair()
+        #expect(await becomes { mac.openSockets == 0 })
+    }
 }
 
 private extension BridgeEvent {

@@ -325,6 +325,23 @@ final class FixedResolver: EndpointResolver {
     }
 }
 
+/// Finds what it was given, and counts how often it was asked.
+final class FakeBrowser: MacBrowser {
+    let macs: [DiscoveredMac]
+    private let asked = OSAllocatedUnfairLock(initialState: 0)
+
+    init(_ macs: [DiscoveredMac]) {
+        self.macs = macs
+    }
+
+    var discoveries: Int { asked.withLock { $0 } }
+
+    func discover() async -> [DiscoveredMac] {
+        asked.withLock { $0 += 1 }
+        return macs
+    }
+}
+
 /// Polls `condition` every 2 ms until it holds or `limit` has passed; whether it held.
 func eventually(within limit: Duration = .seconds(2), _ condition: @escaping () async -> Bool) async -> Bool {
     let deadline = ContinuousClock.now + limit

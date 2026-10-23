@@ -37,18 +37,20 @@ public struct StaticResolver: EndpointResolver {
 /// the network under its name, else the first Mac found. Its IP may change (another Wi-Fi, a
 /// new DHCP lease), its certificate does not: the same pin still holds.
 public struct FallbackResolver: EndpointResolver {
-    private let lastGood: Endpoint?
+    private let lastGood: @Sendable () -> Endpoint?
     private let macName: String
     private let browser: any MacBrowser
 
-    public init(lastGood: Endpoint?, macName: String, browser: any MacBrowser) {
+    /// - Parameter lastGood: read before each connection (the stored pairing's address), so an
+    ///   address the Mac was found at during this run is the next one tried.
+    public init(lastGood: @escaping @Sendable () -> Endpoint?, macName: String, browser: any MacBrowser) {
         self.lastGood = lastGood
         self.macName = macName
         self.browser = browser
     }
 
     public func resolve(afterFailure: Bool) async -> Endpoint? {
-        if !afterFailure, let lastGood { return lastGood }
+        if !afterFailure, let lastGood = lastGood() { return lastGood }
         let found = await browser.discover()
         return (found.first { $0.name == macName } ?? found.first)?.endpoint
     }

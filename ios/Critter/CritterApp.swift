@@ -61,15 +61,20 @@ struct CritterApp: App {
         return BridgeStore(
             storage: storage,
             makeLink: { pairing, onEvent in
-                BridgeClient(
+                // This link's own device only: once the pairing is replaced, it has no credentials and no address.
+                let current: @Sendable () -> (StoredPairing, Credentials)? = {
+                    guard let (stored, credentials) = storage.load(), stored.deviceId == pairing.deviceId else { return nil }
+                    return (stored, credentials)
+                }
+                return BridgeClient(
                     transport: transport,
-                    endpoint: FallbackResolver(lastGood: pairing.endpoint, macName: pairing.macName, browser: BonjourBrowser()),
+                    // The stored address, read before each connection: where the Mac was last reached, also when it
+                    // moved during this run (the store saves the address of every connection made).
+                    endpoint: FallbackResolver(
+                        lastGood: { current()?.0.endpoint }, macName: pairing.macName, browser: BonjourBrowser()
+                    ),
                     fingerprint: pairing.fingerprint,
-                    // This link's own device only: once the pairing is replaced, it has no credentials.
-                    credentials: {
-                        guard let (stored, credentials) = storage.load(), stored.deviceId == pairing.deviceId else { return nil }
-                        return credentials
-                    },
+                    credentials: { current()?.1 },
                     app: app,
                     onEvent: onEvent
                 )
