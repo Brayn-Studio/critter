@@ -98,3 +98,24 @@ private func editFirstSession(_ object: inout [String: Any], _ key: String, _ va
     #expect(String(decoding: try encoder.encode(full), as: UTF8.self) == #"{"activity":"bash","branch":"main","capabilities":{"canAnswer":true,"canInterrupt":false,"canSay":true,"readOnlyReason":"x"},"context":{"estimated":false,"usedPercent":42.5,"windowSize":1000000},"cwd":"~/CODESPACE/clawd","detail":"Bash: swift test","eventTime":1760000000000,"id":"s1","limits":{"fiveHour":{"resetsAt":1760003600000,"usedPercentage":12.5},"updatedAt":1760000000000},"model":"Opus 5.5","name":"critter","skin":"sprig","source":"codex_desktop","startedAt":1759990000000,"state":"waiting","tracked":true}"#)
     #expect(String(decoding: try encoder.encode(minimal), as: UTF8.self) == #"{"cwd":"/tmp","eventTime":1,"id":"s2","name":"n","skin":"sprig","source":"other","startedAt":2,"state":"idle","tracked":false}"#)
 }
+
+/// The hand-written `init(from:)` reads back everything the synthesized encoding writes, the session's own
+/// `limits` and `capabilities` (with its `readOnlyReason`) included.
+@Test func aSessionWithEveryFieldSetRoundTrips() throws {
+    let full = BridgeSession(
+        id: "s1", name: "critter", source: .codexDesktop, state: .waiting,
+        detail: "Bash: swift test", activity: "bash", cwd: "~/CODESPACE/clawd", branch: "main",
+        model: "Opus 5.5", context: BridgeContext(usedPercent: 42.5, windowSize: 1_000_000, estimated: true),
+        skin: "sprig", eventTime: 1_760_000_000_000, startedAt: 1_759_990_000_000, tracked: true,
+        limits: BridgeLimits(
+            fiveHour: RateWindow(usedPercentage: 12.5, resetsAt: 1_760_003_600_000),
+            sevenDay: RateWindow(usedPercentage: 61, resetsAt: 1_760_400_000_000),
+            updatedAt: 1_760_000_000_000
+        ),
+        capabilities: BridgeCapabilities(canSay: true, canAnswer: true, canInterrupt: true, readOnlyReason: "只读：会话在别处")
+    )
+    let decoded = try JSONDecoder().decode(BridgeSession.self, from: try JSONEncoder().encode(full))
+    #expect(decoded == full)
+    #expect(decoded.limits?.sevenDay?.usedPercentage == 61)
+    #expect(decoded.capabilities?.readOnlyReason == "只读：会话在别处")
+}
