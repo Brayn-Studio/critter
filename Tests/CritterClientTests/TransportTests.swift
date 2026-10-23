@@ -62,6 +62,22 @@ struct TransportTests {
         #expect(ContinuousClock.now - started < .milliseconds(200))
     }
 
+    /// A Mac that takes the TCP connection and never answers the TLS handshake (asleep halfway, a captive network):
+    /// the connect gives up at its deadline (6 s; half a second here) rather than URLSession's 60 s.
+    @Test func aHandshakeThatNeverFinishesIsUnreachableAtTheDeadline() async throws {
+        #expect(URLSessionTransport.connectTimeout == .seconds(6))
+        let listener = try SilentListener()
+        let started = ContinuousClock.now
+        await #expect(throws: TransportError.unreachable) {
+            _ = try await URLSessionTransport(connectTimeout: .milliseconds(500)).connect(
+                host: "127.0.0.1", port: listener.port, fingerprint: String(repeating: "ab", count: 32)
+            )
+        }
+        let took = ContinuousClock.now - started
+        #expect(took >= .milliseconds(500))
+        #expect(took < .seconds(3))
+    }
+
     @Test func discoveredAddressesAreUsableHosts() throws {
         // Network gives resolved addresses the interface they came in on; only a link-local
         // IPv6 address needs it.
@@ -88,5 +104,38 @@ struct TransportTests {
         let mac = FakeMac()
         mac.failNextConnects(.unreachable)
         #expect(await CertificateProbe(transport: mac).fingerprint(of: Endpoint(host: "192.168.1.20", port: 47823)) == nil)
+    }
+}
+
+/// A TCP port on 127.0.0.1 that takes connections (the kernel completes them into the backlog) and never says a
+/// word: a TLS handshake with it never finishes.
+private final class SilentListener {
+    let port: UInt16
+    private let socket: Int32
+
+    init() throws {
+        let socket = Darwin.socket(AF_INET, SOCK_STREAM, 0)
+        guard socket >= 0 else { throw POSIXError(.EBADF) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_port = 0
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        var length = socklen_t(MemoryLayout<sockaddr_in>.size)
+        let bound = withUnsafeMutablePointer(to: &address) { pointer in
+            pointer.withMemoryRebound(to: sockaddr.self, capacity: 1) { address in
+                bind(socket, address, length) == 0 && listen(socket, 8) == 0 && getsockname(socket, address, &length) == 0
+            }
+        }
+        guard bound else {
+            close(socket)
+            throw POSIXError(.EADDRNOTAVAIL)
+        }
+        self.socket = socket
+        port = UInt16(bigEndian: address.sin_port)
+    }
+
+    deinit {
+        close(socket)
     }
 }

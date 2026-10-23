@@ -10,17 +10,27 @@ public final class URLSessionTransport: BridgeTransport {
     /// snapshot needs, so one never ends the connection.
     public static let maxMessageBytes = 64 << 20
 
-    public init() {}
+    /// How long a connection may take to open (TCP, TLS, the WebSocket upgrade). On a LAN that is
+    /// well under a second; without it URLSession waits 60 s for a Mac that took the connection and
+    /// never answered. It bounds the opening only: an open WebSocket, idle or waiting for the Mac to
+    /// approve a pairing, is not timed.
+    public static let connectTimeout: Duration = .seconds(6)
+
+    private let connectTimeout: Duration
+
+    public init(connectTimeout: Duration = URLSessionTransport.connectTimeout) {
+        self.connectTimeout = connectTimeout
+    }
 
     /// Each connection gets an ephemeral URLSession of its own; it counts as made once the
     /// WebSocket is open. A host `url(host:port:)` refuses -> `.unreachable` at once, without
-    /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; any
-    /// other failure before the WebSocket opens -> `.unreachable`.
+    /// touching the network. A certificate that is not the pinned one -> `.pinMismatch`; not open
+    /// within `connectTimeout`, or any other failure before the WebSocket opens -> `.unreachable`.
     public func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
         guard let url = Self.url(host: host, port: port) else { throw TransportError.unreachable }
         let socket = URLSessionSocket(url: url, fingerprint: fingerprint)
         do {
-            try await socket.open()
+            try await socket.open(within: connectTimeout)
         } catch {
             socket.close()
             throw error
@@ -75,8 +85,15 @@ final class URLSessionSocket: BridgeSocket {
 
     var peerFingerprint: String? { events.peerFingerprint }
 
-    /// Starts the handshake and returns once the WebSocket is open.
-    func open() async throws {
+    /// Starts the handshake and returns once the WebSocket is open; not open within `deadline` ->
+    /// it throws (`.unreachable`) and the caller closes the socket.
+    func open(within deadline: Duration) async throws {
+        let timer = Task { [events] in
+            try? await Task.sleep(for: deadline)
+            guard !Task.isCancelled else { return }
+            events.openTimedOut()
+        }
+        defer { timer.cancel() }
         try await withTaskCancellationHandler {
             try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
                 events.whenOpen(continuation)
@@ -178,6 +195,18 @@ private final class SocketEvents: Sendable {
 
     func didClose() {
         state.withLock { $0.closedCleanly = true }
+    }
+
+    /// The deadline for opening has passed: an open still waiting fails as if the task had ended.
+    /// Once the WebSocket is open this does nothing.
+    func openTimedOut() {
+        let (waiter, error): (CheckedContinuation<Void, any Error>?, TransportError) = state.withLock { s in
+            guard !s.opened else { return (nil, .unreachable) }
+            s.finished = true
+            defer { s.openWaiter = nil }
+            return (s.openWaiter, s.pinMismatch ? .pinMismatch : .unreachable)
+        }
+        waiter?.resume(throwing: error)
     }
 
     /// The task is over (or was closed): an open still waiting fails.

@@ -33,10 +33,12 @@ struct LiveBridgeTests {
         }
 
         let events = EventLog()
+        // A short deadline for opening: the connection must outlive it (it bounds the opening only).
+        let deadline = Duration.seconds(1)
         let client = BridgeClient(
-            transport: transport, endpoint: StaticResolver(target.endpoint), fingerprint: uri.fingerprint,
-            credentials: { Credentials(deviceId: deviceId, token: token) }, app: "critter-ios/live-check",
-            onEvent: events.record
+            transport: URLSessionTransport(connectTimeout: deadline), endpoint: StaticResolver(target.endpoint),
+            fingerprint: uri.fingerprint, credentials: { Credentials(deviceId: deviceId, token: token) },
+            app: "critter-ios/live-check", onEvent: events.record
         )
         await client.start()
         let live = await eventually(within: .seconds(10)) {
@@ -45,6 +47,9 @@ struct LiveBridgeTests {
         }
         #expect(live, "states: \(events.states)")
         #expect(events.all.contains(.connectedTo(target.endpoint)))
+        try await Task.sleep(for: deadline * 3)
+        #expect(events.states.last == .connected(macName: macName), "states: \(events.states)")
+        #expect(events.all.filter { if case .connectedTo = $0 { true } else { false } }.count == 1)
 
         let reply = await client.request(.seen(sessionId: "no-such-session"))
         #expect(reply != .failed("未连接") && reply != .failed("超时"))
