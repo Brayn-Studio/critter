@@ -150,9 +150,10 @@ sleep 5
 xcrun simctl io "$SIM" screenshot "$OUT/relaunch.png" >/dev/null 2>&1 || { echo "could not take a screenshot"; exit 1; }
 xcrun simctl terminate "$SIM" "$BUNDLE" >/dev/null 2>&1
 
-# 3. What the app kept: the pairing (its deviceId is what gets revoked) and the last snapshot. The app's defaults
-# live in its container (`simctl spawn ... defaults read` does not see them).
+# 3. What the app kept: the pairing (its deviceId is what gets revoked) and the last snapshot, in a folder kept out of
+# backups. The app's defaults live in its container (`simctl spawn ... defaults read` does not see them).
 DATA="$(xcrun simctl get_app_container "$SIM" "$BUNDLE" data)"
+SNAPSHOTS="$DATA/Library/Application Support/Snapshot"
 DEVICE="$(python3 -I -c '
 import json, plistlib, sys
 with open(sys.argv[1], "rb") as f:
@@ -162,9 +163,13 @@ print(json.loads(prefs["critter.pairing"])["deviceId"])' "$DATA/Library/Preferen
 echo "$DEVICE" >"$WORK/device"
 SESSIONS="$(python3 -I -c '
 import json, sys
-print(len(json.load(open(sys.argv[1]))["body"]["sessions"]))' "$DATA/Library/Application Support/snapshot.json" 2>/dev/null)"
+print(len(json.load(open(sys.argv[1]))["body"]["sessions"]))' "$SNAPSHOTS/snapshot.json" 2>/dev/null)"
 [ -n "$SESSIONS" ] || { echo "the app has no snapshot: it did not connect"; exit 1; }
 echo "paired as $DEVICE; the app has a snapshot of $SESSIONS session(s)"
+# `isExcludedFromBackup` on the folder is kept as this attribute.
+xattr -p com.apple.metadata:com_apple_backup_excludeItem "$SNAPSHOTS" >/dev/null 2>&1 \
+  || { echo "the snapshot's folder is not excluded from backup"; exit 1; }
+echo "the snapshot's folder is excluded from backup"
 
 echo "screenshots:"
 echo "  $OUT/home.png"

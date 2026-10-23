@@ -6,7 +6,11 @@ import Security
 
 /// Where the phone keeps its pairing: the pairing itself as JSON text in `UserDefaults` (`critter.pairing`), its
 /// token in the keychain (service `com.braynlabs.critter.pairing`, account = the pairing's device id, this device
-/// only, readable after the first unlock), and the last snapshot in Application Support/`snapshot.json`.
+/// only, readable after the first unlock), and the last snapshot in Application Support/`Snapshot/snapshot.json`.
+///
+/// The snapshot holds commands, plan text, paths and the names of sessions and the Mac: it stays out of iCloud and
+/// computer backups (spec §3: no session content goes to Apple). Its folder is marked excluded from backup, which
+/// covers the file inside it however often an atomic write replaces it.
 ///
 /// A token is only ever read under the device id of the pairing stored, so a pairing and someone else's token never
 /// make up the credentials, even if the app stopped halfway through `save`.
@@ -27,7 +31,7 @@ final class KeychainPairingStorage: PairingStorage {
 
     init() {
         let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
-        snapshotURL = support.appending(path: "snapshot.json")
+        snapshotURL = support.appending(path: "Snapshot", directoryHint: .isDirectory).appending(path: "snapshot.json")
     }
 
     // MARK: - The pairing
@@ -126,14 +130,25 @@ final class KeychainPairingStorage: PairingStorage {
         }
     }
 
+    /// Not written at all unless its folder is excluded from backup.
     private func write(_ snapshot: CachedSnapshot) {
         do {
             let data = try JSONEncoder().encode(snapshot)
-            try FileManager.default.createDirectory(at: snapshotURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try Self.makeFolderExcludedFromBackup(snapshotURL.deletingLastPathComponent())
             try data.write(to: snapshotURL, options: .atomic)
         } catch {
             Self.log.error("writing the snapshot failed: \(error)")
         }
+    }
+
+    /// Creates `folder` if it is not there, and marks it excluded from backup (again: it is cheap, and a folder
+    /// that was there before gets it too).
+    private static func makeFolderExcludedFromBackup(_ folder: URL) throws {
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        var folder = folder
+        var values = URLResourceValues()
+        values.isExcludedFromBackup = true
+        try folder.setResourceValues(values)
     }
 
     private func dropSnapshot() {
