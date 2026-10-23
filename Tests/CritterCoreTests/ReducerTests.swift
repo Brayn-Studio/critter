@@ -57,7 +57,7 @@ private func input(_ json: String) -> HookInput {
         now: 3, pid: 100, pidStartTime: 1000
     ) else { Issue.record("expected write"); return }
     #expect(r3.state == .done)
-    #expect(r3.detail == "做完了：全部测试通过。")
+    #expect(r3.detail == "全部测试通过。")
 }
 
 @Test func askUserQuestionIsWaiting() {

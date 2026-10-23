@@ -31,7 +31,7 @@ now_ms() { perl -MTime::HiRes=time -e 'printf "%d", time * 1000'; }
 default_detail() {
   case "$1" in
     waiting) echo "需要你确认：Bash(npm test)" ;;
-    done) echo "做完了：全部测试通过。" ;;
+    done) echo "全部测试通过。" ;;
     running) echo "Bash: npm test" ;;
     error) echo "出错了：API 超时" ;;
     *) echo "" ;;

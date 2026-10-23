@@ -156,7 +156,7 @@ private func rollout(_ body: Data) throws -> (URL, URL) {
     latest = reader.read(owner: owner)
     record = try #require(latest)
     #expect(record.state == .done)
-    #expect(record.detail == "做完了：完成了。")
+    #expect(record.detail == "完成了。")
     #expect(record.activity == nil)
     try handle.write(contentsOf: line("event_msg", ["type": "token_count", "info": [:]]))
     #expect(reader.read(owner: owner)?.state == .done)
@@ -316,7 +316,7 @@ func codexDiscoveryRequiresALiveProcessHoldingTheRollout(binaryName: String) asy
     var reader = CodexRolloutReader()
     let record = reader.read(owner: CodexRolloutOwner(path: url.path, pid: 42, startTime: nil))
     #expect(record?.state == .done)
-    #expect(record?.detail == "做完了：完成。")
+    #expect(record?.detail == "完成。")
 }
 
 @Test func codexRuntimeRecognizesChatGPTAndPrefersTheHostingTerminal() {

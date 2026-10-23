@@ -96,7 +96,7 @@ public enum StateReducer {
         case "Stop":
             let detail: String
             if let last = input.lastAssistantMessage {
-                detail = "做完了：" + ToolSummary.firstSentence(last, max: 50)
+                detail = ToolSummary.firstSentence(last, max: 50)
             } else {
                 detail = BubbleText.done
             }

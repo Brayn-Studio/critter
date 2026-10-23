@@ -137,7 +137,7 @@ public struct CodexRolloutReader {
                 activeTools = [:]; toolOrder = []; backgroundCommands = []
                 next.state = .done; next.activity = nil
                 let message = payload["last_agent_message"] as? String ?? ""
-                next.detail = message.isEmpty ? BubbleText.done : "做完了：" + ToolSummary.firstSentence(message, max: 80)
+                next.detail = message.isEmpty ? BubbleText.done : ToolSummary.firstSentence(message, max: 80)
             case "turn_aborted":
                 turnClosed = true
                 activeTools = [:]; toolOrder = []; backgroundCommands = []; next.progress = nil
