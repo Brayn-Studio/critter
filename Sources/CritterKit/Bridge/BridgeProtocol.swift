@@ -94,6 +94,28 @@ public struct BridgeSession: Codable, Equatable, Sendable {
         self.limits = limits
         self.capabilities = capabilities
     }
+
+    /// A Mac newer than this build may send a `source` or `state` it doesn't know. Rather than
+    /// failing the whole snapshot, they decode as `.other` and `.idle`. Encoding stays synthesized.
+    public init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(String.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        source = SessionSource(rawValue: try c.decode(String.self, forKey: .source)) ?? .other
+        state = PetState(rawValue: try c.decode(String.self, forKey: .state)) ?? .idle
+        detail = try c.decodeIfPresent(String.self, forKey: .detail)
+        activity = try c.decodeIfPresent(String.self, forKey: .activity)
+        cwd = try c.decode(String.self, forKey: .cwd)
+        branch = try c.decodeIfPresent(String.self, forKey: .branch)
+        model = try c.decodeIfPresent(String.self, forKey: .model)
+        context = try c.decodeIfPresent(BridgeContext.self, forKey: .context)
+        skin = try c.decode(String.self, forKey: .skin)
+        eventTime = try c.decode(Int64.self, forKey: .eventTime)
+        startedAt = try c.decode(Int64.self, forKey: .startedAt)
+        tracked = try c.decode(Bool.self, forKey: .tracked)
+        limits = try c.decodeIfPresent(BridgeLimits.self, forKey: .limits)
+        capabilities = try c.decodeIfPresent(BridgeCapabilities.self, forKey: .capabilities)
+    }
 }
 
 public struct BridgeCapabilities: Codable, Equatable, Sendable {
@@ -275,7 +297,7 @@ public enum ServerMessage: Equatable, Sendable {
         var sentAt: Int64?
         var sessions: [BridgeSession]?
         var limits: BridgeLimits?
-        var pending: [BridgePending]?
+        var pending: SkippingFailures<BridgePending>?
         var prefs: BridgePrefs?
         var id: String?
         var name: String?
@@ -295,7 +317,7 @@ public enum ServerMessage: Equatable, Sendable {
             w = Wire(type: "denied"); w.reason = r.rawValue
         case .snapshot(let seq, let sentAt, let b):
             w = Wire(type: "snapshot"); w.seq = seq; w.sentAt = sentAt
-            w.sessions = b.sessions; w.limits = b.limits; w.pending = b.pending; w.prefs = b.prefs
+            w.sessions = b.sessions; w.limits = b.limits; w.pending = SkippingFailures(b.pending); w.prefs = b.prefs
         case .skin(let id, let n, let manifest):
             w = Wire(type: "skin"); w.id = id; w.name = n; w.manifest = manifest
         case .result(let id, let ok, let r, let m):
@@ -318,7 +340,7 @@ public enum ServerMessage: Equatable, Sendable {
             return .denied(reason: r)
         case "snapshot":
             guard let seq = w.seq, let at = w.sentAt, let s = w.sessions, let p = w.pending, let pr = w.prefs else { return nil }
-            return .snapshot(seq: seq, sentAt: at, body: SnapshotBody(sessions: s, limits: w.limits, pending: p, prefs: pr))
+            return .snapshot(seq: seq, sentAt: at, body: SnapshotBody(sessions: s, limits: w.limits, pending: p.elements, prefs: pr))
         case "skin":
             guard let n = w.name else { return nil }
             return .skin(id: w.id, name: n, manifest: w.manifest)
@@ -329,6 +351,39 @@ public enum ServerMessage: Equatable, Sendable {
             return nil
         }
     }
+}
+
+/// A JSON array decoded one element at a time: an element that doesn't decode (say a request
+/// of a kind this build doesn't know) is left out instead of failing the whole array. Encodes
+/// as a plain array.
+private struct SkippingFailures<Element: Codable>: Codable {
+    var elements: [Element]
+
+    init(_ elements: [Element]) {
+        self.elements = elements
+    }
+
+    init(from decoder: Decoder) throws {
+        var container = try decoder.unkeyedContainer()
+        var elements: [Element] = []
+        while !container.isAtEnd {
+            if let element = try? container.decode(Element.self) {
+                elements.append(element)
+            } else {
+                // A failed decode leaves the container on the same element; step over it.
+                _ = try container.decode(Anything.self)
+            }
+        }
+        self.elements = elements
+    }
+
+    func encode(to encoder: Encoder) throws {
+        var container = encoder.unkeyedContainer()
+        for element in elements { try container.encode(element) }
+    }
+
+    /// Decodes from any JSON value, keeping nothing.
+    private struct Anything: Decodable {}
 }
 
 private func encodeWire<T: Encodable>(_ wire: T) -> Data {
