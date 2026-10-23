@@ -15,6 +15,10 @@ import Foundation
 /// - `-critterAutoSubmit allow|approve|first-option`: one second after an answer card is up, does what its primary
 ///   button does: allows a permission request, approves a plan, or chooses the first option of every question.
 ///   Together with `-critterFixtureResult` this shows how the card takes each kind of receipt.
+/// - `-critterAutoPick first-option`: one second after a question card is up, chooses the first option of its first
+///   question, without sending (once per run).
+/// - `-critterReopen`: with `-critterOpen answer:…`, closes that card 3.5 s after it was opened and opens it again 1.5 s
+///   later, to see what a reopened card shows (it must be what the draft holds).
 /// - `-critterPairURI <uri>`: pairs with this URI once launched, without asking (for scripts).
 /// - `-critterDeviceName <name>`: the device name pairing sends.
 /// - `-critterOpenURL <url>`: once launched, the app opens this URL itself, so it comes back in through the
@@ -23,6 +27,10 @@ struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
         case approve
+        case firstOption
+    }
+
+    enum AutoPick: Equatable {
         case firstOption
     }
 
@@ -36,11 +44,17 @@ struct DebugLaunch {
     var fixtureResult = CommandResult(ok: true, reason: nil, message: nil)
     var open: Open?
     var autoSubmit: AutoSubmit?
+    var autoPick: AutoPick?
+    var reopen = false
     var pairURI: URL?
     var deviceName: String?
     var openURL: URL?
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
+
+    /// Whether `-critterAutoPick` has done its pick in this run: it picks once, so a card that is opened again shows
+    /// only what the app kept.
+    @MainActor static var autoPickDone = false
 
     /// The moment the fixtures are written as of: 2025-10-09 08:53:20 UTC, in milliseconds.
     static let fixtureNow: Int64 = 1_760_000_000_000
@@ -73,6 +87,8 @@ struct DebugLaunch {
         case "first-option": autoSubmit = .firstOption
         default: break
         }
+        if value("critterAutoPick") == "first-option" { autoPick = .firstOption }
+        reopen = arguments.contains("-critterReopen")
         pairURI = value("critterPairURI").flatMap(URL.init(string:))
         deviceName = value("critterDeviceName")
         openURL = value("critterOpenURL").flatMap(URL.init(string:))

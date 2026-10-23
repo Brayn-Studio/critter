@@ -186,7 +186,8 @@ struct AnswerSheet: View {
                 )
             case .question:
                 QuestionForm(
-                    questions: RequestText.questions(request.input), draft: draft, enabled: enabled,
+                    questions: RequestText.questions(request.input), draft: draft,
+                    choices: drafts.choices(for: request.requestId), enabled: enabled,
                     failure: failure, doneLabel: doneLabel,
                     onSubmit: { submit(draft, request: request, session: shown.session) }
                 )

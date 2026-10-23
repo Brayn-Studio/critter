@@ -5,23 +5,18 @@ import SwiftUI
 /// question, option cards (a dot to choose one, a square to choose several) and 「自己写一句…」. A lone single-select
 /// question is answered by tapping an option; anything else has the button 「提交 n 个回答」.
 ///
-/// What is chosen lives in the draft (it knows what the Mac accepts); the choices shown are kept here too, so that
-/// when the draft is replaced after a failed attempt they are put into the new one and nothing has to be redone.
+/// What is chosen lives in the draft (it knows what the Mac accepts) and, as it is shown, in `choices`, which belongs
+/// to the draft and not to this view: when the card is closed and opened again it shows what the draft holds, and
+/// when the draft is replaced after a failed attempt the choices are put into the new one.
 struct QuestionForm: View {
     let questions: [Question]
     let draft: AnswerDraft
+    let choices: QuestionChoices
     let enabled: Bool
     let failure: String?
     let doneLabel: String?
     let onSubmit: () -> Void
 
-    /// The labels chosen per question, in the order tapped.
-    @State private var picked: [String: [String]] = [:]
-    /// The questions whose own answer is being written.
-    @State private var typing: [String: Bool] = [:]
-    @State private var typed: [String: String] = [:]
-    /// Counts changes to the draft, which the view cannot see by itself.
-    @State private var changes = 0
     @FocusState private var focused: String?
 
     private var instant: Bool {
@@ -29,7 +24,7 @@ struct QuestionForm: View {
     }
 
     var body: some View {
-        let ready = changes >= 0 && draft.payload() != nil
+        let ready = choices.revision >= 0 && draft.payload() != nil
         VStack(alignment: .leading, spacing: 12) {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
@@ -43,7 +38,7 @@ struct QuestionForm: View {
             FailureLine(text: failure)
             if let doneLabel {
                 DoneButton(label: doneLabel)
-            } else if !instant || typing.values.contains(true) {
+            } else if !instant || choices.isTypingAny {
                 Button(action: onSubmit) {
                     Text(verbatim: "提交 \(questions.count) 个回答").frame(maxWidth: .infinity)
                 }
@@ -52,16 +47,23 @@ struct QuestionForm: View {
                 .disabled(!(enabled && ready))
             }
         }
-        .onChange(of: ObjectIdentifier(draft)) { replay() }
         #if DEBUG
         .task {
             guard DebugLaunch.current.autoSubmit == .firstOption else { return }
             // One second after the card is up: the first option of every question, then the same as the button.
             try? await Task.sleep(for: .seconds(1))
             for question in questions {
-                if let option = question.options.first { select(question, option) }
+                if let option = question.options.first { choices.select(question, option, in: draft) }
             }
             onSubmit()
+        }
+        .task {
+            guard DebugLaunch.current.autoPick == .firstOption, !DebugLaunch.autoPickDone else { return }
+            try? await Task.sleep(for: .seconds(1))
+            // Once per run: a card that is opened again must show what the app kept, not a new pick.
+            guard !DebugLaunch.autoPickDone, let question = questions.first, let option = question.options.first else { return }
+            DebugLaunch.autoPickDone = true
+            choices.select(question, option, in: draft)
         }
         #endif
     }
@@ -99,12 +101,12 @@ struct QuestionForm: View {
     }
 
     private func optionCard(_ question: Question, _ option: QuestionOption) -> some View {
-        let selected = picked[question.text]?.contains(option.label) == true
+        let selected = choices.isPicked(question, option)
         let multi = question.multiSelect
         let description = option.description.flatMap { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0 }
         return Button {
             guard enabled else { return }
-            select(question, option)
+            choices.select(question, option, in: draft)
             if instant { onSubmit() }
         } label: {
             HStack(alignment: .top, spacing: 12) {
@@ -156,7 +158,7 @@ struct QuestionForm: View {
     /// 「自己写一句…」, which turns into a field.
     @ViewBuilder
     private func ownAnswer(_ question: Question) -> some View {
-        if typing[question.text] == true {
+        if choices.isTyping(question) {
             TextField("自己写一句", text: typedBinding(question), axis: .vertical)
                 .lineLimit(1...3)
                 .focused($focused, equals: question.text)
@@ -167,7 +169,7 @@ struct QuestionForm: View {
         } else {
             Button {
                 guard enabled else { return }
-                typing[question.text] = true
+                choices.startTyping(question)
                 focused = question.text
             } label: {
                 HStack(spacing: 8) {
@@ -192,44 +194,10 @@ struct QuestionForm: View {
 
     // MARK: - Choosing
 
-    /// Chooses `option` (or, for several, adds it or takes it away), without sending anything.
-    private func select(_ question: Question, _ option: QuestionOption) {
-        typing[question.text] = false
-        if question.multiSelect {
-            draft.toggle(question: question.text, label: option.label)
-            var labels = picked[question.text] ?? []
-            if let at = labels.firstIndex(of: option.label) { labels.remove(at: at) } else { labels.append(option.label) }
-            picked[question.text] = labels
-        } else {
-            draft.choose(question: question.text, label: option.label)
-            picked[question.text] = [option.label]
-        }
-        changes += 1
-    }
-
     private func typedBinding(_ question: Question) -> Binding<String> {
         Binding(
-            get: { typed[question.text] ?? "" },
-            set: { text in
-                typed[question.text] = text
-                draft.freeText(question: question.text, text: text)
-                picked[question.text] = []
-                changes += 1
-            }
+            get: { choices.typedText(question) },
+            set: { choices.type($0, for: question, in: draft) }
         )
-    }
-
-    /// Puts what is shown into the new draft that replaced the old one.
-    private func replay() {
-        for question in questions {
-            if typing[question.text] == true, let text = typed[question.text], !text.isEmpty {
-                draft.freeText(question: question.text, text: text)
-            } else if question.multiSelect {
-                for label in picked[question.text] ?? [] { draft.toggle(question: question.text, label: label) }
-            } else if let label = picked[question.text]?.first {
-                draft.choose(question: question.text, label: label)
-            }
-        }
-        changes += 1
     }
 }

@@ -101,7 +101,14 @@ struct HomeView: View {
             // The sheets look their subject up in the snapshot: let the fixture's arrive first.
             for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
             switch DebugLaunch.current.open {
-            case .answer(let requestId)?: presentedRequestId = requestId
+            case .answer(let requestId)?:
+                presentedRequestId = requestId
+                if DebugLaunch.current.reopen {
+                    try? await Task.sleep(for: .seconds(3.5))
+                    presentedRequestId = nil
+                    try? await Task.sleep(for: .seconds(1.5))
+                    presentedRequestId = requestId
+                }
             case .detail(let sessionId)?: presentedSessionId = sessionId
             case .settings?: showSettings = true
             case nil: break
@@ -287,7 +294,7 @@ private struct EmptyList: View {
                 .font(.headline)
                 .multilineTextAlignment(.center)
             if hasData {
-                Text("在电脑上开一个 Claude Code 会话，它的宠物会从这片草地里钻出来。")
+                Text("在电脑上开一个 Claude Code 或 Codex 会话，它的宠物会从这片草地里钻出来。")
                     .font(.subheadline)
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
