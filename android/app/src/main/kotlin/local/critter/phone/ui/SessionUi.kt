@@ -37,13 +37,17 @@ fun sourceLabel(source: SessionSource): String = when (source) {
     SessionSource.codex_terminal -> "Codex · 终端"
     SessionSource.codex_vscode -> "Codex · VS Code"
     SessionSource.codex_desktop -> "Codex · Desktop"
+    SessionSource.kimi_desktop -> "Kimi · Desktop"
+    SessionSource.kimi_terminal -> "Kimi · 终端"
+    SessionSource.deepseek_desktop -> "DeepSeek · Desktop"
 }
 
 /** The pixel icon for where a session runs. */
 fun sourceIcon(source: SessionSource): String = when (source) {
-    SessionSource.terminal, SessionSource.codex_terminal -> "term"
+    SessionSource.terminal, SessionSource.codex_terminal, SessionSource.kimi_terminal -> "term"
     SessionSource.vscode, SessionSource.codex_vscode -> "editor"
-    SessionSource.desktop, SessionSource.other, SessionSource.codex, SessionSource.codex_desktop -> "laptop"
+    SessionSource.desktop, SessionSource.other, SessionSource.codex, SessionSource.codex_desktop,
+    SessionSource.kimi_desktop, SessionSource.deepseek_desktop -> "laptop"
 }
 
 /** Old phones cached Codex as `other`; its namespaced id still identifies the provider. */

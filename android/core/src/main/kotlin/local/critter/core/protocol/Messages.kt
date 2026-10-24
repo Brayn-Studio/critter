@@ -52,7 +52,7 @@ object DenyReasonSerializer : LenientEnumSerializer<DenyReason>("DenyReason", De
 object ResultReasonSerializer : LenientEnumSerializer<ResultReason>("ResultReason", ResultReason.entries, ResultReason.unknown)
 
 @Serializable(with = SessionSourceSerializer::class)
-enum class SessionSource { terminal, vscode, desktop, other, codex, codex_terminal, codex_vscode, codex_desktop }
+enum class SessionSource { terminal, vscode, desktop, other, codex, codex_terminal, codex_vscode, codex_desktop, kimi_desktop, kimi_terminal, deepseek_desktop }
 
 @Serializable(with = PetStateSerializer::class)
 enum class PetState { idle, running, waiting, done, error, unknown }

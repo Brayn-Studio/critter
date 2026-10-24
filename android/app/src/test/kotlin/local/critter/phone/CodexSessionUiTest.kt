@@ -42,6 +42,31 @@ class CodexSessionUiTest {
         assertEquals("终端", sourceLabel(SessionSource.terminal))
     }
 
+    @Test fun kimiAndDeepseekSourcesHaveTheirOwnLabelsAndIcons() {
+        assertEquals("Kimi · Desktop", sourceLabel(SessionSource.kimi_desktop))
+        assertEquals("Kimi · 终端", sourceLabel(SessionSource.kimi_terminal))
+        assertEquals("DeepSeek · Desktop", sourceLabel(SessionSource.deepseek_desktop))
+        assertEquals("laptop", sourceIcon(SessionSource.kimi_desktop))
+        assertEquals("term", sourceIcon(SessionSource.kimi_terminal))
+        assertEquals("laptop", sourceIcon(SessionSource.deepseek_desktop))
+        for (source in listOf(SessionSource.kimi_desktop, SessionSource.kimi_terminal, SessionSource.deepseek_desktop)) {
+            assertFalse(isCodexSession(session(source, "x-thread")))
+            assertEquals(source, visibleSessionSource(session(source, "x-thread")))
+        }
+    }
+
+    @Test fun kimiAndDeepseekFollowTheirExplicitCapabilities() {
+        val readOnly = BridgeCapabilities(canSay = false, canAnswer = true, readOnlyReason = "只能在电脑上发消息")
+        for (source in listOf(SessionSource.kimi_desktop, SessionSource.kimi_terminal, SessionSource.deepseek_desktop)) {
+            val s = session(source, "x-thread").copy(capabilities = readOnly)
+            assertFalse(supportsMessages(s))
+            assertTrue(supportsAnswers(s))
+            assertEquals("只能在电脑上发消息", messageHint(s))
+            val closed = s.copy(capabilities = BridgeCapabilities(canSay = false, canAnswer = false))
+            assertFalse(supportsAnswers(closed))
+        }
+    }
+
     @Test fun codexMessagesRequireAnExplicitLiveOwnerCapability() {
         assertFalse(supportsMessages(session()))
         assertFalse(supportsMessages(session(SessionSource.other)))

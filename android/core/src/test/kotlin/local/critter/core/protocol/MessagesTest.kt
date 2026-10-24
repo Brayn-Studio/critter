@@ -60,6 +60,20 @@ class MessagesTest {
         }
     }
 
+    @Test fun kimiAndDeepseekSourcesSurviveSnapshotDecoding() {
+        val expected = mapOf(
+            "kimi_desktop" to SessionSource.kimi_desktop,
+            "kimi_terminal" to SessionSource.kimi_terminal,
+            "deepseek_desktop" to SessionSource.deepseek_desktop,
+        )
+        for ((source, value) in expected) {
+            val text = resource("server-snapshot.json").replace("\"source\": \"terminal\"", "\"source\": \"$source\"")
+            val snapshot = assertIs<ServerMessage.Snapshot>(decodeServer(text))
+            assertEquals(value, snapshot.body.sessions.single().source)
+            assertEquals(source, snapshot.body.sessions.single().source.name)
+        }
+    }
+
     @Test fun decodesTheDocumentedSnapshot() {
         val snap = assertIs<ServerMessage.Snapshot>(decodeServer(resource("server-snapshot.json")))
         assertEquals(7, snap.seq)
