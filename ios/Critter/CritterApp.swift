@@ -226,6 +226,9 @@ struct CritterApp: App {
             },
             pairer: Pairer(transport: transport),
             background: UIKitBackgroundRunner(),
+            // The pairing connection would be the first touch of the local network: it would bring up iOS's prompt and
+            // fail while it is up. A Bonjour browser asks first, and the pairing waits for the answer.
+            localNetworkGate: BonjourLocalNetworkGate(),
             pushAcks: SecretPushAckStorage.inKeychain(),
             // A Mac left that may still push here: a new push key, and a line in the settings.
             onUntoldMac: { PushSetup.shared.macLeftUntold($0) }

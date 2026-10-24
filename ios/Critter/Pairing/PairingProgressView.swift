@@ -5,14 +5,17 @@ import UIKit
 
 /// An attempt under way (mockup "等 Mac 点允许", Android `WaitingPane`): Sprig waiting with its hand up on a patch of
 /// meadow, over a drawing of the row the Mac's "添加手机" window shows now with 「允许」 circled. Reaching the Mac and
-/// waiting for 「允许」 are the same page; only the row's status line changes. Under the row, the line about a Mac left
-/// without being told (`LeftMacNotice`), while there is one. While the request is with the Mac the screen stays on
-/// (`ScreenAwakeHold`).
+/// waiting for 「允许」 are the same page; only the row's status line changes. Before the Mac is reached, while iOS asks
+/// for 本地网络 or refuses it (`PairingPhase.waitingForLocalNetwork`), the page asks for that instead, with 「去设置」
+/// opening the app's page in Settings, and no row. Under it, the line about a Mac left without being told
+/// (`LeftMacNotice`), while there is one. While the request is with the Mac the screen stays on (`ScreenAwakeHold`).
 struct WaitingPage: View {
     /// The seeds over it, in the first-run guide.
     var position: StepPosition?
     /// The request is with the Mac (rather than still reaching it).
     let awaiting: Bool
+    /// Waiting for 本地网络 before reaching the Mac: iOS asks for it, or it is off.
+    var localNetwork = false
     /// This phone's name, as the Mac shows it.
     let deviceName: String
     /// 「取消」: closes the attempt's connection (the Mac withdraws its request).
@@ -20,6 +23,7 @@ struct WaitingPage: View {
 
     /// The screen kept on while the request is with the Mac.
     @State private var awake = ScreenAwakeHold()
+    @Environment(\.openURL) private var openURL
 
     var body: some View {
         column
@@ -51,13 +55,24 @@ struct WaitingPage: View {
     private var column: some View {
         StepColumn(position: position) {
             StepStage(state: .waiting)
-            StepTitle(text: "在 Mac 上点「允许」")
-                .padding(.top, 14)
-            StepBody(text: "Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。")
-            MacRequestRow(deviceName: deviceName, awaiting: awaiting)
-                .padding(.top, 6)
+            if localNetwork {
+                StepTitle(text: "等你允许「本地网络」")
+                    .padding(.top, 14)
+                StepBody(text: "在弹窗里点「允许」，就会接着连 Mac。没看到弹窗的话，到设置里打开 Critter 的「本地网络」。")
+            } else {
+                StepTitle(text: "在 Mac 上点「允许」")
+                    .padding(.top, 14)
+                StepBody(text: "Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。")
+                MacRequestRow(deviceName: deviceName, awaiting: awaiting)
+                    .padding(.top, 6)
+            }
             LeftMacNotice(inset: 0, above: 4)
         } bottom: {
+            if localNetwork {
+                PixelButton(title: LocalNetworkDenial.action, size: .large, wide: true) {
+                    if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+                }
+            }
             PixelButton(title: "取消", style: .text, action: onCancel)
         }
     }

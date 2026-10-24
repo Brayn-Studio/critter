@@ -66,6 +66,8 @@ import UserNotifications
 ///     `manual-searching`: none found yet. `manual-trust`: then 「连接」 tapped, the trust dialog asks.
 ///     `manual-probe-failed`: 「连接」 tapped and the Mac could not be reached (the note on the page).
 ///   - `confirm`: a link from outside, waiting in its confirmation.
+///   - `local-network[@<seconds>]`: an attempt from a link waiting for 本地网络 (iOS asking, or it is off), until
+///     「取消」 or, with seconds, until it is allowed after that long; then the Mac waits for 「允许」.
 ///   - `connecting`, `awaiting`: an attempt from a link, reaching the Mac or waiting there for 「允许」, until 「取消」.
 ///   - `failed:<reason>[@<seconds>]`: the attempt fails (`badCode`, `rejected`, `protocol`, `cert`, `noAnswer`,
 ///     `unreachable`), at once or after waiting that long at the Mac. With `-critterOpenURL <a critter-pair:// link>`
@@ -524,7 +526,8 @@ struct DebugLaunch {
                 )
             },
             pairer: pairing.pairer,
-            background: UIKitBackgroundRunner()
+            background: UIKitBackgroundRunner(),
+            localNetworkGate: pairing.localNetworkGate
         )
     }
 
@@ -563,6 +566,7 @@ struct DebugLaunch {
             },
             pairer: pairing.map { $0.pairer as any PairingLink } ?? Pairer(transport: URLSessionTransport()),
             background: UIKitBackgroundRunner(),
+            localNetworkGate: pairing?.localNetworkGate ?? BonjourLocalNetworkGate(),
             // As the real store: a Mac left that may still push here changes the push key and shows the line.
             onUntoldMac: { PushSetup.shared.macLeftUntold($0) }
         )

@@ -32,6 +32,9 @@ enum PairingDemo: Equatable {
     }
 
     enum Outcome: Equatable {
+        /// Waiting for 本地网络 before reaching the Mac (iOS asking, or it is off): until cancelled, or until it is
+        /// allowed after `after` seconds (never for 0); then the request is with the Mac, until cancelled.
+        case localNetwork(after: Double)
         /// Still reaching the Mac, until cancelled.
         case connecting
         /// The request is with the Mac, until cancelled.
@@ -43,8 +46,8 @@ enum PairingDemo: Equatable {
     }
 
     /// `scan`, `scan-race`, `scan-read`, `manual`, `manual-searching`, `manual-trust`, `manual-probe-failed`,
-    /// `confirm`, `connecting`, `awaiting`, `failed:<reason>[@<seconds>]` (reasons `badCode`, `rejected`, `protocol`,
-    /// `cert`, `noAnswer`, `unreachable`), `paired@<seconds>`.
+    /// `confirm`, `local-network[@<seconds>]`, `connecting`, `awaiting`, `failed:<reason>[@<seconds>]` (reasons
+    /// `badCode`, `rejected`, `protocol`, `cert`, `noAnswer`, `unreachable`), `paired@<seconds>`.
     init?(argument: String) {
         func seconds(_ text: Substring?) -> Double { text.flatMap { Double($0) } ?? 0 }
         switch argument {
@@ -63,6 +66,10 @@ enum PairingDemo: Equatable {
             let head = parts.first ?? ""
             if head == "paired" {
                 self = .attempt(.paired(after: seconds(parts.dropFirst().first)))
+                return
+            }
+            if head == "local-network" {
+                self = .attempt(.localNetwork(after: seconds(parts.dropFirst().first)))
                 return
             }
             guard head.hasPrefix("failed:") else { return nil }
@@ -99,6 +106,12 @@ enum PairingDemo: Equatable {
         if case .attempt(let outcome) = self { return DemoPairer(outcome: outcome) }
         // The manual page's 「信任并配对」, or a confirmed link: the Mac waits for 「允许」.
         return DemoPairer(outcome: .awaiting)
+    }
+
+    /// What the pairing waits for before the pairer: 本地网络 refused for `local-network`, nothing for the rest.
+    var localNetworkGate: any LocalNetworkGate {
+        if case .attempt(.localNetwork(let after)) = self { return DemoLocalNetworkGate(allowAfter: after) }
+        return OpenLocalNetworkGate()
     }
 }
 
@@ -138,7 +151,7 @@ struct DemoPairer: PairingLink {
         case .connecting:
             try? await Task.sleep(for: .seconds(3600))
             return .failed(.unreachable)
-        case .awaiting:
+        case .awaiting, .localNetwork:
             onAwaitingApproval()
             try? await Task.sleep(for: .seconds(3600))
             return .failed(.unreachable)
@@ -154,6 +167,18 @@ struct DemoPairer: PairingLink {
             if Task.isCancelled { return .failed(.unreachable) }
             return .paired(deviceId: "demo-paired", token: "demo", macName: target.macName)
         }
+    }
+}
+
+/// 本地网络 refused at once (iOS asking, or it is off), then allowed after `allowAfter` seconds (never for 0).
+/// Cancelled, the wait ends.
+struct DemoLocalNetworkGate: LocalNetworkGate {
+    let allowAfter: Double
+
+    func waitUntilUsable(onRefused: @escaping @Sendable () -> Void) async -> Bool {
+        onRefused()
+        do { try await Task.sleep(for: .seconds(allowAfter > 0 ? allowAfter : 3600)) } catch { return false }
+        return true
     }
 }
 

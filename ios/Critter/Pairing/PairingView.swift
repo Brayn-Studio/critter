@@ -90,7 +90,10 @@ struct PairingView: View {
             FailurePage(position: position, failure: failure, note: note, onRescan: rescan)
                 .task(id: failure) { await lookUpLocalNetwork(after: failure) }
         } else if attempt != nil {
-            WaitingPage(position: position, awaiting: awaiting, deviceName: shownDeviceName, onCancel: cancel)
+            WaitingPage(
+                position: position, awaiting: awaiting, localNetwork: store.pairingPhase == .waitingForLocalNetwork,
+                deviceName: shownDeviceName, onCancel: cancel
+            )
         } else if page == .manual {
             ManualPairView(
                 network: network, note: note, onPair: { pair($0) },
