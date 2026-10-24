@@ -28,10 +28,12 @@ private func snapshot(_ sessions: [BridgeSession], fiveHour: Double? = 40) -> Sn
 private let two = snapshot([session("a", .waiting, startedAt: 2), session("b", .running, skin: "mochi", startedAt: 1)])
 
 private func step(
-    enabled: Bool = true, inFront: Bool = true, live: Bool = true, _ snapshot: SnapshotBody? = two,
+    enabled: Bool = true, paired: Bool = true, inFront: Bool = true, live: Bool = true, _ snapshot: SnapshotBody? = two,
     shown: LiveActivityContent? = nil, at time: Int64 = now
 ) -> LocalActivityStep {
-    LocalActivity.step(enabled: enabled, inFront: inFront, live: live, snapshot: snapshot, shown: shown, now: time)
+    LocalActivity.step(
+        enabled: enabled, paired: paired, inFront: inFront, live: live, snapshot: snapshot, shown: shown, now: time
+    )
 }
 
 /// The phone assembles the same content as the Mac for the same snapshot: one rule, in CritterKit.
@@ -89,6 +91,15 @@ private func step(
     let shown = LocalActivity.content(two, now: now)
     #expect(step(enabled: false, shown: shown) == .endAll)
     #expect(step(enabled: false, inFront: false, live: false, nil, shown: shown) == .endAll)
+}
+
+/// Unpaired, no Mac will push to it any more: what it shows would stay there, from a Mac the phone has left, until
+/// the system takes it down hours later.
+@Test func unpairingEndsTheActivity() {
+    let shown = LocalActivity.content(two, now: now)
+    #expect(step(paired: false, inFront: true, live: false, nil, shown: shown) == .endAll)
+    #expect(step(paired: false, inFront: false, live: false, nil, shown: shown) == .endAll)
+    #expect(step(paired: false, live: false, nil) == .none)
 }
 
 @Test func aRunningOneShowsWhenTheLastSessionEnds() {

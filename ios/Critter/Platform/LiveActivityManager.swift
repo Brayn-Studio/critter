@@ -95,13 +95,13 @@ final class LiveActivityManager {
 
     /// Does what `LocalActivity.step` says for the app as it is now (call it when the snapshot, the connection, the
     /// scene or the switch changes).
-    func sync(snapshot: SnapshotBody?, inFront: Bool, live: Bool, enabled: Bool) {
+    func sync(snapshot: SnapshotBody?, inFront: Bool, live: Bool, enabled: Bool, paired: Bool) {
         if inFront && !wasInFront { startRefused = false }
         wasInFront = inFront
         guard followsSnapshots else { return }
         let current = keepOne(inFront: inFront)
         let step = LocalActivity.step(
-            enabled: enabled && systemAllows, inFront: inFront, live: live, snapshot: snapshot,
+            enabled: enabled && systemAllows, paired: paired, inFront: inFront, live: live, snapshot: snapshot,
             shown: current.map { shown[$0.id] ?? $0.content.state }, now: Self.now()
         )
         switch step {
@@ -160,11 +160,11 @@ final class LiveActivityManager {
         }
     }
 
-    /// Ends every Live Activity of the app at once (the switch is off).
+    /// Ends every Live Activity of the app at once (the switch is off, or the phone unpaired).
     func endAll() {
         for activity in Activity<CritterActivity>.activities {
             let id = activity.id
-            Self.log.notice("ending \(id, privacy: .public): switched off")
+            Self.log.notice("ending \(id, privacy: .public): switched off or unpaired")
             Task { await Self.end(id) }
         }
     }

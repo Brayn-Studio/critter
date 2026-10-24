@@ -167,10 +167,12 @@ struct CritterApp: App {
     }
 
     /// The app's own Live Activity as things are now (spec §8.5): started and updated only in front while connected, ended
-    /// when switched off; the Mac's pushes do the rest.
+    /// when switched off or unpaired (unpairing drops the snapshot, which brings this here); the Mac's pushes do the
+    /// rest.
     private func syncActivity() {
         LiveActivityManager.shared.sync(
-            snapshot: store.snapshot, inFront: scenePhase == .active, live: store.canAct, enabled: settings.liveActivity
+            snapshot: store.snapshot, inFront: scenePhase == .active, live: store.canAct,
+            enabled: settings.liveActivity, paired: store.pairing != nil
         )
     }
 

@@ -7,7 +7,7 @@ public enum LocalActivityStep: Equatable, Sendable {
     case start(LiveActivityContent)
     /// Show this in the running one.
     case update(LiveActivityContent)
-    /// End every one, at once: the switch is off.
+    /// End every one, at once: the switch is off, or the phone unpaired.
     case endAll
 }
 
@@ -28,7 +28,7 @@ public struct RunningActivity: Equatable, Sendable {
 ///   switch is on and there are sessions, but none is running;
 /// - updates it with the content of each new snapshot while in front and connected, when it shows something else (the
 ///   time it was made aside);
-/// - ends it at once when the switch is turned off, wherever it is.
+/// - ends it at once when the switch is turned off, wherever it is, and when the phone is unpaired.
 ///
 /// In the background it never touches it: the Mac's pushes do it all. The content is the Mac's rule
 /// (`LiveActivityContent(snapshot:updatedAt:)`), so the two never disagree. Pure: `LiveActivityManager` in the app
@@ -41,13 +41,16 @@ public enum LocalActivity {
 
     /// - Parameters:
     ///   - enabled: the switch in the settings (and the system lets the app have Live Activities).
+    ///   - paired: the phone is paired. Unpaired, no Mac pushes to the activity any more: it is ended like a switched
+    ///     off one, rather than left showing a Mac the phone has left until the system takes it down hours later.
     ///   - inFront: the app is active.
     ///   - live: connected to the Mac, with its snapshot.
     ///   - shown: what the running activity shows; nil when none is running.
     public static func step(
-        enabled: Bool, inFront: Bool, live: Bool, snapshot: SnapshotBody?, shown: LiveActivityContent?, now: Int64
+        enabled: Bool, paired: Bool, inFront: Bool, live: Bool, snapshot: SnapshotBody?, shown: LiveActivityContent?,
+        now: Int64
     ) -> LocalActivityStep {
-        guard enabled else { return shown == nil ? .none : .endAll }
+        guard enabled, paired else { return shown == nil ? .none : .endAll }
         guard inFront, live, let snapshot else { return .none }
         let content = content(snapshot, now: now)
         guard let shown else { return content.total > 0 ? .start(content) : .none }
