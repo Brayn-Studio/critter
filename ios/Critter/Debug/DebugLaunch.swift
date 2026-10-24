@@ -182,8 +182,9 @@ import UserNotifications
 ///   with 「去打开」 in the settings, `ask` (never asked) 「允许通知」.
 /// - `-critterLeftMac <name>`: the line about a Mac this phone left that may still push here (saved like the real one,
 ///   until 「知道了」), as after pairing again away from an unreachable Mac (`BridgeStore`'s `onUntoldMac`) with the push
-///   key changed: in the settings' 推送 group, and on the pairing screen's scanner (also the guide's pairing step:
-///   `-critterOnboarding pair -critterPairing scan`). `-critterLeftMacKeyKept`: as when the new key could not be
+///   key changed: in the settings' 推送 group, and on every page of the pairing screen (`-critterPairing scan`,
+///   `manual`, `awaiting`, `failed:<reason>`; also the guide's pairing step: `-critterOnboarding pair -critterPairing
+///   scan`). `-critterLeftMacKeyKept`: as when the new key could not be
 ///   written (the line does not say the notifications show only "有会话需要你").
 /// - `-critterFixtureDrop offline|denied@<seconds>`: with `-critterFixture`, that long after its first connection the
 ///   fixture Mac drops it: `offline`, out of reach (the link says offline and stays so); `denied`, it turns this phone's

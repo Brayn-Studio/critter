@@ -6,7 +6,8 @@ import SwiftUI
 /// viewfinder with pixel corners (or, where there is no camera, why not), the rest of the page dimmed around it, and
 /// Sprig under the frame looking up at it. When a pairing code is read the frame turns green and Sprig hops (`flash`,
 /// for six beats); the pairing screen starts pairing after that. Under the instructions, the line about a Mac left
-/// without being told (`LeftMacNotice`), while there is one: in the guide's pairing step too.
+/// without being told (`LeftMacNotice`), while there is one: in the guide's pairing step too, and on the pairing
+/// screen's other pages.
 struct ScanPage: View {
     /// Why a code or a link could not be used.
     let note: String?

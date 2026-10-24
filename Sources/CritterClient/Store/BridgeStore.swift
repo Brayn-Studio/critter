@@ -28,6 +28,9 @@ import os
 ///   A Mac that turned this phone's token away (`denied badToken`: it revoked this phone or was reset, and deleted its
 ///   device record with the registration) holds nothing: what it confirmed is forgotten, and it is left quietly. Other
 ///   denials (another protocol, refused) and a certificate that changed say nothing of the record: those are reported.
+///   Pairing again with the same Mac (the new pairing's certificate fingerprint is the old one's) is not leaving it:
+///   the new pairing registers the same token, and that Mac hands the old record's registration over to it, so nothing
+///   is reported.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -346,8 +349,9 @@ public final class BridgeStore {
     /// goes on. A pairing the phone cannot keep (`.notSaved`: the keychain refused its token) leaves the old one in
     /// place, and the old one's connection comes back. The Mac being replaced is first asked to take the push
     /// registration back over its connection (at most `unregisterWait`); one that may still push here and did not
-    /// confirm is reported (`onUntoldMac`) before the new pairing connects. The attempt counts as under way
-    /// (`isPairing`) until all of that is done.
+    /// confirm is reported (`onUntoldMac`) before the new pairing connects -- unless it is the same Mac (the same
+    /// certificate fingerprint), which takes the registration over from the old record itself. The attempt counts as
+    /// under way (`isPairing`) until all of that is done.
     public func pair(_ target: PairingTarget, deviceName: String) async -> PairResult {
         guard !isPairing else { return .failed(.busy) }
         isPairing = true
@@ -379,7 +383,10 @@ public final class BridgeStore {
             if let pairing, connection == nil { connect(to: pairing) }
             return .failed(.notSaved)
         }
-        if let left, left.mayStillPush(told: told) { onUntoldMac(left.pairing) }
+        // The same Mac again (its certificate is the old pairing's) is not left: the new pairing registers the same
+        // token and the Mac hands the old record's registration over to it, so there is nothing to warn about and no
+        // key to change.
+        if let left, left.pairing.fingerprint != new.fingerprint, left.mayStillPush(told: told) { onUntoldMac(left.pairing) }
         pairing = new
         clearLiveState()
         forgetPushAck()

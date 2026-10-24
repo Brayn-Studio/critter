@@ -394,8 +394,9 @@ private struct InfoRow: View {
 }
 
 /// A Mac this phone left that may still push here (`PhoneSettings.leftMac`, `PushRegistrar.leftMacLine`), until
-/// 「知道了」: in the settings' push group, and on the pairing screen (the scanner, also the guide's pairing step), where
-/// an unpaired phone stays and the settings cannot be reached (spec §8.8). Nothing when there is none.
+/// 「知道了」: in the settings' push group, and on every page of the pairing screen (the scanner, the manual entry, the
+/// wait for 「允许」 and the failure; also in the guide's pairing step), where an unpaired phone stays and the settings
+/// cannot be reached (spec §8.8). Nothing when there is none.
 struct LeftMacNotice: View {
     /// The row's side margin: the settings' rows', or none on a page with its own.
     var inset: CGFloat = rowPadding

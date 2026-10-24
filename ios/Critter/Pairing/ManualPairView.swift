@@ -6,6 +6,8 @@ import SwiftUI
 /// chosen one marked "已选", and the code in 4 + 4 cells. 「连接」 first reads the chosen Mac's certificate fingerprint
 /// and asks whether it is the one the Mac shows; only then does it pair, pinned to that fingerprint.
 ///
+/// Under the code, the line about a Mac left without being told (`LeftMacNotice`), while there is one.
+///
 /// The fingerprint is read in a task this page keeps: leaving the page, choosing another Mac or connecting again
 /// cancels it, and an answer that comes after that is dropped (it never shows on another page).
 struct ManualPairView: View {
@@ -52,6 +54,8 @@ struct ManualPairView: View {
                         ErrorNote(text: note)
                             .padding(.top, 4)
                     }
+                    // A Mac left without being told may still push here: on every page of the pairing screen.
+                    LeftMacNotice(inset: 0, above: 4)
                 }
                 .padding(.top, 22)
                 .padding(.bottom, 16)

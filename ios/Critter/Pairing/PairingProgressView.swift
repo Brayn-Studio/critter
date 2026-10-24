@@ -4,7 +4,8 @@ import SwiftUI
 
 /// An attempt under way (mockup "等 Mac 点允许", Android `WaitingPane`): Sprig waiting with its hand up on a patch of
 /// meadow, over a drawing of the row the Mac's "添加手机" window shows now with 「允许」 circled. Reaching the Mac and
-/// waiting for 「允许」 are the same page; only the row's status line changes.
+/// waiting for 「允许」 are the same page; only the row's status line changes. Under the row, the line about a Mac left
+/// without being told (`LeftMacNotice`), while there is one.
 struct WaitingPage: View {
     /// The seeds over it, in the first-run guide.
     var position: StepPosition?
@@ -23,6 +24,7 @@ struct WaitingPage: View {
             StepBody(text: "Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。")
             MacRequestRow(deviceName: deviceName, awaiting: awaiting)
                 .padding(.top, 6)
+            LeftMacNotice(inset: 0, above: 4)
         } bottom: {
             PixelButton(title: "取消", style: .text, action: onCancel)
         }
@@ -31,7 +33,7 @@ struct WaitingPage: View {
 
 /// How the attempt failed: Sprig wilted on its patch of meadow, the reason on a red card under it (`PairFailure.text`,
 /// one per reason), and under that why a link that came meanwhile was not used (`note`). 「重新扫码」 goes back to
-/// the scanner.
+/// the scanner. Under them, the line about a Mac left without being told (`LeftMacNotice`), while there is one.
 struct FailurePage: View {
     /// The seeds over it, in the first-run guide.
     var position: StepPosition?
@@ -47,6 +49,7 @@ struct FailurePage: View {
             if let note {
                 ErrorNote(text: note, pet: false)
             }
+            LeftMacNotice(inset: 0, above: 4)
         } bottom: {
             PixelButton(title: "重新扫码", size: .large, icon: .qr, wide: true, action: onRescan)
         }

@@ -1337,6 +1337,49 @@ struct BridgeStoreLeavingTests {
         #expect(Array(rig.journal.all.suffix(4)) == ["stop 0", "save", "untold Mac", "start 1"])
     }
 
+    /// Ledger (plan 4 final fix wave, residual → plan 5; plan 5 T2): pairing again with the same Mac -- the new
+    /// certificate's fingerprint is the old pairing's -- after it was merely out of reach (or did not answer in time).
+    /// A warning would change the push key for nothing and have the user revoke "this phone" on that Mac, where the old
+    /// record and the new pairing now stand under the same name: they could revoke the new one. Nothing is said and the
+    /// key stays: the new pairing registers the same token, and the Mac hands the old record's registration over to it
+    /// (`DeviceStore.setPush`, plan 4 FI2).
+    @Test func pairingAgainToTheSameMacSaysNothing() async {
+        let sameMac = PairingTarget(endpoint: moved, fingerprint: stored.fingerprint, code: "K7M2QX9P", macName: "Mac")
+
+        let away = Rig()
+        let store = await registered(away)
+        away.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(await store.pair(sameMac, deviceName: "iPhone") == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(away.untold.isEmpty)
+        #expect(!away.journal.all.contains { $0.hasPrefix("untold") })
+        #expect(store.pairing?.fingerprint == stored.fingerprint)
+        // The same registration, key and all, goes to the new pairing.
+        #expect(await becomes { away.links.count == 2 && away.links[1].starts == 1 })
+        connect(away.links[1])
+        #expect(await becomes { away.links[1].pushes == [phonePush().registration()] })
+
+        // Connected, but it does not confirm taking the registration back within 3 s: the same.
+        let slow = Rig()
+        let slowStore = await registered(slow)
+        slow.link.holdPushes()
+        let pairing = Task { await slowStore.pair(sameMac, deviceName: "iPhone") }
+        #expect(await slow.timer.waitForSleepers(1))
+        slow.timer.advance(by: .seconds(3))
+        #expect(await pairing.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(slow.untold.isEmpty)
+        slow.link.releasePushes.open()
+
+        // Another Mac under the same name (another certificate) is still reported.
+        let other = Rig()
+        let otherStore = await registered(other)
+        other.link.emit(.state(offline))
+        #expect(await becomes { otherStore.conn == offline })
+        let sameName = PairingTarget(endpoint: home, fingerprint: target.fingerprint, code: "K7M2QX9P", macName: "Mac")
+        _ = await otherStore.pair(sameName, deviceName: "iPhone")
+        #expect(other.untold == [stored])
+    }
+
     /// Connected, but the old Mac does not answer: the new pairing goes on after 3 s, and the app is told.
     @Test func pairingAgainGivesTheOldMac3Seconds() async {
         let rig = Rig()
