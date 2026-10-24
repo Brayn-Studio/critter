@@ -24,6 +24,9 @@ struct BoardView: View {
     /// What became of each card's 「拒绝」「允许」, by request id (the home list's).
     let inline: [String: InlineAnswerState]
     let screen: BoardScreenKeeper
+    /// The request whose answer card is open over the board: the home screen keeps it, so what became of its answer
+    /// is kept for it as for its own card.
+    @Binding var presentedRequestId: String?
     /// 「拒绝」「允许」 on a pro card: the same path as the home list's.
     let onAnswer: (RowRequest, Bool) -> Void
     /// The close button.
@@ -34,8 +37,6 @@ struct BoardView: View {
     @Environment(BoardAutoOpen.self) private var autoOpen
     @Environment(\.scenePhase) private var scenePhase
     @State private var sounds = BoardSounds()
-    /// The request whose answer card is open over the board.
-    @State private var presentedRequestId: String?
     /// The burn-in shift, re-rolled every 3 minutes while the app is in front.
     @State private var shift = CGSize.zero
     /// The window's safe area on its wider side (62 pt on an iPhone 17 Pro in landscape).
@@ -101,12 +102,18 @@ struct BoardView: View {
         }
         #if DEBUG
         .task {
-            // `-critterBoard` with `-critterOpen answer:…`: the card opens over the board once the snapshot is in.
+            // `-critterBoard` with `-critterOpen answer:…` or `-critterBoardAnswer`, once the snapshot is in.
             let launch = DebugLaunch.current
-            guard launch.board != nil, case .answer(let requestId)? = launch.open else { return }
+            guard launch.board != nil else { return }
             for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
             try? await Task.sleep(for: .milliseconds(500))
-            presentedRequestId = requestId
+            if case .answer(let requestId)? = launch.open { presentedRequestId = requestId }
+            guard let allow = launch.boardAnswer,
+                  let row = RowRequest.all(in: store.snapshot).values.first(where: \.isInline)
+            else { return }
+            boardLog("answer \(row.request.requestId) on its card (\(allow ? "允许" : "拒绝")), then open the card")
+            onAnswer(row, allow)
+            presentedRequestId = row.request.requestId
         }
         #endif
     }
@@ -163,6 +170,7 @@ struct BoardView: View {
     private func disappeared() {
         store.boardOpen = false
         autoOpen.boardShown(false)
+        presentedRequestId = nil
         sounds.stop()
         // Whoever closed the board said why; this only catches a way out that did not.
         screen.leave(.closeButton)

@@ -79,6 +79,9 @@ import Foundation
 ///   the board (landscape) rather than on the home screen. Fixtures: `board` (six sessions, one waiting) and `many`.
 /// - `-critterBoardScript <action>@<seconds>,…`: with `-critterBoard`, closes and opens the board at those times
 ///   after launch (`close@4,open@6,close@30`), through the same calls as its close button and 「打开看板」.
+/// - `-critterBoardAnswer allow|deny`: with `-critterBoard`, half a second after the snapshot is in, the first lone
+///   permission request is answered through its pro card's 「允许」 or 「拒绝」 path and its answer card is opened at
+///   once over the board (the card must say "已提交" once the Mac has taken the answer).
 /// - `-critterBoardLog`: standard output gets "board [t s] …" lines (`BoardLog`): the screen saved on the way in,
 ///   every brightness set, every way out with what it restored, the sounds, and the automatic opening's steps.
 /// - `-critterBoardDimAfter <seconds>`: the board dims after this long without a touch or a change, not 15 minutes.
@@ -156,6 +159,8 @@ struct DebugLaunch {
     var board: Bool?
     var boardScript: [BoardStep] = []
     var boardLog = false
+    /// `-critterBoardAnswer`: true for 「允许」, false for 「拒绝」; nil when not asked for.
+    var boardAnswer: Bool?
     var boardDimAfter: TimeInterval?
     var fixtureStep: FixtureStep?
     /// `-critterFakeDock`: which day on the desk the fake charger and sensor play; nil without it.
@@ -236,6 +241,11 @@ struct DebugLaunch {
             }
         }
         boardLog = arguments.contains("-critterBoardLog")
+        switch value("critterBoardAnswer") {
+        case "allow": boardAnswer = true
+        case "deny": boardAnswer = false
+        default: break
+        }
         boardDimAfter = value("critterBoardDimAfter").flatMap(Double.init)
         if let step = value("critterFixtureStep") {
             let parts = step.split(separator: "@")

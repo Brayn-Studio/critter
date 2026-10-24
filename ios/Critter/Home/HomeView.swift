@@ -22,6 +22,8 @@ struct HomeView: View {
     @State private var drafts = AnswerDrafts()
     /// The request whose answer card is open.
     @State private var presentedRequestId: String?
+    /// The request whose answer card is open over the board.
+    @State private var boardRequestId: String?
     /// The session whose details are open.
     @State private var presentedSessionId: String?
     @State private var showSettings = false
@@ -93,6 +95,7 @@ struct HomeView: View {
         .fullScreenCover(isPresented: $showBoard) {
             BoardView(
                 store: store, drafts: drafts, inline: inline, screen: boardScreen,
+                presentedRequestId: $boardRequestId,
                 onAnswer: { request, allow in answerInline(request, allow: allow) },
                 onClose: { closeBoard(.closeButton) }
             )
@@ -114,9 +117,11 @@ struct HomeView: View {
         }
         .onChange(of: store.snapshot) { _, body in
             let pending = Set(body?.pending.map(\.requestId) ?? [])
-            // The open card keeps its request's: it says "已提交" rather than that the Mac handled it.
-            inline = inline.filter { pending.contains($0.key) || $0.key == presentedRequestId }
-            drafts.prune(keeping: pending.union(presentedRequestId.map { [$0] } ?? []))
+            // An open card keeps its request's, on the home screen and on the board alike: it says "已提交" rather
+            // than that the Mac handled it.
+            let open = Set([presentedRequestId, boardRequestId].compactMap { $0 })
+            inline = inline.filter { pending.contains($0.key) || open.contains($0.key) }
+            drafts.prune(keeping: pending.union(open))
         }
         #if DEBUG
         .task {
@@ -365,6 +370,8 @@ struct HomeView: View {
     private func closeBoard(_ exit: BoardScreen.Exit) {
         boardScreen.leave(exit)
         if exit == .closeButton { autoOpen.manualExit() }
+        // A card that was open over the board goes with it.
+        boardRequestId = nil
         OrientationLock.shared.lock(.portrait)
         var transaction = Transaction()
         transaction.disablesAnimations = true
