@@ -6,7 +6,6 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 - **首次引导（欢迎页）**：计划 2 没做（它属于推送计划，spec §14 第 5 步）。
 - **设置里计划 2 没做的行**：提醒和推送、实时活动、电池和保活、"看板被系统拦下"的提示、"保持后台连接"。草图里有，其中有些只属于 Android。草图的「悬浮球」一组 iOS 不做：iOS 不允许 App 画在其他 App 上面，由实时活动代替（spec §8.5）。
-- 自动打开看板时如果配对页开着（`RootView` 里没有首页），看板打不开，触发器 2 秒后报 `.blocked`，本次充电不再试。推送带来"点通知进入"之后，这条路径会常见，要有处理。
 - **真的往 APNs 发一条**（计划 3 只用假的传输层测过）：用户给 `.p8`、在开发者账号里给 App ID 开推送后，从 Mac 设置里"发送测试通知"。同时验证这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理（spec §13.6）：Mac 用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。
 - **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）：push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
 - Mac 端的联机检查（计划 3 推迟到合回 `main` 之后，因为要运行这条线构建的 Critter.app，会替换用户正在用的那个）：用 `critter-bridge-client` 配一台临时设备，`push --token <64 个 0> --done` 后 `~/.critter/bridge/devices.json` 里有这份登记、权限仍是 0600，设置里这台设备后面有"推送"标签；`push --clear` 后登记消失；没有 `.p8` 时设置显示"未配置"，`~/.critter/app.json` 的 `pushReachable` 为 false；`scripts/dev/e2e-phone.sh` 照常通过；最后撤销这台临时设备。
@@ -47,6 +46,10 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 计划 4 留下的，这个模拟器上做不到的（`xcrun simctl push` 把推送当本地通知投递，通知服务扩展从不运行；通知权限只有"临时"授权，通知安静地进通知中心，不出横幅，命令行打不开通知中心）：
 
 - **通知服务扩展解密。** 真推送到真机后：标题、副标题、正文换成解密后的文字；类别（按钮）、线程（会话）、等你确认的是"时效性"级别；密钥不对、坏的密文显示"Critter / 有会话需要你"，按钮照样能用；锁屏、首次解锁前（钥匙串读不到）同样不崩。规则只有 `PushOpeningTests` 和 `scripts/dev/push-payloads/make.sh` 生成的载荷过了一遍纯函数；扩展本身没跑过。
+- **通知上的按钮和横幅。** 下拉后的「允许」「拒绝」「拒绝并写理由…」（输入框"拒绝的理由（可不写）"、发送"拒绝并发送理由"），点之前先要解锁；Codex 的只有两个；提问、计划的「打开」。模拟器里只从日志看到系统登记的类别和选项（`-critterNotificationAction` 走的是同一个处理函数，按不了真按钮）。前台：快照里已有的请求只轻震（模拟器没有触感），其它出横幅、有声音；"时效性"在专注模式里的表现。
+- **点按钮作答的整条路。** App 被划掉时点「允许」：系统在后台启动 App、连 Mac、送答案、用同一个通知 id（APNs 的 `apns-collapse-id`）换成"已允许"；Mac 连不上时 20 秒内换成"没送到…"并保留按钮，再点一次能成；后台时间用完时作答被截断（`BackgroundAnswer` 的取消）。点通知正文冷启动 App 时直接打开那张卡片。模拟器里 `simctl push` 没有 collapse id，同一个请求会有好几条通知，App 按推送里的 `r`/`k`/`s` 认通知，真机上要确认按 collapse id 换掉的是同一条。
+- **撤回推送。** `simctl push` 把只有 `content-available` 的推送变成一次不带载荷的 background fetch，`didReceiveRemoteNotification` 只用 DEBUG 的 `-critterWithdrawPush` 走过。真机上看后台推送能不能叫醒 App 删通知；App 被划掉、低电量模式时系统不送后台推送，那时靠回到前台后的对账（模拟器里验证过）。
+- **推送环境。** DEBUG 构建登记 `sandbox`，其它构建登记 `production`；但 `Critter.entitlements` 写的是 `aps-environment = development`，开发签名装到真机的 Release 构建拿到的是 sandbox 的 token，登记成 `production` 后 Mac 推送会被 APNs 拒（`BadDeviceToken`），Mac 删掉登记。装真机时用 Debug 构建，或者改成按签名里的 `aps-environment` 决定。
 
 ## 前端优化轮
 
@@ -61,6 +64,7 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - 手动输入页没有左边缘右滑（它是页面切换，不是导航推送，和计划 1 一样）。
 - 启动画面只有一种颜色加居中的圆形图标（`UILaunchScreen` 做不出草图里分层的天空和草地，要换成 storyboard）。
 - 看板上字体跟随动态字体；像素对齐的看板可能想用固定字号。
+- 从通知打开的作答卡片，如果手机正充电横放，几秒后看板自动打开时会先把首页的卡片关掉（现有规则：看板自动打开前先关首页的卡片和详情，草稿保留）。可以考虑把这张卡片带到看板上（`boardRequestId`）。
 
 和草图或 Android 不一致、等用户看过再定的（计划 2 时已按"草图为准、Android 为参考"定下，写在提交说明里）：
 

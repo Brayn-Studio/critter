@@ -63,3 +63,54 @@ import Testing
         #expect(NotificationAnswer.payload(action: NotificationAction.allow.rawValue, text: nil, category: category) == nil)
     }
 }
+
+@Test func aResponseAnswersOrOpensWhatTheNotificationIsAbout() {
+    let tap = "com.apple.UNNotificationDefaultActionIdentifier"
+    func alert(_ category: PushCategory, _ requestId: String? = "r1", session: String = "s1") -> ParsedPush.Alert {
+        ParsedPush.Alert(category: category, requestId: requestId, sessionId: session, sealed: "x")
+    }
+    func response(_ action: String, _ alert: ParsedPush.Alert?, text: String? = nil) -> NotificationResponse {
+        NotificationAnswer.response(action: action, text: text, alert: alert)
+    }
+
+    // A permission request's buttons answer it, in the background.
+    #expect(response(NotificationAction.allow.rawValue, alert(.permission))
+        == .answer(requestId: "r1", payload: AnswerPayload(decision: "allow")))
+    #expect(response(NotificationAction.deny.rawValue, alert(.permissionNoReason))
+        == .answer(requestId: "r1", payload: AnswerPayload(decision: "deny")))
+    #expect(response(NotificationAction.denyWithReason.rawValue, alert(.permission), text: " 换个目录 ")
+        == .answer(requestId: "r1", payload: AnswerPayload(decision: "deny", message: "换个目录")))
+
+    // The notification itself and 「打开」 open the request's card (it is looked up by id: gone, it says so).
+    for category in [PushCategory.permission, .permissionNoReason, .question, .plan] {
+        #expect(response(tap, alert(category)) == .openRequest("r1"))
+    }
+    #expect(response(NotificationAction.open.rawValue, alert(.question)) == .openRequest("r1"))
+    // A question or a plan is never answered from its notification, whatever the button says.
+    #expect(response(NotificationAction.allow.rawValue, alert(.plan)) == .openRequest("r1"))
+
+    // A session's notification opens its details.
+    for category in [PushCategory.waitingElsewhere, .done, .error] {
+        #expect(response(tap, alert(category, nil, session: "s9")) == .openSession("s9"))
+    }
+    // The test notification, and a notification that is not Critter's: just the app.
+    #expect(response(tap, alert(.test, nil, session: "test")) == .openApp)
+    #expect(response(tap, nil) == .openApp)
+    // A request without its id (broken): the app, no answer.
+    #expect(response(NotificationAction.allow.rawValue, alert(.permission, nil)) == .openApp)
+    // Swiped away: nothing.
+    #expect(response("com.apple.UNNotificationDismissActionIdentifier", alert(.permission)) == .nothing)
+}
+
+@Test func aResultNotificationSaysWhatItWasAbout() {
+    // The request's own title (what the extension opened) stays under the result, so a "没送到" can be tried again
+    // knowing what for; the plain "Critter" says nothing and is left out.
+    let about = "clawd 想 运行 swift test"
+    #expect(BackgroundAnswerResult.answered(decision: "allow").notificationText(about: about)
+        == NotificationResultText(title: "已允许", body: about, keepButtons: false))
+    #expect(BackgroundAnswerResult.unreachable.notificationText(about: about)
+        == NotificationResultText(title: "没送到：连不上 Mac（要和电脑在同一个 Wi‑Fi）", body: about, keepButtons: true))
+    #expect(BackgroundAnswerResult.resolved.notificationText(about: "Critter")
+        == NotificationResultText(title: "已在电脑上处理", body: "", keepButtons: false))
+    #expect(BackgroundAnswerResult.expired.notificationText(about: nil) == BackgroundAnswerResult.expired.notificationText)
+}

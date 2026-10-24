@@ -68,3 +68,46 @@ public enum NotificationAnswer {
         return payload(action: action, text: text, kind: .permission, acceptsDenyMessage: acceptsDenyMessage(category))
     }
 }
+
+/// What the app does with a response to one of its notifications (spec §8.4, §8.7).
+public enum NotificationResponse: Equatable, Sendable {
+    /// Send this answer to the request, in the background (`BackgroundAnswer`), and put the result in the
+    /// notification's place.
+    case answer(requestId: String, payload: AnswerPayload)
+    /// Bring the app up with the request's answer card. The card looks the request up by id: one that is gone says
+    /// that the computer has it.
+    case openRequest(String)
+    /// Bring the app up with the session's details: done, failed, or waiting for the computer.
+    case openSession(String)
+    /// Just the app: the test notification, or one that is not Critter's.
+    case openApp
+    /// The notification was swiped away.
+    case nothing
+}
+
+extension NotificationAnswer {
+    /// The system's ids for a tap on the notification itself and for swiping it away
+    /// (`UNNotificationDefaultActionIdentifier`, `UNNotificationDismissActionIdentifier`).
+    public static let tapAction = "com.apple.UNNotificationDefaultActionIdentifier"
+    public static let dismissAction = "com.apple.UNNotificationDismissActionIdentifier"
+
+    /// What a response to a notification does: `action` is the button's id (or the system's, `tapAction`), `text`
+    /// what was typed with it, `alert` the push the notification came from (nil: not Critter's). Only a permission
+    /// request's buttons answer; everything else opens what the notification is about.
+    public static func response(action: String, text: String?, alert: ParsedPush.Alert?) -> NotificationResponse {
+        if action == dismissAction { return .nothing }
+        guard let alert else { return .openApp }
+        switch alert.category {
+        case .permission, .permissionNoReason, .question, .plan:
+            guard let requestId = alert.requestId else { return .openApp }
+            if let payload = payload(action: action, text: text, category: alert.category) {
+                return .answer(requestId: requestId, payload: payload)
+            }
+            return .openRequest(requestId)
+        case .waitingElsewhere, .done, .error:
+            return .openSession(alert.sessionId)
+        case .test:
+            return .openApp
+        }
+    }
+}

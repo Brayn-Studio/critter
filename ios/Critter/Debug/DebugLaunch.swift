@@ -2,6 +2,7 @@
 import CritterClient
 import CritterKit
 import Foundation
+import os
 
 /// The launch arguments of DEBUG builds, for screenshots and scripts (`xcrun simctl launch booted
 /// com.braynlabs.critter -critterFixture home-mixed`). None of this is in a release build.
@@ -119,6 +120,20 @@ import Foundation
 ///   <device> com.braynlabs.critter ios/build/push-payloads/<file>.apns`. In this simulator `simctl push` posts the
 ///   push as a local notification and the extension never runs, so what shows is the plain "Critter / 有会话需要你"
 ///   (the decryption is tested in `PushOpeningTests`).
+/// - `-critterNotificationAction <id>:<allow|deny|open|reason:<text>>[@<seconds>]`: that long after launch (default
+///   1.5 s), the notification with this id (a request id, or `done:<session id>` and the like) is answered or tapped
+///   through the same handler as a tap on it (`NotificationActionDebug`): `allow`, `deny` and `reason:…` are its buttons
+///   (answered in the background over a connection of their own, the result put in its place), `open` is a tap on the
+///   notification itself (the app opens the request's card or the session's details). The delivered one is used (from
+///   `simctl push`); without it, one is made up from the snapshot. The log (category `notifications`) lists the
+///   delivered notifications before and after. With `-critterFixture` the background answer reaches the fixture Mac
+///   (`FixtureTransport`): it answers as `-critterFixtureResult` says, and a taken answer leaves the snapshot.
+/// - `-critterFixtureMacAway`: with `-critterFixture`, a background answer cannot reach the fixture Mac (no connection
+///   can be made): the notification says "没送到…" and keeps its buttons.
+/// - `-critterWithdrawPush <id>[,<id>…][@<seconds>]`: that long after launch (default 3 s), the Mac's withdrawal of
+///   these notifications goes through the app's handler for background pushes (`WithdrawPushDebug`): `xcrun simctl
+///   push` turns a background push into a background fetch without its payload. The log lists the delivered
+///   notifications before and after.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -192,6 +207,11 @@ struct DebugLaunch {
     var sharedCheck = false
     /// `-critterTestPushKey`.
     var testPushKey: String?
+    /// `-critterNotificationAction`.
+    var notificationAction: NotificationActionDebug.Step?
+    var fixtureMacAway = false
+    /// `-critterWithdrawPush`.
+    var withdrawPush: WithdrawPushDebug.Step?
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -284,6 +304,9 @@ struct DebugLaunch {
         }
         sharedCheck = arguments.contains("-critterSharedCheck")
         testPushKey = value("critterTestPushKey")
+        notificationAction = value("critterNotificationAction").flatMap(NotificationActionDebug.Step.init)
+        fixtureMacAway = arguments.contains("-critterFixtureMacAway")
+        withdrawPush = value("critterWithdrawPush").flatMap(WithdrawPushDebug.Step.init)
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug
@@ -345,7 +368,9 @@ struct DebugLaunch {
         return BridgeStore(
             storage: FixtureStorage(cached: cached),
             makeLink: { _, onEvent in
-                FixtureLink(snapshot: snapshot, result: result, offline: offline, onEvent: onEvent)
+                let link = FixtureLink(snapshot: snapshot, result: result, offline: offline, onEvent: onEvent)
+                FixtureLink.current = link
+                return link
             },
             pairer: pairing.map { $0.pairer as any PairingLink } ?? Pairer(transport: URLSessionTransport()),
             background: UIKitBackgroundRunner()
@@ -376,6 +401,18 @@ struct DebugLaunch {
     }
 }
 
+/// With `-critterFixture`: where the answers from a notification's buttons go (`FixtureTransport`); nil without it.
+extension DebugLaunch {
+    func fixtureAnswerRoute() -> NotificationCenterDelegate.AnswerRoute? {
+        guard fixture != nil else { return nil }
+        let storage = FixtureStorage(cached: nil)
+        return NotificationCenterDelegate.AnswerRoute(
+            pairing: { storage.load() }, transport: FixtureTransport(result: fixtureResult, away: fixtureMacAway),
+            app: "critter-ios/fixture"
+        )
+    }
+}
+
 /// Paired with "Fixture Mac" for good: saves nothing, so every launch starts the same, from `cached` if there is one.
 private struct FixtureStorage: PairingStorage {
     let cached: CachedSnapshot?
@@ -399,6 +436,9 @@ private struct FixtureStorage: PairingStorage {
 /// is answered (`ok`) leaves the snapshot, as it does on the Mac: its session goes on running. `offline`, it never
 /// connects: offline since five minutes ago, retrying.
 actor FixtureLink: BridgeLink {
+    /// The fixture store's link: a background answer the fixture Mac took (`FixtureTransport`) leaves its snapshot.
+    @MainActor static weak var current: FixtureLink?
+
     private var snapshot: SnapshotBody
     private let result: CommandResult
     private let offline: Bool
@@ -452,8 +492,19 @@ actor FixtureLink: BridgeLink {
     /// The fixture Mac has no skins to send: the phone shows what it has.
     func requestSkin(_ name: String) -> JSONValue? { nil }
 
-    /// There is no Mac to push from.
-    func registerPush(_ registration: PushRegistration) -> PushRegistrationReply { .offline }
+    /// There is no Mac to push from, but the registration is taken as a Mac that can push would take it (the log says
+    /// what came, never the key), so the settings show the whole way through.
+    func registerPush(_ registration: PushRegistration) -> PushRegistrationReply {
+        Logger(subsystem: "com.braynlabs.critter", category: "notifications").notice(
+            "fixture Mac: push registration token \(registration.token.isEmpty ? "empty (unregister)" : String(registration.token.prefix(8)) + "…", privacy: .public), \(registration.environment.rawValue, privacy: .public), \(registration.bundleId, privacy: .public), done \(registration.notifyDone), error \(registration.notifyError), live activity \(registration.activity?.enabled ?? false), key \(PushCrypto.keyData(registration.key) != nil ? "32 bytes" : "bad", privacy: .public)"
+        )
+        return .stored(registration.token.isEmpty ? nil : PushRegistrar.registeredLine)
+    }
+
+    /// An answer the fixture Mac took over another connection (a notification's button): the request leaves.
+    func answeredElsewhere(_ requestId: String) {
+        answered(requestId)
+    }
 
     func request(_ command: BridgeCommand) async -> CommandResult {
         // The Mac's snapshot without the request comes before its receipt more often than not.

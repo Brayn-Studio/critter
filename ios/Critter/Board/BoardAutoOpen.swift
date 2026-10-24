@@ -9,8 +9,11 @@ import UIKit
 /// decisions are `BoardTrigger`'s; this only feeds it the charger, the scene and gravity, and says what it decided
 /// through `wantsBoard` (Android `BoardTriggerService`, without the foreground service iOS does not have).
 ///
-/// All of it runs only while the scene is active, which stands for Android's "screen on": in the background, behind
-/// Control Center or the app switcher, the trigger is told the screen is off. Gravity is read at 10 Hz and only while
+/// All of it runs only while the scene is active and the home screen is up, which stands for Android's "screen on":
+/// in the background, behind Control Center or the app switcher, the trigger is told the screen is off; so it is while
+/// the pairing screen stands in for the home screen (`homeShown`), which has nowhere to show the board -- rather than
+/// asking anyway and giving up on this charge (`.blocked`), the trigger waits, and once the home screen is back the
+/// phone lying still in landscape opens the board as usual. Gravity is read at 10 Hz and only while
 /// the trigger wants it (charging, active, and the board up or allowed to open); it stops at once when the charger
 /// goes, the app leaves the front or 「充电横放时自动打开」 is switched off. The trigger's deadlines are met with one
 /// sleep each, not by polling.
@@ -36,6 +39,10 @@ final class BoardAutoOpen {
     @ObservationIgnored private let gravity: any BoardGravitySource
     /// Whether the scene is active; nil until it is first told.
     @ObservationIgnored private var active: Bool?
+    /// Whether the home screen (which shows the board) is up rather than the pairing screen.
+    @ObservationIgnored private var homeUp = true
+    /// What the trigger was last told of the screen (active and the home screen up); nil until it is first told.
+    @ObservationIgnored private var screenOn: Bool?
     @ObservationIgnored private var listening = false
     @ObservationIgnored private var tick: Task<Void, Never>?
     @ObservationIgnored private var scheduledAt: Int64?
@@ -53,16 +60,32 @@ final class BoardAutoOpen {
     func sceneActive(_ active: Bool) {
         guard active != self.active else { return }
         self.active = active
-        let now = Self.now()
         if active {
             power.start { [weak self] charging in self?.powerChanged(charging) }
             boardLog("auto-open: scene active, \(power.charging ? "charging" : "not charging")")
-            perform(trigger.onScreen(on: true, nowMs: now))
-            perform(trigger.onPower(charging: power.charging, nowMs: now))
         } else {
             power.stop()
             boardLog("auto-open: scene not active")
-            perform(trigger.onScreen(on: false, nowMs: now))
+        }
+        screenChanged()
+    }
+
+    /// The home screen came up (`true`) or the pairing screen took its place.
+    func homeShown(_ shown: Bool) {
+        guard shown != homeUp else { return }
+        homeUp = shown
+        boardLog("auto-open: \(shown ? "the home screen is up" : "the pairing screen is up: no board until the home screen is back")")
+        screenChanged()
+    }
+
+    /// Tells the trigger whether the screen is "on": the scene active and the home screen up.
+    private func screenChanged() {
+        let on = active == true && homeUp
+        if on != screenOn {
+            screenOn = on
+            let now = Self.now()
+            perform(trigger.onScreen(on: on, nowMs: now))
+            if on { perform(trigger.onPower(charging: power.charging, nowMs: now)) }
         }
         update()
     }
@@ -156,7 +179,7 @@ final class BoardAutoOpen {
     /// Gravity on or off, and the wake-up re-aimed, after anything the trigger was told. `afterIdleTick`: right after a
     /// tick that decided nothing.
     private func update(afterIdleTick: Bool = false) {
-        let wanted = active == true && trigger.sensorWanted
+        let wanted = screenOn == true && trigger.sensorWanted
         if wanted, !listening {
             listening = true
             lastPose = nil

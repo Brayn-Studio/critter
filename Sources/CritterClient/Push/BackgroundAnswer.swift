@@ -36,6 +36,17 @@ public enum BackgroundAnswerResult: Equatable, Sendable {
     }
 }
 
+extension BackgroundAnswerResult {
+    /// `notificationText`, with what the request was (`about`: the title of the notification it replaces) under it, so
+    /// the result still says what it was about -- and a "没送到" what to try again. Not the plain "Critter" of a push that
+    /// did not open: it says nothing.
+    public func notificationText(about: String?) -> NotificationResultText {
+        var text = notificationText
+        if let about, !about.isEmpty, about != PushPayload.title { text.body = about }
+        return text
+    }
+}
+
 /// A result notification's text (Android `Alerts.showHandled`: the title says it all). `keepButtons`: the original
 /// buttons stay (its category is kept), so the answer can be tried again.
 public struct NotificationResultText: Equatable, Sendable {
@@ -54,6 +65,9 @@ public struct NotificationResultText: Equatable, Sendable {
 /// its own to the paired Mac, pinned to its certificate, `hello`, then -- only once the Mac has said `welcome` --
 /// `answer`, and its `result`. The whole of it within `timeLimit`, and the connection is closed at the end, whatever
 /// the end. It shares nothing with the foreground `BridgeClient`: it goes this way also while that one is connected.
+///
+/// Cancelling the task that waits for it (the app's background time ran out first) ends it at once, as `.unreachable`
+/// -- it may or may not have got there -- and closes the connection, or never makes one if it had not begun.
 public enum BackgroundAnswer {
     /// Connecting, `hello`, `answer` and `result` together.
     public static let timeLimit: Duration = .seconds(20)
@@ -68,23 +82,29 @@ public enum BackgroundAnswer {
         clock: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) async -> BackgroundAnswerResult {
         let run = Run()
-        return await withCheckedContinuation { continuation in
-            run.begin(continuation)
-            let work = Task {
-                let result = await exchange(
-                    payload, requestId: requestId, pairing: pairing, credentials: credentials, transport: transport,
-                    app: app, run: run
-                )
-                run.finish(result)
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                // Cancelled before it began: over already, nothing is started.
+                guard run.begin(continuation) else { return }
+                let work = Task {
+                    let result = await exchange(
+                        payload, requestId: requestId, pairing: pairing, credentials: credentials, transport: transport,
+                        app: app, run: run
+                    )
+                    run.finish(result)
+                }
+                let deadline = Task {
+                    guard (try? await clock(timeLimit)) != nil else { return }
+                    run.finish(.unreachable)
+                }
+                run.onFinish {
+                    work.cancel()
+                    deadline.cancel()
+                }
             }
-            let deadline = Task {
-                guard (try? await clock(timeLimit)) != nil else { return }
-                run.finish(.unreachable)
-            }
-            run.onFinish {
-                work.cancel()
-                deadline.cancel()
-            }
+        } onCancel: {
+            // The caller gave up before the 20 s: the same as running out of them.
+            run.finish(.unreachable)
         }
     }
 
@@ -140,8 +160,8 @@ public enum BackgroundAnswer {
         }
     }
 
-    /// One `send`: its continuation is resumed once, by the first to finish -- the exchange or the deadline -- and
-    /// that closes the socket (now, or as soon as it is made) and stops the other.
+    /// One `send`: its continuation is resumed once, by the first to finish -- the exchange, the deadline or the
+    /// caller's cancellation -- and that closes the socket (now, or as soon as it is made) and stops the others.
     private final class Run: Sendable {
         private struct State {
             var continuation: CheckedContinuation<BackgroundAnswerResult, Never>?
@@ -152,8 +172,16 @@ public enum BackgroundAnswer {
 
         private let state = OSAllocatedUnfairLock(initialState: State())
 
-        func begin(_ continuation: CheckedContinuation<BackgroundAnswerResult, Never>) {
-            state.withLock { $0.continuation = continuation }
+        /// Takes the continuation to resume. False if it is over already (cancelled before it began): it is resumed
+        /// now with that result.
+        func begin(_ continuation: CheckedContinuation<BackgroundAnswerResult, Never>) -> Bool {
+            let over = state.withLock { s -> BackgroundAnswerResult? in
+                if s.result == nil { s.continuation = continuation }
+                return s.result
+            }
+            guard let over else { return true }
+            continuation.resume(returning: over)
+            return false
         }
 
         /// What stops the exchange and the deadline; run at once if it is over already.

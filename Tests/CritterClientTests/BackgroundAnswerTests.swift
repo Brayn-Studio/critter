@@ -1,6 +1,7 @@
 import CritterClient
 import CritterKit
 import Foundation
+import os
 import Testing
 
 // Answering from a notification's button while the app is in the background (spec §8.3, §8.7): one connection of its
@@ -22,6 +23,18 @@ private func answering(
             clock: clock.sleep
         )
     }
+}
+
+/// What `answer` came to, if it does within 2 s of real time (nil: it is still under way).
+private func finished(_ answer: Task<BackgroundAnswerResult, Never>) async -> BackgroundAnswerResult? {
+    let result = OSAllocatedUnfairLock<BackgroundAnswerResult?>(initialState: nil)
+    let waiter = Task {
+        let value = await answer.value
+        result.withLock { $0 = value }
+    }
+    _ = await eventually { result.withLock { $0 } != nil }
+    waiter.cancel()
+    return result.withLock { $0 }
 }
 
 /// Reads the phone's `answer` and replies with `result`.
@@ -169,6 +182,46 @@ struct BackgroundAnswerTests {
         #expect(await unknown.value.notificationText
             == NotificationResultText(title: "这台手机已不在电脑的配对列表里，请重新配对", body: "", keepButtons: false))
         #expect(await eventually { revoked.openSockets == 0 })
+    }
+
+    @Test func aCancelledAnswerEndsAtOnceAndCloses() async throws {
+        // The system's background time runs out before the 20 s (the app's expiration handler cancels the task): the
+        // answer ends now, as not delivered, and the connection is closed -- the app is not kept in the background.
+        let mac = FakeMac()
+        let clock = ManualClock()
+        let answer = answering(mac: mac, clock: clock)
+        _ = try #require(await mac.nextFrame())
+        #expect(await clock.waitForSleepers(1))
+        #expect(mac.openSockets == 1)
+        answer.cancel()
+        #expect(await finished(answer) == .unreachable)
+        #expect(await eventually { mac.openSockets == 0 })
+        // The 20 s wait is let go too.
+        #expect(await clock.waitForSleepers(0))
+
+        // Cancelled while the connection is still being made: ended at once, and the socket closed once it is made.
+        let slow = FakeMac()
+        slow.connectDelay = .milliseconds(300)
+        let slowAnswer = answering(mac: slow, clock: ManualClock())
+        #expect(await eventually { slow.connects.count == 1 })
+        slowAnswer.cancel()
+        #expect(await finished(slowAnswer) == .unreachable)
+        #expect(await eventually { slow.finishedConnects == 1 })
+        #expect(await eventually { slow.openSockets == 0 })
+        #expect(slow.received.isEmpty)
+
+        // Cancelled before it began: nothing is connected at all.
+        let idle = FakeMac()
+        let cancelled = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return await BackgroundAnswer.send(
+                allow, requestId: "r1", pairing: pairing, credentials: credentials, transport: idle,
+                app: "critter-ios/test", clock: ManualClock().sleep
+            )
+        }
+        #expect(await finished(cancelled) == .unreachable)
+        await settle()
+        #expect(idle.connects.isEmpty)
     }
 
     @Test func nothingIsSentBeforeWelcome() async throws {

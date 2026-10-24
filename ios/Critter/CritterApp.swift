@@ -5,7 +5,8 @@ import UIKit
 
 @main
 struct CritterApp: App {
-    /// Only for the orientations (`OrientationLock`).
+    /// The orientations (`OrientationLock`), the notification center's delegate and the device token
+    /// (`NotificationCenterDelegate`).
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var store: BridgeStore
@@ -26,7 +27,9 @@ struct CritterApp: App {
         #if DEBUG
         let launch = DebugLaunch.current
         if let key = launch.testPushKey { TestPushKey.install(key) }
-        _store = State(initialValue: launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore())
+        let store = launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore()
+        _store = State(initialValue: store)
+        NotificationCenterDelegate.shared.answerRoute = launch.fixtureAnswerRoute() ?? Self.answerRoute()
         _link = State(initialValue: launch.launchLink)
         deviceName = launch.deviceName ?? UIDevice.current.name
         let dock = launch.fakeDock.map(FakeDock.init(script:))
@@ -35,10 +38,14 @@ struct CritterApp: App {
             initialValue: dock.map { BoardAutoOpen(power: $0.power, gravity: $0.gravity) } ?? BoardAutoOpen()
         )
         #else
-        _store = State(initialValue: Self.makeStore())
+        let store = Self.makeStore()
+        _store = State(initialValue: store)
+        NotificationCenterDelegate.shared.answerRoute = Self.answerRoute()
         deviceName = UIDevice.current.name
         _autoOpen = State(initialValue: BoardAutoOpen())
         #endif
+        // What is on screen, for the notifications that arrive in the foreground and the withdrawals.
+        NotificationCenterDelegate.shared.store = store
     }
 
     var body: some Scene {
@@ -49,6 +56,11 @@ struct CritterApp: App {
                 .environment(skins)
                 .environment(OrientationLock.shared)
                 .environment(autoOpen)
+                .environment(NotificationRouter.shared)
+                .task { PushSetup.shared.attach(store: store, settings: settings) }
+                .onChange(of: [settings.notifyDone, settings.notifyError, settings.liveActivity]) {
+                    PushSetup.shared.update()
+                }
                 .onChange(of: settings.forcedSkin, initial: true) { _, name in skins.setForced(name) }
                 .onChange(of: settings.boardAutoOpen, initial: true) { _, on in autoOpen.setAutoOpen(on) }
                 .onChange(of: store.snapshot, initial: true) { _, snapshot in
@@ -58,6 +70,7 @@ struct CritterApp: App {
                     // Skins are asked for once per connection: a new one asks again (even if its first snapshot is the
                     // same as the last one), and one that ends forgets what it asked.
                     skins.fetchIfNeeded(store: store)
+                    NotificationCenterDelegate.shared.liveChanged()
                 }
                 .onOpenURL { url in
                     // Not a pairing link (or a broken one): ignored.
@@ -72,6 +85,12 @@ struct CritterApp: App {
                     if DebugLaunch.current.sharedCheck { await SharedCheck.run() }
                 }
                 .task {
+                    if let step = DebugLaunch.current.notificationAction { await NotificationActionDebug.run(step, store: store) }
+                }
+                .task {
+                    if let step = DebugLaunch.current.withdrawPush { await WithdrawPushDebug.run(step) }
+                }
+                .task {
                     if DebugLaunch.current.frameLog { FrameLog.start() }
                     guard let url = DebugLaunch.current.openURL else { return }
                     // Once the scene is up: the system hands the URL back through `onOpenURL`.
@@ -82,7 +101,11 @@ struct CritterApp: App {
         }
         .onChange(of: scenePhase) { _, phase in
             switch phase {
-            case .active: store.sceneBecameActive()
+            case .active:
+                store.sceneBecameActive()
+                NotificationCenterDelegate.shared.sceneBecameActive()
+                // The permission may have changed in the system's settings meanwhile.
+                Task { await PushSetup.shared.refresh() }
             case .background: store.sceneEnteredBackground()
             default: break
             }
@@ -105,12 +128,25 @@ struct CritterApp: App {
         #endif
     }
 
+    /// `hello.app`.
+    private static var helloApp: String {
+        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
+        return "critter-ios/\(version)"
+    }
+
+    /// Where an answer from a notification's button goes: the pairing as stored, over a connection of its own.
+    private static func answerRoute() -> NotificationCenterDelegate.AnswerRoute {
+        let storage = DiskPairingStorage.inAppGroup()
+        return NotificationCenterDelegate.AnswerRoute(
+            pairing: { storage.load() }, transport: URLSessionTransport(), app: helloApp
+        )
+    }
+
     /// The store over the real pieces: the App Group and the shared keychain, `wss://` to the Mac, Bonjour.
     private static func makeStore() -> BridgeStore {
         let storage = DiskPairingStorage.inAppGroup()
         let transport = URLSessionTransport()
-        let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
-        let app = "critter-ios/\(version)"
+        let app = helloApp
         return BridgeStore(
             storage: storage,
             makeLink: { pairing, onEvent in

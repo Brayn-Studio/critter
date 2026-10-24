@@ -29,13 +29,19 @@ public enum NotificationRules {
     /// Mac's withdrawals are background pushes, which may never arrive. By the ids' rule (`PushPayload.notificationId`):
     /// a request's notification (its id is the request's) goes when the snapshot no longer lists the request; a
     /// session's (`done:`, `error:`, `waitingElsewhere:` and the session id) when the session is no longer in that
-    /// state, or gone. The test notification is not the snapshot's business.
+    /// state, or gone. "请在电脑上处理" (`waitingElsewhere:`) also goes once the session has a request the phone answers,
+    /// as the Mac takes it down then (`PushTracker`); that request has a notification of its own. The test notification
+    /// is not the snapshot's business.
     public static func staleNotificationIds(delivered: [DeliveredNotification], snapshot: SnapshotBody) -> [String] {
         let pending = Set(snapshot.pending.map(\.requestId))
+        let withRequest = Set(snapshot.pending.map(\.sessionId))
         let states = Dictionary(snapshot.sessions.map { ($0.id, $0.state) }) { first, _ in first }
         return delivered.filter { notice in
             if notice.category == PushCategory.test.rawValue { return false }
-            if let (state, sessionId) = sessionNotice(notice.id) { return states[sessionId] != state }
+            if let (state, sessionId) = sessionNotice(notice.id) {
+                if state == .waiting, withRequest.contains(sessionId) { return true }
+                return states[sessionId] != state
+            }
             return !pending.contains(notice.id)
         }.map(\.id)
     }

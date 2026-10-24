@@ -16,6 +16,7 @@ struct HomeView: View {
     @Environment(PhoneSettings.self) private var settings
     @Environment(SkinStore.self) private var skins
     @Environment(BoardAutoOpen.self) private var autoOpen
+    @Environment(NotificationRouter.self) private var router
     @Environment(\.reduceMotion) private var reduceMotion
 
     /// The answers being composed, shared by the cards' buttons and the answer card.
@@ -126,7 +127,9 @@ struct HomeView: View {
             default: break
             }
         }
+        .onChange(of: router.target, initial: true) { openNotificationTarget() }
         .onChange(of: store.snapshot) { _, body in
+            openNotificationTarget()
             let pending = Set(body?.pending.map(\.requestId) ?? [])
             // An open card keeps its request's, on the home screen and on the board alike: it says "已提交" rather
             // than that the Mac handled it.
@@ -414,6 +417,31 @@ struct HomeView: View {
             Task { _ = await store.send(.seen(sessionId: session.id)) }
         }
         presentedSessionId = session.id
+    }
+
+    /// A notification asked for a request's card or a session's details (spec §8.4): the same card as a tap on the
+    /// home screen, by request id (one that is gone says so, as the card always does), over the board if it is up. A
+    /// session's details wait for a snapshot; a session that is gone opens nothing (the home screen is the place to
+    /// look); with the board up, they close it as its close button would (they cannot show over it).
+    private func openNotificationTarget() {
+        guard let target = router.target else { return }
+        switch target {
+        case .request(let requestId):
+            router.target = nil
+            if showBoard {
+                boardRequestId = requestId
+                return
+            }
+            presentedSessionId = nil
+            presentedRequestId = requestId
+        case .session(let sessionId):
+            guard let snapshot = store.snapshot else { return }
+            router.target = nil
+            guard let session = snapshot.sessions.first(where: { $0.id == sessionId }) else { return }
+            if showBoard { closeBoard(.closeButton) }
+            presentedRequestId = nil
+            open(session)
+        }
     }
 
     /// 「允许」 / 「拒绝」 on a card: the same draft and the same submit as the answer card's.
