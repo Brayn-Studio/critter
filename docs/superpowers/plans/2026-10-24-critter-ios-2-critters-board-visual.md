@@ -39,7 +39,7 @@ spec §14 第 3 步写的是"宠物与看板，按视觉设计做完整的界面
 
 ## Review Focus
 
-1. **会话很多（9 个以上）。** 首页草地放最急的 5 只，其余合成一堆；看板先缩小到每格 3 pt，再把放不下的合成一堆；名字标签不能叠在一起。由 Task 3 的 `boardLayoutPilesWhatDoesNotFit`、`flockMergesPastTheThreshold`，Task 4 的 `labelRoom*` 四个测试，以及 Task 10、15 的 `many` 截图覆盖。
+1. **会话很多（9 个以上）。** 首页草地放最急的 5 只，其余合成一堆；看板一排最多 6 只，放不下的并进最后一格那一堆，排得下时尽量放大（每格 6 到 3 pt）；名字标签不能叠在一起。由 Task 3 的 `boardLayoutPilesWhatDoesNotFit`、`flockMergesPastTheThreshold`，Task 4 的 `labelRoom*` 四个测试，以及 Task 10、15 的 `many` 截图覆盖。
 2. **手机上没有的形象**（Mac 上的自定义形象还没下载到、清单是坏的、名字里带 `/` 或 `..`）。先画小芽，Mac 发来清单后只换这一只；坏的清单一直用小芽；永远不崩。由 Task 3 的 `unknownSkinShowsSprigUntilTheMacSendsIt`、`aBrokenPushedSkinStaysSprig`、`pathLikeNamesAreNeverLookedUp` 覆盖。
 3. **离开看板的每一种方式**（点关闭、拔电 10 秒、竖起来 3 秒、退到后台、App 被系统结束前）都把屏幕亮度和自动锁屏还原。由 Task 3 的 `everyWayOutRestoresTheScreen` 覆盖，Task 15 只做接线。
 4. **宠物全都睡着、或者 App 在后台时，不能一直重画。** 由 Task 8 的帧计数检查覆盖（`-critterFrameLog`，全睡着时 30 秒内几乎不增加，退到后台后不增加）。
@@ -175,7 +175,7 @@ scripts/dev/make-ios-icon.py                 新：从 Skins/sprig 画出 1024 p
   - `unknownSkinShowsSprigUntilTheMacSendsIt`：`manifest("custom")` 先是小芽、`needsFetch("custom")` 为真；带上 `pushed["custom"]` 重建后是 custom、`needsFetch` 为假；
   - `aBrokenPushedSkinStaysSprig`：`pushed["bad"] = Data("{".utf8)` → 小芽，不崩；
   - `pathLikeNamesAreNeverLookedUp`：`"../x"`、`"a/b"`、`""` 都不调 `bundled`，`needsFetch` 为假；
-  - `boardLayoutPilesWhatDoesNotFit`：12 个会话在 874×402 上，`scale` 是 3，`pileFrom` 不为 nil，每个槽位不重叠；
+  - `boardLayoutPilesWhatDoesNotFit`：12 个会话在 874×402 上，6 个槽位，`scale` 是 6，`pileFrom == 5`，槽位不重叠、整排不超出宽度（数值按 Kotlin 的 `place` 算出来的，翻完先对一遍）；
   - `everyWayOutRestoresTheScreen`：五种 `Exit` 都还原成保存的亮度、`idleTimerDisabled == false`。
 - [ ] **Step 2: Run** `swift test --filter 'PhoneSkinLibrary|PhoneFlock|BoardLayout|ProBoardCards|BoardScreen'`。Expected: FAIL（未定义）。
 - [ ] **Step 3: 实现。**
