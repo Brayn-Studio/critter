@@ -1,5 +1,6 @@
 import CritterClient
 import CritterKit
+import os
 import SwiftUI
 
 /// Pairing (Android `PairingScreen`): scan the QR code the Mac shows, open its `critter-pair://` link (shown in a
@@ -15,6 +16,10 @@ import SwiftUI
 /// then shows where it is, and how it failed if it did; when it succeeds the root view shows the home screen. A link
 /// that comes in meanwhile waits (`queuedLink`, the latest one wins): it is taken once the attempt has failed or been
 /// cancelled, and dropped without a word once it has succeeded.
+///
+/// An attempt that could not reach the Mac while the app was not active -- the 本地网络 prompt up (it fails while the
+/// prompt is up, or just before it shows), or the user away turning something on -- is tried again by itself once the
+/// app is active again, while its failure page is still up (`PairingRetry`, once per target).
 struct PairingView: View {
     let store: BridgeStore
     /// `pair.deviceName`.
@@ -35,6 +40,9 @@ struct PairingView: View {
         case scan, manual
     }
 
+    private static let log = Logger(subsystem: "com.braynlabs.critter", category: "pairing")
+
+    @Environment(\.scenePhase) private var scenePhase
     @State private var page = Page.scan
     /// Why a code or a link could not be used, or the Mac could not be reached; shown on the page.
     @State private var note: String?
@@ -43,6 +51,8 @@ struct PairingView: View {
     @State private var awaiting = false
     /// How the last attempt failed.
     @State private var failure: PairFailure?
+    /// Whether that attempt is tried again by itself when the app is active again.
+    @State private var retry = PairingRetry()
     @State private var linkToConfirm: PairingURI?
     /// A link that came in while an attempt was under way.
     @State private var queuedLink: IncomingPairLink?
@@ -73,6 +83,9 @@ struct PairingView: View {
             }
             .onChange(of: store.isPairing) { _, pairing in
                 if !pairing { takeQueuedIfIdle() }
+            }
+            .onChange(of: scenePhase, initial: true) { _, phase in
+                sceneChanged(phase)
             }
             // Closed during a flash: the code that was read is not paired with behind the home screen.
             .onDisappear { stopFlash() }
@@ -134,6 +147,7 @@ struct PairingView: View {
         note = nil
         failure = nil
         awaiting = false
+        retry.started(target)
         #if DEBUG
         TraceLog.pairing("pair() starts an attempt with \(target.macName)")
         #endif
@@ -144,12 +158,15 @@ struct PairingView: View {
             attempt = nil
             switch result {
             case .paired:
+                retry.ended()
                 // Whatever link came meanwhile was for the pairing just made.
                 queuedLink = nil
                 if let onPaired { onPaired() } else { onClose?() }
             case .failed(let why):
+                let again = retry.failed(why)
                 failure = why
                 takeQueuedIfIdle()
+                if let again { tryAgain(again) }
             }
         }
         return true
@@ -160,7 +177,26 @@ struct PairingView: View {
     private func cancel() {
         attempt?.cancel()
         attempt = nil
+        retry.ended()
         takeQueuedIfIdle()
+    }
+
+    /// The app went inactive or came back (`scenePhase`): the 本地网络 prompt makes it inactive until it is answered.
+    /// Back while an unreachable failure is on the page, its attempt may be tried again (`PairingRetry`).
+    private func sceneChanged(_ phase: ScenePhase) {
+        if attempt != nil || failure != nil {
+            let what = attempt != nil ? "an attempt under way" : "a failure on the page"
+            Self.log.notice("scene \(String(describing: phase), privacy: .public) with \(what, privacy: .public)")
+        }
+        if let again = retry.sceneChanged(active: phase == .active) { tryAgain(again) }
+    }
+
+    /// The failed attempt again, by itself, as if the user had scanned the same code: unless its failure page has gone,
+    /// or a link waits for the user's yes over it.
+    private func tryAgain(_ target: PairingTarget) {
+        guard failure != nil, linkToConfirm == nil else { return }
+        Self.log.notice("tried again by itself: the Mac could not be reached while the app was not active")
+        pair(target)
     }
 
     /// The Mac could not be reached: a Bonjour lookup says whether the local network is denied (the failed connection
@@ -172,6 +208,7 @@ struct PairingView: View {
 
     private func rescan() {
         failure = nil
+        retry.ended()
         switchTo(.scan)
     }
 
