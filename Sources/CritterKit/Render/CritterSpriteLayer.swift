@@ -1,4 +1,3 @@
-import CritterCore
 import QuartzCore
 
 /// Draws one Critter's `ActorSnapshot` with plain Core Animation layers: a shadow, the body
@@ -9,7 +8,7 @@ import QuartzCore
 /// is placed relative to it, in cells of `unit` points; y grows upward like the host view.
 /// Nothing animates implicitly: every change happens in an actions-disabled transaction, and
 /// a snapshot equal to the previous one is skipped entirely.
-final class CritterSpriteLayer: CALayer {
+public final class CritterSpriteLayer: CALayer {
     /// The body clip reaches this far above the ground...
     private static let clipHeightCells: CGFloat = 40
     /// ...and this far to either side of the 18-cell base box.
@@ -19,7 +18,7 @@ final class CritterSpriteLayer: CALayer {
     private static let shadowOpacity: Float = 0.28
 
     /// The bitmaps of the skin this Critter wears.
-    let atlas: SpriteAtlas
+    public let atlas: SpriteAtlas
     private let unit: CGFloat
     private let shadowLayer = CALayer()
     private let clipLayer = CALayer()
@@ -29,7 +28,7 @@ final class CritterSpriteLayer: CALayer {
     private var last: ActorSnapshot?
 
     /// View coordinates of the point where the base box's column 0 meets the ground.
-    var groundOrigin: CGPoint = .zero {
+    public var groundOrigin: CGPoint = .zero {
         didSet {
             guard groundOrigin != oldValue else { return }
             CATransaction.begin()
@@ -41,11 +40,11 @@ final class CritterSpriteLayer: CALayer {
 
     /// Set while this Critter sits in (or hops to) pile row `seatRow`: once seated it casts no
     /// shadow, exactly like the still pile it turns into.
-    var seatRow: Int? {
+    public var seatRow: Int? {
         didSet { if seatRow != oldValue { last = nil } }
     }
 
-    init(atlas: SpriteAtlas, unit: CGFloat) {
+    public init(atlas: SpriteAtlas, unit: CGFloat) {
         self.atlas = atlas
         self.unit = unit
         super.init()
@@ -66,12 +65,12 @@ final class CritterSpriteLayer: CALayer {
         clipLayer.addSublayer(bodyLayer)
     }
 
-    required init?(coder: NSCoder) {
+    public required init?(coder: NSCoder) {
         fatalError("CritterSpriteLayer does not support NSCoding")
     }
 
     /// Core Animation copies layers (presentation layers); the copy only needs to draw.
-    override init(layer: Any) {
+    public override init(layer: Any) {
         guard let other = layer as? CritterSpriteLayer else {
             fatalError("CritterSpriteLayer(layer:) given a layer of the wrong type")
         }
@@ -81,12 +80,12 @@ final class CritterSpriteLayer: CALayer {
     }
 
     /// Whether `s` would change anything on screen.
-    func needsRender(_ s: ActorSnapshot) -> Bool {
+    public func needsRender(_ s: ActorSnapshot) -> Bool {
         s != last
     }
 
     /// Draws `s`. Cheap when nothing changed.
-    func render(_ s: ActorSnapshot) {
+    public func render(_ s: ActorSnapshot) {
         guard s != last else { return }
         last = s
         CATransaction.begin()

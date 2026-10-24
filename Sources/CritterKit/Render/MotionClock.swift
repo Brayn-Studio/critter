@@ -1,4 +1,3 @@
-import CritterCore
 import Foundation
 
 /// The flock's tick source: a main-thread timer on the skin's tick grid (60 ms) that only
@@ -10,20 +9,20 @@ import Foundation
 /// Anything that changes what the actors do from outside a tick must `catchUp()` first, so
 /// the ticks slept so far are spent on the old animation, not on the new one.
 @MainActor
-final class MotionClock {
-    var onTick: ((Int) -> Int)?
-    private(set) var isRunning = false
+public final class MotionClock {
+    public var onTick: ((Int) -> Int)?
+    public private(set) var isRunning = false
 
     private var grid: TickGrid
     private var timer: Timer?
 
-    init(tickMs: Int) {
+    public init(tickMs: Int) {
         grid = TickGrid(tickMs: tickMs, start: ProcessInfo.processInfo.systemUptime)
     }
 
     private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
 
-    func start() {
+    public func start() {
         guard !isRunning else { return }
         isRunning = true
         grid.restart(at: Self.now)
@@ -42,7 +41,7 @@ final class MotionClock {
         poke()
     }
 
-    func stop() {
+    public func stop() {
         guard isRunning else { return }
         isRunning = false
         timer?.invalidate()
@@ -50,7 +49,7 @@ final class MotionClock {
     }
 
     /// Steps the actors through the whole ticks slept so far (if any), right now.
-    func catchUp() {
+    public func catchUp() {
         guard isRunning else { return }
         let ticks = grid.take(now: Self.now)
         guard ticks > 0 else { return }
@@ -60,7 +59,7 @@ final class MotionClock {
     /// Redraws now (`onTick(0)`) and re-aims the timer -- after anything outside the clock
     /// changed what the actors do (having caught up first). Also draws while stopped,
     /// without scheduling.
-    func poke() {
+    public func poke() {
         schedule(onTick?(0) ?? TickGrid.maxSleepTicks)
     }
 

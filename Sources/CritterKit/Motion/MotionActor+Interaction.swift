@@ -1,6 +1,6 @@
 import Foundation
 
-/// Travel and pile seats, holding under ground, drag-follow and gaze — design §4.8–4.11.
+/// Travel and pile seats, holding under ground, drag-follow, carry and gaze — design §4.8–4.11.
 extension MotionActor {
     /// Follow offset limits, in cells.
     static let followMaxX: Double = 12
@@ -171,6 +171,29 @@ extension MotionActor {
             return cycle[(odd ? 0 : 1) % cycle.count]
         }
         return followLook ?? names.lookCenter
+    }
+
+    // MARK: - Carry
+
+    /// Lifted and carried sideways (the board): the body is drawn `dxCells` cells from its anchor, y unchanged.
+    public func carry(dxCells: Double) {
+        offX = dxCells
+    }
+
+    /// Put down after a carry: walks back to its anchor with the follow walk (trotting while far), then
+    /// stops and blinks. Under reduced motion it is home on the next tick. Ignored like `startFollow`
+    /// while traveling, hidden or held under ground, where it is simply back at the anchor.
+    public func walkHome() {
+        guard !traveling, !hidden, underground == nil else {
+            offX = 0
+            offY = 0
+            return
+        }
+        cancelOnce()
+        gazeZone = nil
+        following = true
+        followHold = false
+        followLook = nil
     }
 
     // MARK: - Gaze
