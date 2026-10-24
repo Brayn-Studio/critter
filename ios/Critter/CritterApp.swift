@@ -226,8 +226,10 @@ struct CritterApp: App {
             },
             pairer: Pairer(transport: transport),
             background: UIKitBackgroundRunner(),
-            // The pairing connection would be the first touch of the local network: it would bring up iOS's prompt and
-            // fail while it is up. A Bonjour browser asks first, and the pairing waits for the answer.
+            // The pairing connection is the first touch of the local network: it brings up iOS's prompt and fails while it
+            // is up. A Bonjour browser asks first, and the pairing waits while 本地网络 is already refused. It does not
+            // hold the pairing at the first-run prompt (on the device the browser did not report the refusal then):
+            // that attempt fails, and the pairing screen tries it again once the app is active (`PairingRetry`).
             localNetworkGate: BonjourLocalNetworkGate(),
             pushAcks: SecretPushAckStorage.inKeychain(),
             // A Mac left that may still push here: a new push key, and a line in the settings.

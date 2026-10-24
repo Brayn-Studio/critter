@@ -5,9 +5,9 @@ import os
 
 /// Waits until the local network can be tried before a pairing connects.
 public protocol LocalNetworkGate: Sendable {
-    /// Returns once the local network is allowed, or says nothing about the permission. While it is refused (the
-    /// first-run prompt is up, or 本地网络 is off) it calls `onRefused` once and keeps waiting; cancellation ends the
-    /// wait. Returns false when it ended by cancellation.
+    /// Returns once the local network is allowed, or says nothing about the permission. While it is refused (本地网络 is
+    /// off; the first-run prompt is not reported as a refusal on a device, see `BonjourLocalNetworkGate`) it calls
+    /// `onRefused` once and keeps waiting; cancellation ends the wait. Returns false when it ended by cancellation.
     func waitUntilUsable(onRefused: @escaping @Sendable () -> Void) async -> Bool
 }
 
@@ -21,11 +21,16 @@ public struct OpenLocalNetworkGate: LocalNetworkGate {
 }
 
 /// Asks a Bonjour browser for the bridge (`_critter._tcp`, as `BonjourBrowser`) whether the local network may be used
-/// (Apple TN3179). Otherwise the pairing connection is the app's first touch of the local network: it is what makes iOS
-/// show the 本地网络 prompt, and it fails (or runs out its time) while the prompt is up. Allowed, it goes on at once;
-/// refused, it waits, for as long as it takes, for the browser to be let browse (the user allows in the prompt, or turns
-/// 本地网络 on in Settings and comes back); another error, or nothing decisive within `grace`, goes on too, and the
-/// connection fails as it would have (`step`). What the browser sees goes to `LocalNetworkAccess`.
+/// (Apple TN3179). Allowed, it goes on at once; refused, it waits, for as long as it takes, for the browser to be let
+/// browse (the user turns 本地网络 on in Settings and comes back); another error, or nothing decisive within `grace`,
+/// goes on too, and the connection fails as it would have (`step`). What the browser sees goes to `LocalNetworkAccess`.
+///
+/// What the device showed (iPhone 16 Pro, iOS 27.0.1, 2026-10-24): while the first-run 本地网络 prompt is up the browser
+/// does not report the refusal, so the gate does not hold the pairing then. The pairing connection is the app's first
+/// touch of the local network, brings the prompt up and fails while it is up; the retry once the app is active again
+/// (`PairingRetry`) is what recovers that case, so it is not redundant with this gate. The gate's page shows when
+/// 本地网络 is already refused (「等你允许「本地网络」」); that path has not been run on a device yet
+/// (docs/critter-ios-backlog.md).
 public struct BonjourLocalNetworkGate: LocalNetworkGate {
     private let grace: Duration
     private let access: LocalNetworkAccess
@@ -59,7 +64,7 @@ public struct BonjourLocalNetworkGate: LocalNetworkGate {
     enum Step: Equatable {
         /// Nothing decisive yet.
         case wait
-        /// Refused: the prompt is up, or 本地网络 is off. Wait, now without a time limit, for `.ready`.
+        /// Refused (本地网络 is off). Wait, now without a time limit, for `.ready`.
         case refused
         /// Connect: allowed, nothing said about the permission, or nothing decisive within the grace.
         case proceed

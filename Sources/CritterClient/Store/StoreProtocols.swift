@@ -81,8 +81,9 @@ public protocol BackgroundRunner {
 public enum PairingPhase: Equatable, Sendable {
     /// Reaching the Mac.
     case connecting
-    /// Waiting before reaching the Mac: iOS is asking for 本地网络 (the first-run prompt), or refusing it (off in
-    /// Settings). Goes back to `connecting` once it is allowed (`LocalNetworkGate`).
+    /// Waiting before reaching the Mac: iOS refuses 本地网络 (off in Settings). Goes back to `connecting` once it is
+    /// allowed (`LocalNetworkGate`). Not the first-run prompt: while it is up the gate's browser does not report the
+    /// refusal on a device, the connection fails instead, and `PairingRetry` tries it again.
     case waitingForLocalNetwork
     /// The request is with the Mac, waiting for the user to approve it there.
     case awaitingApproval

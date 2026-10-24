@@ -19,7 +19,8 @@ import SwiftUI
 ///
 /// An attempt that could not reach the Mac while the app was not active -- the 本地网络 prompt up (it fails while the
 /// prompt is up, or just before it shows), or the user away turning something on -- is tried again by itself once the
-/// app is active again, while its failure page is still up (`PairingRetry`, once per target).
+/// app is active again, while its failure page is still up (`PairingRetry`, once per target). Not one that had reached
+/// the Mac (`store.lastPairReachedMac`): its code is used up.
 struct PairingView: View {
     let store: BridgeStore
     /// `pair.deviceName`.
@@ -158,12 +159,19 @@ struct PairingView: View {
             attempt = nil
             switch result {
             case .paired:
+                Self.log.notice("pairing ended: paired")
                 retry.ended()
                 // Whatever link came meanwhile was for the pairing just made.
                 queuedLink = nil
                 if let onPaired { onPaired() } else { onClose?() }
             case .failed(let why):
-                let again = retry.failed(why)
+                // The case name only (public): why a retry did or did not fire, never the code, host or Mac.
+                let reached = store.lastPairReachedMac
+                Self.log.notice(
+                    "pairing ended: \(String(describing: why), privacy: .public), reached the Mac: \(reached, privacy: .public)"
+                )
+                // Once the Mac had the request, the code is used up: not tried again by itself.
+                let again = retry.failed(why, reachedMac: reached)
                 failure = why
                 takeQueuedIfIdle()
                 if let again { tryAgain(again) }

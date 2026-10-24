@@ -17,23 +17,70 @@ private let other = PairingTarget(
 private let others: [PairFailure] = [.badCode, .rejected, .protocolMismatch, .certMismatch, .noAnswer, .busy, .notSaved]
 
 struct PairingRetryTests {
-    /// Only an unreachable Mac, with the app not active during the attempt or since it failed, and only once.
+    /// Only an unreachable Mac that the attempt never reached, with the app not active during the attempt or since it
+    /// failed, and only once.
     @Test func onlyAnUnreachableMacWhileAwayIsTriedAgainOnce() {
-        #expect(PairingRetry.retriesWhenActive(failure: .unreachable, wasInactive: true, alreadyRetried: false))
-        #expect(!PairingRetry.retriesWhenActive(failure: .unreachable, wasInactive: false, alreadyRetried: false))
-        #expect(!PairingRetry.retriesWhenActive(failure: .unreachable, wasInactive: true, alreadyRetried: true))
+        #expect(
+            PairingRetry.retriesWhenActive(failure: .unreachable, reachedMac: false, wasInactive: true, alreadyRetried: false)
+        )
+        #expect(
+            !PairingRetry.retriesWhenActive(failure: .unreachable, reachedMac: false, wasInactive: false, alreadyRetried: false)
+        )
+        #expect(
+            !PairingRetry.retriesWhenActive(failure: .unreachable, reachedMac: false, wasInactive: true, alreadyRetried: true)
+        )
+        // The Mac had the code already: a second try would only be told `badCode`.
+        #expect(
+            !PairingRetry.retriesWhenActive(failure: .unreachable, reachedMac: true, wasInactive: true, alreadyRetried: false)
+        )
         for failure in others {
-            for wasInactive in [false, true] {
-                for alreadyRetried in [false, true] {
-                    #expect(
-                        !PairingRetry.retriesWhenActive(
-                            failure: failure, wasInactive: wasInactive, alreadyRetried: alreadyRetried
-                        ),
-                        "\(failure)"
-                    )
+            for reachedMac in [false, true] {
+                for wasInactive in [false, true] {
+                    for alreadyRetried in [false, true] {
+                        #expect(
+                            !PairingRetry.retriesWhenActive(
+                                failure: failure, reachedMac: reachedMac, wasInactive: wasInactive,
+                                alreadyRetried: alreadyRetried
+                            ),
+                            "\(failure)"
+                        )
+                    }
                 }
             }
         }
+    }
+
+    /// The phone locked while walking to the Mac: the connection is cut after the Mac took the code. Not tried again,
+    /// in any order of the failure and the scene.
+    @Test func aCutAfterTheMacHadTheCodeIsNotTriedAgain() {
+        var during = PairingRetry()
+        during.started(target)
+        _ = during.sceneChanged(active: false)
+        #expect(during.failed(.unreachable, reachedMac: true) == nil)
+        #expect(during.sceneChanged(active: true) == nil)
+
+        var after = PairingRetry()
+        after.started(target)
+        #expect(after.failed(.unreachable, reachedMac: true) == nil)
+        #expect(after.sceneChanged(active: false) == nil)
+        #expect(after.sceneChanged(active: true) == nil)
+
+        var back = PairingRetry()
+        back.started(target)
+        _ = back.sceneChanged(active: false)
+        _ = back.sceneChanged(active: true)
+        #expect(back.failed(.unreachable, reachedMac: true) == nil)
+
+        // The next attempt is its own: one that never reached the Mac is tried again.
+        var next = PairingRetry()
+        next.started(target)
+        _ = next.sceneChanged(active: false)
+        #expect(next.failed(.unreachable, reachedMac: true) == nil)
+        #expect(next.sceneChanged(active: true) == nil)
+        next.started(target)
+        _ = next.sceneChanged(active: false)
+        #expect(next.failed(.unreachable, reachedMac: false) == nil)
+        #expect(next.sceneChanged(active: true) == target)
     }
 
     /// The connection fails while the prompt is up: tried again when it is answered.

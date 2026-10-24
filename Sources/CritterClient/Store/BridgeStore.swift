@@ -47,6 +47,10 @@ public final class BridgeStore {
     /// A `pair` call is under way, from its start until it has returned: past the Mac's answer, while the old
     /// connection is stopped and the new pairing saved.
     public private(set) var isPairing = false
+    /// The latest `pair` attempt got as far as the Mac: its connection opened, so the request (and the pairing code)
+    /// was with the Mac, whatever came of it. False before the first attempt, and for an attempt that never got there
+    /// (cancelled at the gate, or the connection failed). Set when the attempt ends, before `pair` returns.
+    public private(set) var lastPairReachedMac = false
     /// What the paired Mac's latest `welcome` said it runs (e.g. "1.4.0"); kept while the connection is down,
     /// nil until the Mac has welcomed this pairing.
     public private(set) var macVersion: String?
@@ -360,15 +364,18 @@ public final class BridgeStore {
     /// certificate fingerprint), which takes the registration over from the old record itself. The attempt counts as
     /// under way (`isPairing`) until all of that is done.
     ///
-    /// Before the Mac is tried, `localNetworkGate` is waited on: while iOS asks for 本地网络 or refuses it the phase is
+    /// Before the Mac is tried, `localNetworkGate` is waited on: while iOS refuses 本地网络 (off in Settings) the phase is
     /// `waitingForLocalNetwork`, for as long as it takes; cancelled there, the attempt fails as a cancelled connection
-    /// does (`unreachable`) and the Mac is never tried.
+    /// does (`unreachable`) and the Mac is never tried. The first-run prompt is not caught there: while it is up the
+    /// gate's browser does not report the refusal on a device (2026-10-24), so the attempt connects, fails
+    /// `unreachable`, and the pairing screen tries it again once the app is active (`PairingRetry`).
     public func pair(_ target: PairingTarget, deviceName: String) async -> PairResult {
         guard !isPairing else { return .failed(.busy) }
         isPairing = true
         defer { isPairing = false }
         pairAttempt += 1
         let attempt = pairAttempt
+        lastPairReachedMac = false
         pairingPhase = .connecting
         atLocalNetworkGate = true
         let usable = await localNetworkGate.waitUntilUsable { [weak self] in
@@ -378,9 +385,13 @@ public final class BridgeStore {
         let result: PairResult
         if usable {
             pairingPhase = .connecting
+            // Set where the pairer calls, not on the main actor later: it is read when the pairer has returned.
+            let reached = OSAllocatedUnfairLock(initialState: false)
             result = await pairer.pair(target, deviceName: deviceName) { [weak self] in
+                reached.withLock { $0 = true }
                 Task { @MainActor in self?.markAwaitingApproval(attempt) }
             }
+            lastPairReachedMac = reached.withLock { $0 }
         } else {
             result = .failed(.unreachable)
         }

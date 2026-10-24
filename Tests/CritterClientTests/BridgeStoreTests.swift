@@ -287,6 +287,8 @@ private final class FakePairer: PairingLink {
     let reachMac: Gate
     /// The Mac does not answer until this is open.
     let approval: Gate
+    /// Whether `pair` gets as far as the Mac (the connection opens). Not, it fails `unreachable` at once.
+    private let connects = OSAllocatedUnfairLock(initialState: true)
 
     init(journal: Journal, outcome: PairResult, slow: Bool) {
         self.journal = journal
@@ -297,11 +299,15 @@ private final class FakePairer: PairingLink {
 
     func answer(with result: PairResult) { outcome.withLock { $0 = result } }
 
+    /// The Mac cannot be reached: the connection never opens.
+    func cannotConnect() { connects.withLock { $0 = false } }
+
     func pair(
         _ target: PairingTarget, deviceName: String, onAwaitingApproval: @escaping @Sendable () -> Void
     ) async -> PairResult {
         journal.add("pair \(target.code) \(deviceName)")
         await reachMac.wait()
+        guard connects.withLock({ $0 }) else { return .failed(.unreachable) }
         onAwaitingApproval()
         await approval.wait()
         return outcome.withLock { $0 }
@@ -1109,6 +1115,34 @@ struct BridgeStoreTests {
         rig.pairer.approval.open()
         #expect(await pairing.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
         #expect(store.pairingPhase == nil)
+    }
+
+    /// The store says whether the last attempt got as far as the Mac (its connection opened): a failure after that is
+    /// not "never reached", whatever it was (the pairing screen does not try again by itself then).
+    @Test func theStoreSaysWhetherTheLastAttemptReachedTheMac() async {
+        let rig = Rig(paired: false)
+        let store = rig.makeStore()
+        #expect(!store.lastPairReachedMac)
+        // The connection opened, then was cut: the Mac had the request.
+        rig.pairer.answer(with: .failed(.unreachable))
+        #expect(await store.pair(target, deviceName: "iPhone") == .failed(.unreachable))
+        #expect(store.lastPairReachedMac)
+        // The next attempt starts afresh: the connection never opens.
+        rig.pairer.cannotConnect()
+        #expect(await store.pair(target, deviceName: "iPhone") == .failed(.unreachable))
+        #expect(!store.lastPairReachedMac)
+    }
+
+    /// Cancelled at the gate, the Mac is never tried: not reached.
+    @Test func anAttemptCancelledAtTheGateDidNotReachTheMac() async {
+        let rig = Rig(paired: false)
+        let gate = FakeLocalNetworkGate()
+        let store = rig.makeStore(localNetworkGate: gate)
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { gate.waiting })
+        pairing.cancel()
+        #expect(await pairing.value == .failed(.unreachable))
+        #expect(!store.lastPairReachedMac)
     }
 
     /// The notice that the Mac is being waited for is passed on to the main actor; one that arrives after
