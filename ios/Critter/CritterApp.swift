@@ -30,7 +30,8 @@ struct CritterApp: App {
 
     var body: some Scene {
         WindowGroup {
-            RootView(store: store, deviceName: deviceName, link: $link)
+            content
+                .modifier(ReduceMotionRoot())
                 .environment(OrientationLock.shared)
                 .onOpenURL { url in
                     // Not a pairing link (or a broken one): ignored.
@@ -53,6 +54,19 @@ struct CritterApp: App {
             default: break
             }
         }
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        #if DEBUG
+        if DebugLaunch.current.gallery {
+            Gallery()
+        } else {
+            RootView(store: store, deviceName: deviceName, link: $link)
+        }
+        #else
+        RootView(store: store, deviceName: deviceName, link: $link)
+        #endif
     }
 
     /// The store over the real pieces: the keychain, `wss://` to the Mac, Bonjour.

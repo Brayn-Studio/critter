@@ -23,6 +23,9 @@ import Foundation
 /// - `-critterDeviceName <name>`: the device name pairing sends.
 /// - `-critterOpenURL <url>`: once launched, the app opens this URL itself, so it comes back in through the
 ///   system like a link opened from outside (`xcrun simctl openurl` stops at the system's "在“Critter”中打开?").
+/// - `-critterGallery`: instead of the app, a page of every pixel widget in its states, the fonts, every pixel icon
+///   and the wordmark (`Gallery.swift`), to put next to the mockups.
+/// - `-critterGalleryAt parts|more|fonts|icons|logo`: with `-critterGallery`, opens the page scrolled to that part.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -49,6 +52,8 @@ struct DebugLaunch {
     var pairURI: URL?
     var deviceName: String?
     var openURL: URL?
+    var gallery = false
+    var galleryAt: String?
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -92,6 +97,8 @@ struct DebugLaunch {
         pairURI = value("critterPairURI").flatMap(URL.init(string:))
         deviceName = value("critterDeviceName")
         openURL = value("critterOpenURL").flatMap(URL.init(string:))
+        gallery = arguments.contains("-critterGallery")
+        galleryAt = value("critterGalleryAt")
     }
 
     /// With `-critterFixture`: a store on the fake storage and link, already paired; nil without it.

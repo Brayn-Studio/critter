@@ -22,7 +22,7 @@ struct PermissionForm: View {
         let showingReason = writingReason && canExplain
         VStack(alignment: .leading, spacing: 12) {
             if let command = RequestText.permissionBody(request.input) {
-                CommandSlip(command: command, scrolls: true)
+                CommandSlip(text: command, scrolls: true)
             }
             if showingReason {
                 TextField("拒绝的理由（可不写）", text: $reason, axis: .vertical)

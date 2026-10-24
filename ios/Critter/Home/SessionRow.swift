@@ -86,7 +86,7 @@ struct SessionRow: View {
     private func ask(_ request: RowRequest) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             if let command = request.command {
-                CommandSlip(command: command)
+                CommandSlip(text: command)
             }
             if request.isInline {
                 inlineButtons

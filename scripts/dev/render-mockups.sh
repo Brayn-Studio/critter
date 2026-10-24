@@ -4,14 +4,24 @@
 # anchor such as #home comes out blank, so it is always the whole page), then Pillow cuts it into 1400 x 1500
 # tiles, mockup-01.png, mockup-02.png, … from the top. The full page is kept as mockups-full.png.
 #
-#   scripts/dev/render-mockups.sh [output directory]      # default: ios/build/mockups
+#   scripts/dev/render-mockups.sh [--dark] [output directory]
+#
+# The output directory defaults to ios/build/mockups, or ios/build/mockups-dark with --dark: the page follows the
+# browser's appearance, and --dark renders it with the app's screens in their dark theme.
 #
 # Needs Google Chrome in /Applications and python3 with Pillow. Nothing here touches a window: Chrome runs headless
 # with a throwaway profile.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-OUT="${1:-$REPO/ios/build/mockups}"
+DARK=()
+SUFFIX=""
+if [ "${1:-}" = "--dark" ]; then
+    DARK=(--force-dark-mode)
+    SUFFIX="-dark"
+    shift
+fi
+OUT="${1:-$REPO/ios/build/mockups$SUFFIX}"
 CHROME="/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"
 PAGE="$REPO/docs/superpowers/specs/2026-10-19-critter-phone-visual-mockups.html"
 WIDTH=1400
@@ -28,7 +38,7 @@ trap 'rm -rf "$PROFILE"' EXIT
 FULL="$OUT/mockups-full.png"
 rm -f "$FULL" "$OUT"/mockup-*.png
 # The pets on the page are drawn by its script from Skins/*/manifest.json: the virtual time budget lets them settle.
-"$CHROME" --headless=new --disable-gpu --hide-scrollbars --virtual-time-budget=3000 \
+"$CHROME" --headless=new --disable-gpu --hide-scrollbars --virtual-time-budget=3000 ${DARK[@]+"${DARK[@]}"} \
     --window-size="$WIDTH,$HEIGHT" --user-data-dir="$PROFILE" --screenshot="$FULL" "file://$PAGE" >/dev/null 2>&1
 [ -s "$FULL" ] || { echo "Chrome did not write $FULL" >&2; exit 1; }
 
