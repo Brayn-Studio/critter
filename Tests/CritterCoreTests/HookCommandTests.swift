@@ -360,3 +360,40 @@ private func tmpEnv() -> (paths: CritterPaths, env: [String: String]) {
     #expect(lines.first == lines.last, "stdout: \(lines)")
     #expect(lines.dropFirst().first == lines.last, "stderr: \(lines)")
 }
+
+/// An agent app (DeepSeek Harness) is not a Claude process: `CRITTER_ENTRYPOINT` says so, and the
+/// hook's parent is the agent to track -- no registry lookup, no `claude` executable check.
+@Test func agentAppEntrypointOwnsHookParent() {
+    let (paths, env) = tmpEnv()
+    let processes = FakeProcesses(table: [4242: .init(path: "/Applications/DeepSeek.app/Contents/MacOS/dsh", start: 100)])
+    var environment = env
+    environment["CRITTER_ENTRYPOINT"] = "deepseek-desktop"
+    _ = HookCommand.run(
+        arguments: ["event"],
+        stdin: Data(#"{"session_id":"deepseek-session-1","cwd":"/tmp/p","hook_event_name":"UserPromptSubmit","prompt":"hi"}"#.utf8),
+        environment: environment, now: 1000, hookParentPid: 4242, launcher: FakeLauncher(), processes: processes
+    )
+    let record = StateStore(paths: paths).read(sessionId: "deepseek-session-1")
+    #expect(record?.entrypoint == "deepseek-desktop")
+    #expect(record?.claudePid == 4242)
+    #expect(record?.claudeStartTime == 100)
+    #expect(record?.state == .running)
+    #expect(HookCommand.agentAppEntrypoints == ["deepseek-desktop"])
+}
+
+/// Only the listed values are accepted: any other `CRITTER_ENTRYPOINT` leaves the Claude path as it was.
+@Test func unknownCritterEntrypointIsIgnored() {
+    let (paths, env) = tmpEnv()
+    let processes = FakeProcesses(table: [4242: .init(path: "/bin/sh", start: 100)])
+    var environment = env
+    environment["CRITTER_ENTRYPOINT"] = "evil"
+    _ = HookCommand.run(
+        arguments: ["event"],
+        stdin: Data(#"{"session_id":"s1","cwd":"/x","hook_event_name":"UserPromptSubmit","prompt":"hi"}"#.utf8),
+        environment: environment, now: 1000, hookParentPid: 4242, launcher: FakeLauncher(), processes: processes
+    )
+    let record = StateStore(paths: paths).read(sessionId: "s1")
+    #expect(record?.entrypoint == nil)
+    #expect(record?.claudePid == nil)
+    #expect(record?.state == .running)
+}

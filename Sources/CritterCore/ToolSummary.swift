@@ -6,6 +6,12 @@ public enum BubbleText {
     public static let thinking = "思考中…"
     public static let done = "做完了"
     public static let askQuestion = "Claude 在问你问题"
+    /// "Claude 在问你问题", or the agent app's own name for sessions from Kimi Code / DeepSeek Harness.
+    public static func askQuestion(entrypoint: String?) -> String {
+        if entrypoint?.hasPrefix("kimi-") == true { return "Kimi 在问你问题" }
+        if entrypoint?.hasPrefix("deepseek-") == true { return "DeepSeek 在问你问题" }
+        return askQuestion
+    }
     public static let planApproval = "等你确认计划"
     public static let confirmPrefix = "需要你确认："
     public static let errorPrefix = "出错了："

@@ -248,3 +248,35 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     #expect(AskGate.shouldKeepWaiting(status: fresh, now: 105_000))
     #expect(!AskGate.shouldKeepWaiting(status: fresh, now: 111_000))
 }
+
+@Test func askWaitsForDeepSeekDesktopToo() {
+    func run(_ environment: [String: String]) -> HookResult {
+        let paths = tmpPaths()
+        writeStatus(paths)
+        let store = PendingStore(paths: paths)
+        let clock = Clock()
+        clock.onSleep = { _ in try! store.writeAnswer(AnswerPayload(decision: "allow"), requestId: "req-1") }
+        return AskCommand.run(stdin: request(), paths: paths, environment: environment, env: clock.environment())
+    }
+    let viaCli = run(cli)
+    #expect(!viaCli.stdout.isEmpty)
+    #expect(run(["CRITTER_ENTRYPOINT": "deepseek-desktop"]) == viaCli)
+    // Neither variable, or a value that is not an agent app: silent as before.
+    #expect(run([:]) == HookResult(stdout: "", exitCode: 0))
+    #expect(run(["CRITTER_ENTRYPOINT": "evil"]) == HookResult(stdout: "", exitCode: 0))
+}
+
+@Test func askQuestionSummaryNamesTheAgentApp() {
+    let paths = tmpPaths()
+    writeStatus(paths)
+    let store = PendingStore(paths: paths)
+    let clock = Clock()
+    nonisolated(unsafe) var seen: PendingRequest?
+    clock.onSleep = { _ in
+        seen = store.read(requestId: "req-1")
+        store.remove(requestId: "req-1")
+    }
+    _ = AskCommand.run(stdin: request(tool: "AskUserQuestion", input: questionInput), paths: paths,
+                       environment: ["CRITTER_ENTRYPOINT": "deepseek-desktop"], env: clock.environment())
+    #expect(seen?.summary == "DeepSeek 在问你问题")
+}

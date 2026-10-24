@@ -96,6 +96,15 @@ private func fire(_ event: String, session: String = "s1", tool: String? = nil, 
     #expect(ids(store) == ["b"])
 }
 
+@Test func interruptedClearsSession() throws {
+    let (paths, env) = tmpEnv()
+    let store = PendingStore(paths: paths)
+    try store.write(pending("a", input: ["command": "a"]))
+    try store.write(pending("b", session: "s2", input: ["command": "a"]))
+    _ = fire("Interrupted", env: env)
+    #expect(ids(store) == ["b"])
+}
+
 @Test func otherEventsLeavePendingAlone() throws {
     let (paths, env) = tmpEnv()
     let store = PendingStore(paths: paths)

@@ -68,7 +68,8 @@ public enum AskCommand {
     /// `environment` is the hook's own (Claude Code sets `CLAUDE_CODE_ENTRYPOINT` for it).
     public static func run(stdin: Data, paths: CritterPaths, environment: [String: String], env: AskEnvironment) -> HookResult {
         let silent = HookResult(stdout: "", exitCode: 0)
-        guard environment["CLAUDE_CODE_ENTRYPOINT"] == entrypoint else { return silent }
+        let agentApp = environment["CRITTER_ENTRYPOINT"].flatMap { HookCommand.agentAppEntrypoints.contains($0) ? $0 : nil }
+        guard environment["CLAUDE_CODE_ENTRYPOINT"] == entrypoint || agentApp != nil else { return silent }
         guard let root = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any],
               root["hook_event_name"] as? String == "PermissionRequest",
               let sessionId = root["session_id"] as? String,
@@ -82,7 +83,7 @@ public enum AskCommand {
         let createdAt = env.now()
         let request = PendingRequest(
             requestId: env.newRequestId(), sessionId: sessionId, kind: kind, toolName: toolName,
-            summary: summary(kind: kind, toolName: toolName, toolInput: toolInput),
+            summary: summary(kind: kind, toolName: toolName, toolInput: toolInput, entrypoint: agentApp),
             input: AskDecision.displayInput(toolInput),
             matchKey: MatchKey.compute(toolName: toolName, toolInput: toolInput),
             createdAt: createdAt, expiresAt: createdAt + env.maxWaitMs, hookPid: env.ownPid
@@ -111,9 +112,9 @@ public enum AskCommand {
         }
     }
 
-    private static func summary(kind: PendingKind, toolName: String, toolInput: [String: Any]) -> String {
+    private static func summary(kind: PendingKind, toolName: String, toolInput: [String: Any], entrypoint: String?) -> String {
         switch kind {
-        case .question: return BubbleText.askQuestion
+        case .question: return BubbleText.askQuestion(entrypoint: entrypoint)
         case .plan: return BubbleText.planApproval
         case .permission: return ToolSummary.permission(toolName: toolName, input: JSONValue(any: toolInput))
         }

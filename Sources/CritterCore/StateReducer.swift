@@ -65,7 +65,7 @@ public enum StateReducer {
         case "PreToolUse":
             switch input.toolName {
             case "AskUserQuestion":
-                return write(state: .waiting, detail: BubbleText.askQuestion)
+                return write(state: .waiting, detail: BubbleText.askQuestion(entrypoint: entrypoint ?? previous?.entrypoint))
             case "ExitPlanMode":
                 return write(state: .waiting, detail: BubbleText.planApproval)
             default:
@@ -105,6 +105,10 @@ public enum StateReducer {
         case "StopFailure":
             let message = input.errorMessage ?? input.errorType ?? "未知错误"
             return write(state: .error, detail: BubbleText.errorPrefix + ToolSummary.truncate(message, max: 50))
+
+        case "Interrupted":
+            // The user stopped the turn: the agent app says so (Claude Code fires no hook for Esc).
+            return write(state: .idle, detail: nil)
 
         case "SessionEnd":
             return .delete

@@ -173,19 +173,30 @@ public enum HookCommand {
         guard let root = (try? JSONSerialization.jsonObject(with: stdin)) as? [String: Any],
               let input = HookInput(json: root) else { return }
 
-        let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
-        let located = ClaudeProcessLocator.locate(
-            sessionId: input.sessionId, registry: registry, hookParentPid: hookParentPid, processes: processes
-        )
+        // An agent app's hook scripts (DeepSeek Harness) say who they are with CRITTER_ENTRYPOINT.
+        // Its hook parent is the agent to track, not a Claude process: no registry lookup and no
+        // `claude` executable check. Any other value is ignored.
+        let agentApp = environment["CRITTER_ENTRYPOINT"].flatMap { agentAppEntrypoints.contains($0) ? $0 : nil }
 
-        // Claude sets CLAUDE_CODE_ENTRYPOINT for its hooks (verified on 2.1.301: `sdk-cli` for
-        // `claude -p`, overriding an inherited `cli`); the registry entry is preferred.
-        let entrypoint = located?.entry?.entrypoint ?? environment["CLAUDE_CODE_ENTRYPOINT"].flatMap { $0.isEmpty ? nil : $0 }
+        let located: LocatedClaude?
+        let entrypoint: String?
+        if let agentApp {
+            located = LocatedClaude(pid: hookParentPid, startTime: processes.startTime(of: hookParentPid), entry: nil)
+            entrypoint = agentApp
+        } else {
+            let registry = ClaudeRegistry.entries(in: paths.claudeSessionsDir)
+            located = ClaudeProcessLocator.locate(
+                sessionId: input.sessionId, registry: registry, hookParentPid: hookParentPid, processes: processes
+            )
+            // Claude sets CLAUDE_CODE_ENTRYPOINT for its hooks (verified on 2.1.301: `sdk-cli` for
+            // `claude -p`, overriding an inherited `cli`); the registry entry is preferred.
+            entrypoint = located?.entry?.entrypoint ?? environment["CLAUDE_CODE_ENTRYPOINT"].flatMap { $0.isEmpty ? nil : $0 }
+        }
 
         // Claude writes each text block to the transcript as its own line before the tool call
         // that follows it, so by a tool hook the turn's latest commentary is already on disk.
         var progress: String?
-        if progressEvents.contains(input.hookEventName), let path = input.transcriptPath, !path.isEmpty,
+        if agentApp == nil, progressEvents.contains(input.hookEventName), let path = input.transcriptPath, !path.isEmpty,
            let tail = FileAppendWatcher.readTail(of: URL(fileURLWithPath: path), maxBytes: TranscriptTail.progressTailBytes) {
             progress = TranscriptTail.latestProgress(tail: tail)
         }
@@ -210,7 +221,7 @@ public enum HookCommand {
         )
         switch input.hookEventName {
         case "SessionStart":
-            if let socket = environment["CLAUDE_CODE_MESSAGING_SOCKET"], !socket.isEmpty,
+            if agentApp == nil, let socket = environment["CLAUDE_CODE_MESSAGING_SOCKET"], !socket.isEmpty,
                let token = environment["CLAUDE_CODE_MESSAGING_TOKEN"], !token.isEmpty {
                 try? InboxStore(paths: paths).write(InboxRecord(sessionId: input.sessionId, socketPath: socket, token: token))
             }
@@ -221,6 +232,9 @@ public enum HookCommand {
             break
         }
     }
+
+    /// `CRITTER_ENTRYPOINT` values that mark a hook as coming from an agent app rather than Claude Code.
+    public static let agentAppEntrypoints: Set<String> = ["deepseek-desktop"]
 
     /// The running events whose bubble shows the turn's latest commentary.
     private static let progressEvents: Set<String> = ["PreToolUse", "PostToolUse", "PostToolUseFailure", "PermissionDenied"]

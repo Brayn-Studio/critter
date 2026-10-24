@@ -22,7 +22,7 @@ public enum PendingResolution {
                     store.remove(requestId: request.requestId)
                 }
             }
-        case "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd":
+        case "UserPromptSubmit", "Stop", "StopFailure", "SessionEnd", "Interrupted":
             guard store.hasRequests else { return }
             store.removeAll(sessionId: sessionId)
         default:

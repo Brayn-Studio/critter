@@ -214,3 +214,36 @@ private func reduce(_ previous: SessionRecord?, _ json: String, progress: String
     let tool = reduce(fresh, #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"Read","tool_input":{"file_path":"/x/a.swift"}}"#)
     #expect(tool?.detail == "读取 a.swift")
 }
+
+@Test func agentAppQuestionBubble() {
+    let json = #"{"session_id":"s","cwd":"/x","hook_event_name":"PreToolUse","tool_name":"AskUserQuestion"}"#
+    func detail(entrypoint: String?, previous: SessionRecord? = nil) -> String? {
+        guard case .write(let r) = StateReducer.reduce(previous: previous, input: input(json), now: 1, pid: nil, pidStartTime: nil, entrypoint: entrypoint) else { return nil }
+        return r.detail
+    }
+    #expect(detail(entrypoint: "deepseek-desktop") == "DeepSeek 在问你问题")
+    #expect(detail(entrypoint: "kimi-desktop") == "Kimi 在问你问题")
+    #expect(detail(entrypoint: "kimi-cli") == "Kimi 在问你问题")
+    #expect(detail(entrypoint: "cli") == "Claude 在问你问题")
+    #expect(detail(entrypoint: nil) == "Claude 在问你问题")
+    // A later event that carries no entrypoint keeps the one the record already has.
+    var previous = record(state: .running)
+    previous.entrypoint = "deepseek-desktop"
+    #expect(detail(entrypoint: nil, previous: previous) == "DeepSeek 在问你问题")
+    #expect(BubbleText.askQuestion(entrypoint: "deepseek-desktop") == "DeepSeek 在问你问题")
+    #expect(BubbleText.askQuestion(entrypoint: nil) == BubbleText.askQuestion)
+}
+
+@Test func interruptedGoesIdle() {
+    var previous = record(state: .running, detail: "Bash: ls", claudePid: 7)
+    previous.activity = "bash"
+    guard case .write(let r) = StateReducer.reduce(
+        previous: previous, input: input(#"{"session_id":"s","cwd":"/x","hook_event_name":"Interrupted"}"#),
+        now: 10, pid: nil, pidStartTime: nil
+    ) else { Issue.record("expected write"); return }
+    #expect(r.state == .idle)
+    #expect(r.detail == nil)
+    #expect(r.activity == nil)
+    #expect(r.lastEvent == "Interrupted")
+    #expect(r.claudePid == 7)
+}
