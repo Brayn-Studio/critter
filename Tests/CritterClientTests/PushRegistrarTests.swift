@@ -324,3 +324,17 @@ private func confirmed(_ phone: PushRegistrar) -> PushAck {
     // Notifications still allowed: the registration stays (a waiting session is always pushed).
     #expect(off.registration().token == "aa11")
 }
+
+/// Ledger (plan 4 final review, FI2): the line about a Mac left untold names the Live Activity too (its push-to-start
+/// token outlives any key), and says the notifications show only "有会话需要你" only when the new push key was written.
+@Test func theLeftMacLineSaysOnlyWhatIsTrue() {
+    let changed = PushRegistrar.leftMacLine("Studio", keyChanged: true)
+    #expect(changed == "「Studio」没收到这台手机撤销推送的消息，可能还会发来通知（只显示「有会话需要你」）和实时活动。在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。")
+    let kept = PushRegistrar.leftMacLine("Studio", keyChanged: false)
+    #expect(!kept.contains("有会话需要你"))
+    #expect(kept.contains("通知和实时活动"))
+    // The unpair dialog, when the Mac cannot be told: no "不再收到提醒".
+    let dialog = PushRegistrar.unpairingUntoldLine("Studio")
+    #expect(!dialog.contains("不再收到提醒"))
+    #expect(dialog.contains("「Studio」") && dialog.contains("实时活动") && dialog.contains("撤销"))
+}

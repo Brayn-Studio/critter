@@ -62,10 +62,16 @@ final class PhoneSettings {
     }
 
     /// A Mac this phone left (paired with another, or unpaired) that could not be told to drop its push registration and
-    /// may go on pushing here: its name, for the settings' line until the user dismisses it (spec §8.8). The push key was
-    /// changed then, so what it pushes can no longer be opened.
+    /// may go on pushing here: its name, for the line in the settings and on the pairing screen until the user dismisses
+    /// it (spec §8.8).
     var leftMac: String? {
         didSet { save(leftMac, Key.leftMac) }
+    }
+
+    /// With `leftMac`: the push key was changed when it was left, so what it pushes can no longer be opened (the
+    /// notifications say only "有会话需要你"). False when the new key could not be written.
+    var leftMacKeyChanged: Bool {
+        didSet { save(leftMacKeyChanged, Key.leftMacKeyChanged) }
     }
 
     /// The day the opening (Critters popping up on the home screen) last played, "yyyy-MM-dd" in the phone's time
@@ -94,6 +100,7 @@ final class PhoneSettings {
         static let openingShownOn = "critter.settings.openingShownOn"
         static let onboardingDone = "critter.settings.onboardingDone"
         static let leftMac = "critter.settings.leftMac"
+        static let leftMacKeyChanged = "critter.settings.leftMacKeyChanged"
         // The ones the extensions read too: their keys are shared (`SharedSettings`).
         static let liveActivity = SharedSettings.liveActivity
         static let notifyDone = SharedSettings.notifyDone
@@ -112,6 +119,7 @@ final class PhoneSettings {
         openingShownOn = defaults.string(forKey: Key.openingShownOn)
         onboardingDone = defaults.object(forKey: Key.onboardingDone) as? Bool ?? false
         leftMac = defaults.string(forKey: Key.leftMac).flatMap { $0.isEmpty ? nil : $0 }
+        leftMacKeyChanged = defaults.object(forKey: Key.leftMacKeyChanged) as? Bool ?? false
         liveActivity = shared.object(forKey: Key.liveActivity) as? Bool ?? true
         notifyDone = shared.object(forKey: Key.notifyDone) as? Bool ?? false
         notifyError = shared.object(forKey: Key.notifyError) as? Bool ?? false

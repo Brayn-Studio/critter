@@ -25,6 +25,9 @@ import os
 /// - Leaving a Mac (pairing with another, unpairing) takes its push registration back over its connection first (an
 ///   empty token, at most `unregisterWait`). A Mac that may still push here and did not confirm (out of reach, silent
 ///   for 3 s, refused) is reported to the app (`onUntoldMac`), which changes the push key and says so in the settings.
+///   A Mac that turned this phone's token away (`denied badToken`: it revoked this phone or was reset, and deleted its
+///   device record with the registration) holds nothing: what it confirmed is forgotten, and it is left quietly. Other
+///   denials (another protocol, refused) and a certificate that changed say nothing of the record: those are reported.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -119,6 +122,9 @@ public final class BridgeStore {
     @ObservationIgnored private var pushSentOnConnection: PushRegistration?
     /// A registration with a token went to this pairing's Mac and the answer was cut off: it may have stored it.
     @ObservationIgnored private var pushCutOff = false
+    /// This pairing's Mac turned its token away (`denied badToken`) since it last welcomed it: it no longer lists this
+    /// phone, so it has no registration to push with (whatever a cut-off answer left in `pushCutOff`).
+    @ObservationIgnored private var macForgotThisPhone = false
     /// When the snapshot written last arrived; nil until one is written for this pairing.
     @ObservationIgnored private var lastSnapshotWrite: Date?
     /// The newest snapshot not written yet, held back by `snapshotWriteInterval`.
@@ -427,6 +433,16 @@ public final class BridgeStore {
         pushAcks.savePushAck(nil)
         pushSentOnConnection = nil
         pushCutOff = false
+        macForgotThisPhone = false
+    }
+
+    /// Whether unpairing now would leave a Mac that may go on pushing here without telling it: it may hold this phone's
+    /// registration and there is no connection to take it back over (the unpair dialog says so up front). Connected, the
+    /// Mac is asked first, and only one that then does not confirm is reported (`onUntoldMac`).
+    public var unpairingLeavesTheMacUntold: Bool {
+        guard let pairing else { return false }
+        let left = leaving(pairing)
+        return left.mayHold && left.unregistration == nil
     }
 
     /// What leaving a Mac means for its push registration (spec §8.8).
@@ -436,7 +452,7 @@ public final class BridgeStore {
         /// send (nothing to take back, or no connection to take it back over).
         let unregistration: PushRegistration?
         /// It may hold a registration it can push with: it stored one with a token, or one went and the answer was cut
-        /// off.
+        /// off -- and it has not turned this phone's token away since.
         let mayHold: Bool
 
         /// Whether it may go on pushing here: it may hold a registration, and did not confirm taking it back.
@@ -451,7 +467,7 @@ public final class BridgeStore {
         let connected = if case .connected = conn { true } else { false }
         return Leaving(
             pairing: pairing, unregistration: connected ? takeBack : nil,
-            mayHold: takeBack != nil && (pushAck.holdsRegistration || pushCutOff)
+            mayHold: !macForgotThisPhone && takeBack != nil && (pushAck.holdsRegistration || pushCutOff)
         )
     }
 
@@ -579,6 +595,7 @@ public final class BridgeStore {
             if case .connected = state {
                 // `welcome` came (and the Mac's version before it): a new connection, the registration may be due.
                 pushSentOnConnection = nil
+                macForgotThisPhone = false
                 registerPushIfNeeded()
             } else {
                 isLive = false
@@ -593,6 +610,14 @@ public final class BridgeStore {
             keep(CachedSnapshot(body: body, receivedAt: receivedAt))
         case .macVersion(let version):
             macVersion = version
+        case .denied(.badToken):
+            // The Mac revoked this phone (or was reset): its device record went, and the push registration with it.
+            // Leaving it now has nothing to take back, and nothing to warn about.
+            forgetPushAck()
+            macForgotThisPhone = true
+        case .denied:
+            // Another protocol, refused: the Mac may still list this phone, with its registration.
+            break
         case .connectedTo(let endpoint):
             guard var current = pairing, current.endpoint != endpoint else { return }
             current.endpoint = endpoint

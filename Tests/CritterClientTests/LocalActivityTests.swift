@@ -99,7 +99,10 @@ private func step(
     let shown = LocalActivity.content(two, now: now)
     #expect(step(paired: false, inFront: true, live: false, nil, shown: shown) == .endAll)
     #expect(step(paired: false, inFront: false, live: false, nil, shown: shown) == .endAll)
-    #expect(step(paired: false, live: false, nil) == .none)
+    // None running: none is started either, even in front, connected, with sessions (a snapshot from a link that is
+    // going away).
+    #expect(step(paired: false) == .none)
+    #expect(step() == .start(LocalActivity.content(two, now: now)))
 }
 
 @Test func aRunningOneShowsWhenTheLastSessionEnds() {

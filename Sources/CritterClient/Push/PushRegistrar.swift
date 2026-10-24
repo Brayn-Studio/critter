@@ -66,6 +66,21 @@ public struct PushRegistrar: Equatable, Sendable {
     public static let notRegisteredLine = "还没登记（要连上 Mac）"
     public static let notificationsOffLine = "通知被关掉了，去系统设置打开"
 
+    /// The line about a Mac this phone left without telling it (`BridgeStore`'s `onUntoldMac`), in the settings and on
+    /// the pairing screen until dismissed (spec §8.8). That Mac keeps what was registered: the device token, so it may
+    /// still notify (saying only "有会话需要你" once the push key was changed, `keyChanged`), and the Live Activity's
+    /// push-to-start token, which no key covers. Revoking this phone there is what ends it.
+    public static func leftMacLine(_ macName: String, keyChanged: Bool) -> String {
+        let what = keyChanged ? "通知（只显示「有会话需要你」）和实时活动" : "通知和实时活动"
+        return "「\(macName)」没收到这台手机撤销推送的消息，可能还会发来\(what)。在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。"
+    }
+
+    /// What the unpair dialog says, instead of "不再收到提醒", when the Mac cannot be told now
+    /// (`BridgeStore.unpairingLeavesTheMacUntold`).
+    public static func unpairingUntoldLine(_ macName: String) -> String {
+        "现在连不上「\(macName)」，没法让它停止推送：取消配对后它可能还会发来通知和实时活动，要在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。之后要用，得在 Mac 上重新「添加手机」再扫码。"
+    }
+
     public init(
         deviceToken: String?, environment: PushEnvironment, bundleId: String, key: String, notificationsAllowed: Bool,
         notifyDone: Bool, notifyError: Bool, liveActivity: ActivityRegistration

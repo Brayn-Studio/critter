@@ -64,6 +64,27 @@ import Testing
     }
 }
 
+/// Ledger (plan 4 final review, FD1): the open-only category a permission request gets when its text did not open is
+/// registered with the others, and has only 「打开」 (unlock first, then the app with the request's card). The
+/// categories whose buttons answer are exactly the ones the extension swaps out (`answersFromItsNotification`).
+@Test func theOpenOnlyCategoryIsRegisteredWithTheOthers() {
+    let categories = NotificationAnswer.categories
+    #expect(categories.map(\.id) == PushCategory.allCases.map(\.rawValue) + ["sealed"])
+    let sealed = categories.first { $0.id == PushOpening.sealedCategory }?.buttons ?? []
+    #expect(sealed.map(\.title) == ["打开"])
+    #expect(sealed.map(\.action) == [.open])
+    #expect(sealed.allSatisfy { $0.opensApp && $0.needsUnlock && !$0.takesText })
+    let answering: Set<NotificationAction> = [.allow, .deny, .denyWithReason]
+    for category in PushCategory.allCases {
+        let answers = NotificationAnswer.buttons(for: category).contains { answering.contains($0.action) }
+        #expect(answers == category.answersFromItsNotification)
+    }
+    // Its 「打开」, and a tap on it, open the request's card; nothing is answered.
+    let alert = ParsedPush.Alert(category: .permission, requestId: "r1", sessionId: "s1", sealed: "x")
+    #expect(NotificationAnswer.response(action: NotificationAction.open.rawValue, text: nil, alert: alert) == .openRequest("r1"))
+    #expect(NotificationAnswer.response(action: NotificationAnswer.tapAction, text: nil, alert: alert) == .openRequest("r1"))
+}
+
 @Test func aResponseAnswersOrOpensWhatTheNotificationIsAbout() {
     let tap = "com.apple.UNNotificationDefaultActionIdentifier"
     func alert(_ category: PushCategory, _ requestId: String? = "r1", session: String = "s1") -> ParsedPush.Alert {

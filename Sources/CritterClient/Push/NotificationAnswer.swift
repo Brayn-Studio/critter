@@ -23,20 +23,35 @@ public struct NotificationButton: Equatable, Sendable {
 }
 
 /// What a notification's buttons are, and what each one sends (spec §8.7). Only a permission request is answered
-/// from its notification; a question or a plan only opens its card.
+/// from its notification; a question or a plan only opens its card, and so does a permission request whose text did
+/// not open (`PushOpening.sealedCategory`).
 public enum NotificationAnswer {
+    private static let allow = NotificationButton(action: .allow, title: "允许", takesText: false, needsUnlock: true, opensApp: false)
+    private static let deny = NotificationButton(action: .deny, title: "拒绝", takesText: false, needsUnlock: true, opensApp: false)
+    private static let reason = NotificationButton(
+        action: .denyWithReason, title: "拒绝并写理由…", takesText: true, needsUnlock: true, opensApp: false
+    )
+    private static let open = NotificationButton(action: .open, title: "打开", takesText: false, needsUnlock: true, opensApp: true)
+
     /// The buttons of a notification of `category`, in order.
     public static func buttons(for category: PushCategory) -> [NotificationButton] {
-        let allow = NotificationButton(action: .allow, title: "允许", takesText: false, needsUnlock: true, opensApp: false)
-        let deny = NotificationButton(action: .deny, title: "拒绝", takesText: false, needsUnlock: true, opensApp: false)
-        let reason = NotificationButton(action: .denyWithReason, title: "拒绝并写理由…", takesText: true, needsUnlock: true, opensApp: false)
-        let open = NotificationButton(action: .open, title: "打开", takesText: false, needsUnlock: true, opensApp: true)
         switch category {
         case .permission: return [allow, deny, reason]
         case .permissionNoReason: return [allow, deny]
         case .question, .plan: return [open]
         case .waitingElsewhere, .done, .error, .test: return []
         }
+    }
+
+    /// The buttons of a permission request whose text did not open (`PushOpening.sealedCategory`): 「打开」 only, which
+    /// brings up the request's card -- never an answer to a command the user cannot see.
+    public static let sealedButtons = [open]
+
+    /// Every notification category the app registers, by its id, with its buttons: each `PushCategory`, and the
+    /// open-only one the notification service extension puts on a permission request whose text did not open.
+    public static var categories: [(id: String, buttons: [NotificationButton])] {
+        PushCategory.allCases.map { (id: $0.rawValue, buttons: buttons(for: $0)) }
+            + [(id: PushOpening.sealedCategory, buttons: sealedButtons)]
     }
 
     /// Whether a request of this category may be denied with a reason: not a Codex one (`permissionNoReason`).

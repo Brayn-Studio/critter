@@ -81,3 +81,20 @@ private func open(_ sealed: String, key: String) throws -> PushText {
     let sealed = try seal(text, key: key)
     #expect(throws: (any Error).self) { try open(sealed, key: "short") }
 }
+
+/// The protocol doc's test vector key is public: the app must recognise it to replace it (`-critterTestPushKey` leaves
+/// it behind in the simulator's keychain).
+@Test func theTestVectorKeyIsRecognised() throws {
+    #expect(PushCrypto.isTestVectorKey(PushCrypto.testVectorKey))
+    #expect(PushCrypto.keyData(PushCrypto.testVectorKey) == Data(0..<32))
+    #expect(!PushCrypto.isTestVectorKey(PushCrypto.makeKey()))
+    // One byte off, not a key, nothing.
+    var bytes = Data(0..<32)
+    bytes[31] = 0
+    let near = bytes.base64EncodedString().replacingOccurrences(of: "+", with: "-")
+        .replacingOccurrences(of: "/", with: "_").replacingOccurrences(of: "=", with: "")
+    #expect(PushCrypto.keyData(near) != nil)
+    #expect(!PushCrypto.isTestVectorKey(near))
+    #expect(!PushCrypto.isTestVectorKey("not a key"))
+    #expect(!PushCrypto.isTestVectorKey(""))
+}

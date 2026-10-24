@@ -1454,6 +1454,112 @@ struct BridgeStoreLeavingTests {
         #expect(quick.link.pushes.last?.token == "")
         #expect(quick.untold.isEmpty)
     }
+
+    /// The Mac turns this phone's token away, as after it revoked this phone or was reset: it deleted the device record
+    /// and the push registration with it.
+    private func forgotten(_ link: FakeLink, _ store: BridgeStore, reason: DenyReason = .badToken) async {
+        link.emit(.denied(reason))
+        link.emit(.state(.needsRepair(reason: "这台手机已不在电脑的配对列表里，请重新配对")))
+        #expect(await becomes { if case .needsRepair = store.conn { true } else { false } })
+    }
+
+    /// Ledger (plan 4 final review, FI1): after the Mac revoked this phone the phone asks to pair again -- most often
+    /// with that same Mac. A warning then would rotate the key for nothing and have the user revoke "this phone" on that
+    /// Mac: the new pairing. The Mac holds nothing, so nothing is said, and what it had confirmed is forgotten.
+    @Test func pairingAgainAfterTheMacForgotThisPhoneSaysNothing() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        await forgotten(rig.link, store)
+        #expect(rig.pushAcks.saved == nil)
+        #expect(store.pushStatus == PushRegistrar.notRegisteredLine)
+        #expect(!store.unpairingLeavesTheMacUntold)
+        #expect(await store.pair(target, deviceName: "iPhone") == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.untold.isEmpty)
+        #expect(rig.link.pushes.count == 1)
+        // The new pairing registers afresh.
+        connect(rig.links[1])
+        #expect(await becomes { rig.links[1].pushes == [phonePush().registration()] })
+    }
+
+    /// The same for unpairing; also when a registration's answer, cut off, comes back only after the Mac turned the
+    /// phone away.
+    @Test func unpairingAfterTheMacForgotThisPhoneSaysNothing() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        await forgotten(rig.link, store)
+        store.unpair()
+        await rig.runner.finished()
+        #expect(rig.untold.isEmpty)
+
+        let late = Rig()
+        let lateStore = late.makeStore()
+        late.link.holdPushes()
+        late.link.replyToPush(with: .offline)
+        lateStore.setPush(phonePush())
+        connect(late.link)
+        #expect(await becomes { late.link.pushes.count == 1 })
+        late.link.emit(.state(offline))
+        await forgotten(late.link, lateStore)
+        late.link.releasePushes.open()
+        await settle()
+        lateStore.unpair()
+        await late.runner.finished()
+        #expect(late.untold.isEmpty)
+    }
+
+    /// Only `badToken` says the record is gone. Another denial (another protocol, refused, a reason this build does not
+    /// know) or a certificate that changed says nothing of what the Mac holds: leaving it is reported as before.
+    @Test func otherRefusalsStillTellTheApp() async {
+        for reason in [DenyReason.protocolMismatch, .rejected, .unknown] {
+            let rig = Rig()
+            let store = await registered(rig)
+            await forgotten(rig.link, store, reason: reason)
+            #expect(store.unpairingLeavesTheMacUntold)
+            _ = await store.pair(target, deviceName: "iPhone")
+            #expect(rig.untold == [stored])
+        }
+        let rig = Rig()
+        let store = await registered(rig)
+        rig.link.emit(.state(.needsRepair(reason: "证书指纹与配对时不一致，请重新配对")))
+        #expect(await becomes { if case .needsRepair = store.conn { true } else { false } })
+        store.unpair()
+        await rig.runner.finished()
+        #expect(rig.untold == [stored])
+    }
+
+    /// A Mac that welcomes the phone again after turning it away (its record back) and stores the registration holds
+    /// one again.
+    @Test func aMacThatWelcomesThePhoneAgainHoldsItsRegistrationAgain() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        await forgotten(rig.link, store)
+        connect(rig.link)
+        #expect(await becomes { rig.link.pushes.count == 2 && store.pushStatus == "已登记" })
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(store.unpairingLeavesTheMacUntold)
+    }
+
+    /// The unpair dialog says up front when the Mac cannot be told: it may hold the registration and the phone is not
+    /// connected. Connected (it is asked first), or holding nothing, it says nothing of the kind.
+    @Test func theUnpairDialogKnowsWhenTheMacCannotBeTold() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        #expect(!store.unpairingLeavesTheMacUntold)
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(store.unpairingLeavesTheMacUntold)
+
+        let never = Rig()
+        let neverStore = never.makeStore()
+        neverStore.setPush(phonePush())
+        never.link.emit(.state(offline))
+        #expect(await becomes { neverStore.conn == offline })
+        #expect(!neverStore.unpairingLeavesTheMacUntold)
+
+        let unpaired = Rig(paired: false)
+        #expect(!unpaired.makeStore().unpairingLeavesTheMacUntold)
+    }
 }
 
 /// The store over the real `BridgeClient` and `Pairer`, with a `FakeMac` for the network.

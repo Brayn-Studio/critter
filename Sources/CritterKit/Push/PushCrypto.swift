@@ -33,6 +33,16 @@ public enum PushCrypto {
         base64URL(SymmetricKey(size: .bits256).withUnsafeBytes { Data($0) })
     }
 
+    /// The protocol doc's test vector key, bytes 0...31: public, so nothing sealed with it is secret. The simulator's
+    /// DEBUG builds take it as the push key for one run (`-critterTestPushKey`, with `scripts/dev/push-payloads/make.sh`);
+    /// the app replaces it when it finds it kept (`isTestVectorKey`).
+    public static let testVectorKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
+
+    /// Whether `key` is `testVectorKey` (its bytes are, however they are written).
+    public static func isTestVectorKey(_ key: String) -> Bool {
+        keyData(key) == Data(0..<UInt8(keyByteCount))
+    }
+
     /// The 32 bytes behind `key`, or nil if it is not base64url without padding of exactly 32 bytes.
     public static func keyData(_ key: String) -> Data? {
         guard key.utf8.allSatisfy({ isBase64URLCharacter($0) }) else { return nil }

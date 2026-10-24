@@ -2,15 +2,18 @@
 # Writes `xcrun simctl push` files for the iOS app: the pushes the Mac would send, sealed with a fixed TEST key, for
 # the sessions and requests of the app's `home-mixed` fixture (`ios/Critter/Debug/Fixtures/home-mixed.json`).
 # One per notification category, one whose sealed text is broken, one about a request the fixture does not list
-# (a banner even in the foreground), and a withdrawal. Nothing is sent anywhere and nothing connects to a Mac:
-# `critter-bridge-client push-payload` seals with the same `PushPayload` / `PushCrypto` as the Mac.
+# (a banner even in the foreground), and a withdrawal -- which `xcrun simctl push` refuses (error 1401: a background
+# push has no user-visible content); the app's `-critterWithdrawPush req-perm-1,done:s-notes` sends the same through
+# its handler. Nothing is sent anywhere and nothing connects to a Mac: `critter-bridge-client push-payload` seals with
+# the same `PushPayload` / `PushCrypto` as the Mac.
 #
 #   scripts/dev/push-payloads/make.sh [out dir]        # default ios/build/push-payloads
 #   xcrun simctl launch <device> com.braynlabs.critter -critterFixture home-mixed -critterTestPushKey "$KEY"
 #   xcrun simctl push <device> com.braynlabs.critter ios/build/push-payloads/permission.apns
 #
-# `-critterTestPushKey` (DEBUG builds) puts the same test key into the shared keychain, where the notification
-# service extension reads it. The key is printed at the end. It is a test key: never the key of a real phone.
+# `-critterTestPushKey` (DEBUG simulator builds) puts the same test key into the shared keychain, where the
+# notification service extension reads it, for that run only: a launch without it replaces it. The key is printed at
+# the end. It is the protocol doc's public test key: never the key of a real phone.
 set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -49,9 +52,11 @@ push done --category done --session s-notes --title "notes 做完了" --subtitle
 push error --category error --session s-critter-ios --title "critter-ios 出错" --subtitle "critter-ios · main · 终端" \
   --body "Build failed"
 push test --category test --session test --title "Critter 推送测试" --body "能看到这条，说明推送通了"
-# A sealed text that does not open: the plain "Critter / 有会话需要你", the buttons all the same.
+# A sealed text that does not open: the plain "Critter / 有会话需要你", and on a phone only 「打开」 (the extension's
+# open-only category; this simulator does not run the extension, so it shows the push's own buttons).
 push bad --category permission --session s-clawd --request req-perm-1 --title "clawd 想 运行 rm -rf" --corrupt
-# Takes the permission request's and the done session's notifications down.
+# Takes the permission request's and the done session's notifications down. Not for `simctl push` (it refuses it,
+# 1401): `-critterWithdrawPush req-perm-1,done:s-notes` instead.
 "$CLIENT" push-payload --withdraw req-perm-1,done:s-notes > "$OUT/withdraw.apns"
 echo "$OUT/withdraw.apns"
 

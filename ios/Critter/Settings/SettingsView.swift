@@ -97,10 +97,11 @@ struct SettingsView: View {
         }
         #if DEBUG
         .task {
-            // `-critterUnpair`: 「取消配对」, then the dialog's 「取消配对」.
+            // `-critterUnpair`: 「取消配对」, then the dialog's 「取消配对」 (`:dialog`: the dialog stays up).
             if let after = DebugLaunch.current.unpairAfter {
                 try? await Task.sleep(for: .seconds(after))
                 confirmingUnpair = true
+                guard !DebugLaunch.current.unpairDialogOnly else { return }
                 try? await Task.sleep(for: .seconds(1))
                 if confirmingUnpair { unpair() }
                 return
@@ -130,10 +131,12 @@ struct SettingsView: View {
         PushSetup.shared.authorization
     }
 
-    /// Whether this phone is registered with the Mac, in the Mac's words when it said any (`BridgeStore.pushStatus`);
-    /// notifications switched off in the system instead: an orange line saying just that, with 「去打开」, whatever the
-    /// registration says (the Live Activity may still be registered); never asked: 「允许通知」 asks. The Mac sends the test notification: the phone has no message to make it (spec §8.8). A Mac left without
-    /// being told keeps its line until dismissed.
+    /// The push group (spec §8.8):
+    /// - whether this phone is registered with the Mac, in the Mac's words when it said any (`BridgeStore.pushStatus`);
+    /// - instead, by the system's permission: switched off, an orange line saying so with 「去打开」; never asked,
+    ///   「允许通知」, which asks (`pushStatus` reads "switched off" for both, so the permission tells them apart);
+    /// - the test notification: the Mac's settings send it, the phone has no message that asks for one;
+    /// - a Mac left without being told (`LeftMacNotice`), until dismissed.
     @ViewBuilder
     private func pushRows(_ settings: PhoneSettings) -> some View {
         switch authorization {
@@ -150,14 +153,7 @@ struct SettingsView: View {
         }
         RowLine()
         InfoRow(title: "发一条测试通知", detail: "在 Mac 的 Critter 设置里点「发送测试通知」")
-        if let left = settings.leftMac {
-            NoticeRow(
-                text: "「\(left)」没收到这台手机撤销推送的消息，可能还会发来通知（只显示「有会话需要你」）。在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。",
-                action: "知道了"
-            ) {
-                settings.leftMac = nil
-            }
-        }
+        LeftMacNotice()
     }
 
     /// Registered as the Mac can push: green; not yet (or nothing to register with): grey; the rest (the Mac without its
@@ -222,13 +218,20 @@ struct SettingsView: View {
 
     // MARK: - Unpairing
 
+    /// What unpairing does. When the Mac cannot be told now (not connected, and it may hold this phone's registration:
+    /// `BridgeStore.unpairingLeavesTheMacUntold`) it says so up front: that Mac may go on pushing until this phone is
+    /// revoked there.
     private var unpairDialog: some View {
         PixelDialog(
             title: "取消和 \(macName) 的配对？", confirm: "取消配对", dismiss: "保留", destructive: true,
             onConfirm: unpair,
             onDismiss: { confirmingUnpair = false }
         ) {
-            Text("手机会断开，不再收到提醒。之后要用，得在 Mac 上重新「添加手机」再扫码。")
+            if store.unpairingLeavesTheMacUntold {
+                Text(verbatim: PushRegistrar.unpairingUntoldLine(macName))
+            } else {
+                Text("手机会断开，不再收到提醒。之后要用，得在 Mac 上重新「添加手机」再扫码。")
+            }
         }
     }
 
@@ -390,11 +393,36 @@ private struct InfoRow: View {
     }
 }
 
+/// A Mac this phone left that may still push here (`PhoneSettings.leftMac`, `PushRegistrar.leftMacLine`), until
+/// 「知道了」: in the settings' push group, and on the pairing screen (the scanner, also the guide's pairing step), where
+/// an unpaired phone stays and the settings cannot be reached (spec §8.8). Nothing when there is none.
+struct LeftMacNotice: View {
+    /// The row's side margin: the settings' rows', or none on a page with its own.
+    var inset: CGFloat = rowPadding
+    /// Room above it, when it shows.
+    var above: CGFloat = 0
+
+    @Environment(PhoneSettings.self) private var settings
+
+    var body: some View {
+        if let left = settings.leftMac {
+            NoticeRow(
+                text: PushRegistrar.leftMacLine(left, keyChanged: settings.leftMacKeyChanged), action: "知道了",
+                inset: inset
+            ) {
+                settings.leftMac = nil
+            }
+            .padding(.top, above)
+        }
+    }
+}
+
 /// Something the system or another device keeps from working, in orange with what to do about it (Android `NoticeRow`,
 /// the mockups' `.notice-row`): the bang, the words, and a small orange button.
 private struct NoticeRow: View {
     let text: String
     let action: String
+    var inset: CGFloat = rowPadding
     let onAction: () -> Void
 
     var body: some View {
@@ -413,7 +441,7 @@ private struct NoticeRow: View {
         .padding(.top, 10)
         .padding(.bottom, 12)
         .pixelSurface(fill: Theme.waitBg, lip: Theme.waitBg, step: 3, lipHeight: 0)
-        .padding(.horizontal, rowPadding)
+        .padding(.horizontal, inset)
         .padding(.top, 6)
         .padding(.bottom, 4)
     }

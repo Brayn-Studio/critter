@@ -137,6 +137,10 @@ struct BridgeClientTests {
         _ = try #require(await rig.mac.nextFrame())
         rig.mac.send(.denied(reason: .badToken))
         #expect(await rig.events.waitForState(.needsRepair(reason: "这台手机已不在电脑的配对列表里，请重新配对")))
+        // The reason itself comes first, for the store (a Mac that no longer lists this phone holds no registration).
+        let events = rig.events.all
+        let denied = try #require(events.firstIndex(of: .denied(.badToken)))
+        #expect(events.firstIndex(of: .state(.needsRepair(reason: "这台手机已不在电脑的配对列表里，请重新配对")))! > denied)
         await settle()
         #expect(rig.mac.connects.count == 1)
         #expect(rig.mac.openSockets == 0)
@@ -149,6 +153,7 @@ struct BridgeClientTests {
         _ = try #require(await rig.mac.nextFrame())
         rig.mac.sendRaw(#"{"reason":"quarantined","type":"denied"}"#)
         #expect(await rig.events.waitForState(.needsRepair(reason: "连接被电脑拒绝")))
+        #expect(rig.events.all.contains(.denied(.unknown)))
         await settle()
         #expect(rig.mac.connects.count == 1)
         #expect(rig.mac.openSockets == 0)

@@ -33,6 +33,9 @@ public enum BridgeEvent: Equatable, Sendable {
     case connectedTo(Endpoint)
     /// What the Mac's `welcome` said it runs (before the `.connected` state it comes with).
     case macVersion(String)
+    /// The Mac turned this phone away with `denied` (before the `.needsRepair` state it comes with), and why: the store
+    /// tells `badToken` (the Mac no longer lists this phone, and so holds no push registration of it) from the rest.
+    case denied(DenyReason)
 }
 
 /// The Mac's `result` for a command, or why there is none.

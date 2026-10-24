@@ -16,7 +16,7 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 装之前必须先做的：
 
-- **不让 Xcode 自己去开发者账号里登记。** `ios/Config/Base.xcconfig` 是 `CODE_SIGN_STYLE = Automatic`，旁边是真的 entitlements（`ios/Config/Critter.entitlements` 等：App Group、钥匙串共享组、推送、时效性通知）。在 Xcode 界面里给真机构建时，自动签名会自己去账号里给 App ID 打开这些能力、登记 App Group、生成描述文件。**第一次真机构建之前**先加上 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`（至少写一句醒目的注释），并先问过用户；不加 `-allowProvisioningUpdates`。
+- **不让 Xcode 自己去开发者账号里登记。** `ios/Config/Base.xcconfig` 模拟器构建是 `CODE_SIGN_STYLE = Automatic`（本地签名 `-`），旁边是真的 entitlements（`ios/Config/Critter.entitlements` 等：App Group、钥匙串共享组、推送、时效性通知）。在 Xcode 界面里给真机构建时，自动签名会自己去账号里给 App ID 打开这些能力、登记 App Group、生成描述文件；所以真机构建已经是 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`（计划 4 最终修复轮加的，带注释）。真机构建在描述文件备好之前会签名失败，这是故意的；要改成别的，先问过用户；不加 `-allowProvisioningUpdates`。
 - **描述文件要带齐这些能力**，由用户自己在开发者账号里给 `com.braynlabs.critter` 和两个扩展打开：App Group `group.com.braynlabs.critter`（App、`CritterNotify`、`CritterWidgets` 三个都要）；钥匙串共享组 `<Team ID>.com.braynlabs.critter.shared`（App 和 `CritterNotify`）；推送（`aps-environment = development`，App）；Time Sensitive Notifications（App）。少一样签名就失败。模拟器构建的 entitlements 写在二进制的 `__TEXT,__entitlements` 里，`codesign -d` 显示为空是正常的。
 
 计划 1 留下的：
@@ -48,12 +48,12 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - **代理**（spec §13.6）。这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理：Mac 发推送用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。连不上时 Mac 设置里显示"出错：连不上 APNs"。
 - **机型和系统**（spec §13.5）。用户 iPhone 的型号（有没有灵动岛）和系统版本（至少 iOS 17.2）。没有灵动岛时实时活动只在锁屏上；iOS 17 没有 iOS 18 的广播频道（下面 §13.1 的退路）。
 - **推送环境。** App 一律登记 `sandbox`（`PushSetup.environment`）：Debug 和 Release 都用 `Critter.entitlements` 的 `aps-environment = development` 签名、从 Xcode 装，拿到的都是 sandbox 的 token。以后做发布构建（App Store、TestFlight，签的是 `production`）时，登记的环境要跟着签名改，否则 Mac 推送会被 APNs 拒（`BadDeviceToken`），Mac 删掉登记。真机上确认 Release 构建登记的是 sandbox、推送能到。
-- **通知服务扩展解密，包括锁着的手机。** 真推送到真机后：标题、副标题、正文换成解密后的文字；类别（按钮）、线程（会话）、等你确认的是"时效性"级别；密钥不对、坏的密文显示"Critter / 有会话需要你"，按钮照样能用。手机锁着时扩展也要解得开（钥匙串的可访问性是"首次解锁后"）；开机后还没解锁过时读不到密钥，要显示通用文字，不能崩。规则只有 `PushOpeningTests` 和 `scripts/dev/push-payloads/make.sh` 生成的载荷过了一遍纯函数；扩展本身没跑过。
+- **通知服务扩展解密，包括锁着的手机。** 真推送到真机后：标题、副标题、正文换成解密后的文字；类别（按钮）、线程（会话）、等你确认的是"时效性"级别；密钥不对、坏的密文显示"Critter / 有会话需要你"，权限请求只剩「打开」（扩展换成 `sealed` 类别，点了进卡片），不出「允许」「拒绝」；扩展来不及解完就被系统交出时也应如此（先套上 `sealed`）。手机锁着时扩展也要解得开（钥匙串的可访问性是"首次解锁后"）；开机后还没解锁过时读不到密钥，要显示通用文字，不能崩。规则只有 `PushOpeningTests` 和 `scripts/dev/push-payloads/make.sh` 生成的载荷过了一遍纯函数；扩展本身没跑过。
 - **通知上的按钮和横幅，先面容 ID 再作答。** 下拉后的「允许」「拒绝」「拒绝并写理由…」（输入框"拒绝的理由（可不写）"、发送"拒绝并发送理由"）都要先解锁（`.authenticationRequired`）：锁着时点按钮先弹面容 ID，通过后答案才发出，取消时什么也不发。Codex 的只有两个按钮；提问、计划的「打开」。模拟器里只从日志看到系统登记的类别和选项（`-critterNotificationAction` 走的是同一个处理函数，按不了真按钮）。前台：快照里已有的请求只轻震（模拟器没有触感），其它出横幅、有声音。
 - **点按钮作答的整条路和耗时**（spec §13.3）。App 被划掉时点「允许」：系统在后台启动 App、连 Mac、送答案、用同一个通知 id（APNs 的 `apns-collapse-id`）换成"已允许"。量一下连接、`hello`、`answer`、`result` 一共多久，是不是在系统给的后台时间里（Android 送不到时约 8–9.5 秒给出提示）；后台作答只用存下的地址，20 秒内不做 Bonjour 查找。Mac 连不上时 20 秒内换成"没送到…"并保留按钮，再点一次能成；后台时间用完时（`BackgroundAnswer` 被取消），"没送到…"在 `onExpire` 里先发出去，要确认它在 App 被挂起前真的出现、带着按钮。点通知正文冷启动 App 时直接打开那张卡片。模拟器里 `simctl push` 没有 collapse id，同一个请求会有好几条通知，App 按推送里的 `r`/`k`/`s` 认通知，真机上要确认按 collapse id 换掉的是同一条。
 - **撤回推送。** `didReceiveRemoteNotification` 只用 DEBUG 的 `-critterWithdrawPush` 走过。真机上看后台推送能不能叫醒 App 删通知；App 被划掉、低电量模式时系统不送后台推送，那时靠回到前台后的对账（模拟器里验证过）。
 - **时效性通知和专注模式**（spec §13.4）。`Critter.entitlements` 有 `com.apple.developer.usernotifications.time-sensitive`（等你确认的通知要能穿过专注模式，spec §8.7），没有这个能力时系统把时效性通知当普通通知。真机上打开一个专注模式，看等你确认的通知能不能按用户的设置提醒；扩展设的 `.timeSensitive` 不生效，就给 `CritterNotify.entitlements` 也加上同一个键。做完了、出错是普通级别，专注模式里不该响。
-- **换了 Mac、取消配对之后旧 Mac 的推送。** 旧 Mac 连不上、没确认撤销时，手机换了推送密钥，并在设置里提示去那台 Mac 上撤销：旧 Mac 再推来的通知应该只显示"有会话需要你"（扩展解不开）。模拟器里扩展不运行，看不到。
+- **换了 Mac、取消配对之后旧 Mac 的推送。** 旧 Mac 连不上、没确认撤销时，手机换了推送密钥、结束了正在显示的实时活动，并在设置和配对页提示去那台 Mac 上撤销：旧 Mac 再推来的通知应该只显示"有会话需要你"、权限请求只有「打开」（扩展解不开）。它手里的 push-to-start token 换不掉：确认它还能启动实时活动、在那台 Mac 上撤销这台手机后就停了。Mac 已经撤销了这台手机（`denied badToken`）时什么也不提示。模拟器里扩展不运行，通知那部分看不到。
 - **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）。push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去（模拟器里挂起时拿到的 token，要到下次回前台连上才送到）。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
 - **实时活动的更新预算**（spec §13.2）。Mac 在内容变化时更新（低优先级，最多每 10 秒一次；多了等你确认的会话时马上发、高优先级），安静时每约 12 分钟刷新一次，免得 15 分钟后变灰。看系统会不会把这些压住（压住了就会变灰，或者等你确认的数字来晚了）。
 - **实时活动在真机上的样子和点按。** 锁屏、push-to-start 启动时的提醒横幅、待机模式（StandBy，`isActivityFullscreen` 那套样子）、灵动岛的最小视图、展开视图的"可能不是最新的"、真的点一下进 App：模拟器里只看过 `-critterActivityDemo` 在 App 里画出的锁屏块，和 `simctl io recordVideo` 录到的灵动岛紧凑、展开两种。`.opacity` 在归档渲染里是否生效。

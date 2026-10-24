@@ -5,8 +5,8 @@ public struct DeliveredNotification: Equatable, Sendable {
     /// Its id: the push's `apns-collapse-id` (`PushPayload.notificationId`), or the system's own for a push without
     /// one (the test notification).
     public var id: String
-    /// `UNNotificationContent.categoryIdentifier`: a `PushCategory`'s raw value, or nil (a result shown in a
-    /// request's place has none).
+    /// `UNNotificationContent.categoryIdentifier`: a `PushCategory`'s raw value, `PushOpening.sealedCategory` (a
+    /// permission request whose text did not open), or nil (a result shown in a request's place has none).
     public var category: String?
 
     public init(id: String, category: String?) {

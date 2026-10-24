@@ -11,7 +11,9 @@ import UserNotifications
 /// - the APNs device token, asked for at every launch (`registerForRemoteNotifications`, which needs no permission: the
 ///   Live Activity is pushed to a token too) and kept in the shared keychain, as hex;
 /// - the push key, made the first time it is needed (`PushCrypto.makeKey`) and kept in the shared keychain, where the
-///   notification service extension opens pushes with it; never logged, never in an App Group file (spec §10);
+///   notification service extension opens pushes with it; never logged, never in an App Group file (spec §10). The
+///   protocol doc's public test key (`-critterTestPushKey`, simulator DEBUG builds) is replaced by a new one in any run
+///   that did not ask for it;
 /// - whether notifications may be shown, the done and error reminders, and the Live Activity: its switch and the tokens
 ///   the system gave (`LiveActivityManager`, which calls `update` when they change);
 /// - the environment: always `sandbox`, the APNs environment of the tokens a build signed with `aps-environment =
@@ -38,6 +40,15 @@ final class PushSetup {
 
     private static let log = Logger(subsystem: "com.braynlabs.critter", category: "notifications")
     private static let tokenAccount = "deviceToken"
+
+    /// This run was launched with `-critterTestPushKey` (simulator DEBUG builds only): the public test key may stay.
+    private static var testKeyAsked: Bool {
+        #if DEBUG && targetEnvironment(simulator)
+        DebugLaunch.current.testPushKey != nil
+        #else
+        false
+        #endif
+    }
 
     /// The APNs environment the device token belongs to: `aps-environment = development` in `Config/Critter.entitlements`
     /// gives sandbox tokens, in Debug and Release alike. A distribution build (App Store, TestFlight: signed
@@ -79,10 +90,11 @@ final class PushSetup {
         update()
     }
 
-    /// Asks the user to let the app show notifications (the first-launch guide, the settings); whether they did.
+    /// Asks the user to let the app show notifications (the first-launch guide, the settings); whether they did. Alerts
+    /// and sounds, no badge: neither the app nor the Mac's pushes set one.
     @discardableResult
     func requestPermission() async -> Bool {
-        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound, .badge]))
+        let granted = (try? await UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]))
             ?? false
         await refresh()
         return granted
@@ -120,9 +132,14 @@ final class PushSetup {
         store.setPush(registrar)
     }
 
-    /// The Mac this phone just left (`BridgeStore`'s `onUntoldMac`) may still hold its push registration: a new push key,
-    /// so that what it pushes can no longer be opened (the notification shows "有会话需要你"), handed to the Mac paired
-    /// now with the next registration; and its name for the settings' line, until the user dismisses it.
+    /// The Mac this phone just left (`BridgeStore`'s `onUntoldMac`) may still hold its push registration:
+    /// - a new push key, so that what it pushes can no longer be opened (the notification shows "有会话需要你"), handed to
+    ///   the Mac paired now with the next registration;
+    /// - the running Live Activities end: that Mac holds their push tokens, which no key covers, and the Mac paired next
+    ///   must not be given the same ones (the app starts a new one in front once connected). The push-to-start token is
+    ///   the app's own and stays: only revoking this phone on that Mac takes it away;
+    /// - its name, and whether the new key was written, for the line in the settings and on the pairing screen
+    ///   (`PushRegistrar.leftMacLine`), until the user dismisses it.
     func macLeftUntold(_ pairing: StoredPairing) {
         let key = PushCrypto.makeKey()
         let status = SharedKeychain.push.write(Data(key.utf8), account: SharedKeychain.pushKeyAccount)
@@ -131,17 +148,24 @@ final class PushSetup {
         } else {
             Self.log.error("changing the push key failed: \(status)")
         }
+        LiveActivityManager.shared.endAll(because: "a Mac that may still push here was left")
         settings?.leftMac = Theme.macName(pairing.macName)
+        settings?.leftMacKeyChanged = status == errSecSuccess
         update()
     }
 
     /// The push key: the one in the shared keychain, or a new one saved there. Nil when the keychain cannot be read or
     /// written now (it is tried again on the next update): a key made but not kept would be one the extension never
-    /// sees.
+    /// sees. The public test key is kept only in a run that asked for it (`-critterTestPushKey`): otherwise it is
+    /// replaced like a key that is not one.
     private static func pushKey() -> String? {
         switch SharedKeychain.push.read(SharedKeychain.pushKeyAccount) {
         case .found(let data):
-            if let key = String(data: data, encoding: .utf8), PushCrypto.keyData(key) != nil { return key }
+            if let key = String(data: data, encoding: .utf8), PushCrypto.keyData(key) != nil {
+                guard PushCrypto.isTestVectorKey(key), !testKeyAsked else { return key }
+                log.notice("the stored push key is the public test key, not asked for in this run: a new one is made")
+                break
+            }
             log.error("the stored push key is not one: a new one is made")
         case .missing:
             break

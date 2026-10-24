@@ -12,6 +12,10 @@ CURRENT_PROJECT_VERSION = 1
 // Simulator builds are signed to run locally: no provisioning profile, nothing registered with the developer account.
 // The entitlements go into the binary (the simulator reads them from there).
 CODE_SIGN_IDENTITY[sdk=iphonesimulator*] = -
+// Device builds are signed by hand: with the entitlements above (App Group, keychain group, push, time-sensitive),
+// automatic signing would let Xcode register the App ID and those capabilities with the developer account on its own.
+// Nothing is registered there without the user's OK: the device plan (plan 5) changes this, and only then.
+CODE_SIGN_STYLE[sdk=iphoneos*] = Manual
 
 // Info.plists are written out in full (Config/, outside the synchronized source folders).
 GENERATE_INFOPLIST_FILE = NO

@@ -44,7 +44,7 @@ struct NoticeInfo: Sendable {
 }
 
 /// The app's side of its notifications (spec §8.4, §8.7):
-/// - the categories and their buttons (`NotificationAnswer.buttons`): every button that answers asks to unlock first;
+/// - the categories and their buttons (`NotificationAnswer.categories`): every button asks to unlock first;
 /// - a tap on a permission request's 「允许」「拒绝」「拒绝并写理由…」 answers it in the background (`BackgroundAnswer`, its
 ///   own connection, at most 20 s, held up by a background task whose expiry cuts it short) and puts the result in the
 ///   notification's place, under the same id; one that did not get there keeps its buttons;
@@ -96,11 +96,12 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
 
     // MARK: - Categories
 
-    /// Every `PushCategory`, with its buttons (spec §8.7): a permission request 「允许」「拒绝」「拒绝并写理由…」 (no
-    /// reason for Codex), a question or a plan 「打开」, the rest none.
+    /// Every category, with its buttons (spec §8.7, `NotificationAnswer.categories`): a permission request 「允许」「拒绝」
+    /// 「拒绝并写理由…」 (no reason for Codex), a question or a plan 「打开」, the rest none; and the open-only one
+    /// (`PushOpening.sealedCategory`, 「打开」) the extension gives a permission request whose text did not open.
     static var categories: Set<UNNotificationCategory> {
-        Set(PushCategory.allCases.map { category in
-            let actions = NotificationAnswer.buttons(for: category).map { button -> UNNotificationAction in
+        Set(NotificationAnswer.categories.map { category in
+            let actions = category.buttons.map { button -> UNNotificationAction in
                 var options: UNNotificationActionOptions = []
                 if button.needsUnlock { options.insert(.authenticationRequired) }
                 if button.opensApp { options.insert(.foreground) }
@@ -113,7 +114,7 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
                     textInputButtonTitle: "拒绝并发送理由", textInputPlaceholder: "拒绝的理由（可不写）"
                 )
             }
-            return UNNotificationCategory(identifier: category.rawValue, actions: actions, intentIdentifiers: [])
+            return UNNotificationCategory(identifier: category.id, actions: actions, intentIdentifiers: [])
         })
     }
 

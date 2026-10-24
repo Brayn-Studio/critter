@@ -5,7 +5,8 @@ import SwiftUI
 /// The scanner page (mockup "扫码", Android `ScanPane`): dark in either theme, the camera showing through a 248 pt
 /// viewfinder with pixel corners (or, where there is no camera, why not), the rest of the page dimmed around it, and
 /// Sprig under the frame looking up at it. When a pairing code is read the frame turns green and Sprig hops (`flash`,
-/// for six beats); the pairing screen starts pairing after that.
+/// for six beats); the pairing screen starts pairing after that. Under the instructions, the line about a Mac left
+/// without being told (`LeftMacNotice`), while there is one: in the guide's pairing step too.
 struct ScanPage: View {
     /// Why a code or a link could not be used.
     let note: String?
@@ -54,6 +55,9 @@ struct ScanPage: View {
                     )
                     .padding(.horizontal, 4)
                     .padding(.top, 18)
+                    // A Mac left without being told may still push here: said here too, where an unpaired phone
+                    // stays (the settings are out of reach).
+                    LeftMacNotice(inset: 0, above: 8)
                     if let note {
                         ErrorNote(text: note)
                             .padding(.top, 14)

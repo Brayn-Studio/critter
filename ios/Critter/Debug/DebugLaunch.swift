@@ -118,12 +118,14 @@ import UserNotifications
 ///   (`SharedCheck.swift` in each target; `xcrun simctl push` does not wake that extension in the simulator). The log
 ///   says what each side found: `xcrun simctl spawn <device> log show --last 2m --predicate 'subsystem ==
 ///   "com.braynlabs.critter" AND category == "sharedcheck"'`.
-/// - `-critterTestPushKey <key>`: the push key (base64url of 32 bytes) becomes this test key, in the shared keychain
-///   where the notification service extension reads it (`TestPushKey.swift`), so that the pushes of
-///   `scripts/dev/push-payloads/make.sh` (sealed with its test key, which it prints) open. Then `xcrun simctl push
-///   <device> com.braynlabs.critter ios/build/push-payloads/<file>.apns`. In this simulator `simctl push` posts the
-///   push as a local notification and the extension never runs, so what shows is the plain "Critter / 有会话需要你"
-///   (the decryption is tested in `PushOpeningTests`).
+/// - `-critterTestPushKey <key>` (simulator builds only): the push key (base64url of 32 bytes) becomes this test key,
+///   in the shared keychain where the notification service extension reads it (`TestPushKey.swift`), so that the
+///   pushes of `scripts/dev/push-payloads/make.sh` (sealed with its test key, which it prints) open. Then `xcrun simctl
+///   push <device> com.braynlabs.critter ios/build/push-payloads/<file>.apns`. In this simulator `simctl push` posts
+///   the push as a local notification and the extension never runs, so what shows is the plain "Critter / 有会话需要你"
+///   (the decryption, and the open-only category of a permission request that does not open, are tested in
+///   `PushOpeningTests`). For this run only: a launch without it finds the public test key and replaces it
+///   (`PushSetup`, log "the stored push key is the public test key").
 /// - `-critterNotificationAction <id>:<allow|deny|open|reason:<text>>[@<seconds>]`: that long after launch (default
 ///   1.5 s), the notification with this id (a request id, or `done:<session id>` and the like) is answered or tapped
 ///   through the same handler as a tap on it (`NotificationActionDebug`): `allow`, `deny` and `reason:…` are its buttons
@@ -177,15 +179,27 @@ import UserNotifications
 /// - `-critterNotificationPermission denied|ask|granted|provisional`: the app reads this as the system's notification
 ///   permission, whatever the system says (the registration follows it too): `denied` puts "通知被关掉了，去系统设置打开"
 ///   with 「去打开」 in the settings, `ask` (never asked) 「允许通知」.
-/// - `-critterLeftMac <name>`: the settings' line about a Mac this phone left that may still push here (saved like the
-///   real one, until 「知道了」), as after pairing again away from an unreachable Mac (`BridgeStore`'s `onUntoldMac`).
+/// - `-critterLeftMac <name>`: the line about a Mac this phone left that may still push here (saved like the real one,
+///   until 「知道了」), as after pairing again away from an unreachable Mac (`BridgeStore`'s `onUntoldMac`) with the push
+///   key changed: in the settings' 推送 group, and on the pairing screen's scanner (also the guide's pairing step:
+///   `-critterOnboarding pair -critterPairing scan`). `-critterLeftMacKeyKept`: as when the new key could not be
+///   written (the line does not say the notifications show only "有会话需要你").
+/// - `-critterFixtureDrop offline|denied@<seconds>`: with `-critterFixture`, that long after its first connection the
+///   fixture Mac drops it: `offline`, out of reach (the link says offline and stays so); `denied`, it turns this phone's
+///   token away (`denied badToken`, "这台手机已不在电脑的配对列表里，请重新配对"), as after it revoked this phone. Its
+///   registration was stored first (`-critterFixturePush`). Unpairing (`-critterUnpair`) or pairing again
+///   (`-critterPairing paired@<seconds>`) afterwards: after `offline` the fixture Mac is left untold (the push key
+///   changes, the Live Activities end, the line shows: log category `notifications` "a Mac that may still push here was
+///   left"); after `denied` it holds nothing, and nothing is said. The fixture store reports a Mac left untold to the
+///   app as the real one does.
 /// - `-critterSystemBlocksActivities`: the app reads the system's Live Activity setting for it as off: the settings'
 ///   实时活动 group says so with 「去打开」.
 /// - `-critterSettingsAt` also takes `push`, `activity` and `alerts`.
-/// - `-critterUnpair <seconds>`: with `-critterOpen settings`, that long after the settings are up 「取消配对」 is tapped
-///   (its dialog shows), and a second later the dialog's 「取消配对」: the store unpairs as from a real tap, taking the
-///   push registration back from the Mac over the connection first. For the live check against a real Mac
-///   (`-critterPairURI`); the device stays listed on the Mac until it is revoked there.
+/// - `-critterUnpair <seconds>[:dialog]`: with `-critterOpen settings`, that long after the settings are up 「取消配对」
+///   is tapped (its dialog shows), and a second later the dialog's 「取消配对」: the store unpairs as from a real tap,
+///   taking the push registration back from the Mac over the connection first. For the live check against a real Mac
+///   (`-critterPairURI`); the device stays listed on the Mac until it is revoked there. `:dialog`: the dialog stays up
+///   (with `-critterFixtureDrop offline@…` before it, it says up front that the Mac cannot be told).
 /// - `-critterOnboarding <step>[:<state>]`: the app starts in the first-run guide at that step (`welcome`, `pair`,
 ///   `notifications`, `liveActivity`, `board`), paired or not, whatever `critter.settings.onboardingDone` says. Finishing
 ///   it saves `onboardingDone` like a real run. The pairing step is the real pairing screen: unpaired with
@@ -217,6 +231,16 @@ struct DebugLaunch {
         }
 
         var action: Action
+        var at: Double
+    }
+
+    /// `-critterFixtureDrop`.
+    struct FixtureDrop: Equatable {
+        enum Kind: String {
+            case offline, denied
+        }
+
+        var kind: Kind
         var at: Double
     }
 
@@ -288,8 +312,13 @@ struct DebugLaunch {
     var notificationPermission: UNAuthorizationStatus?
     /// `-critterLeftMac`.
     var leftMac: String?
+    var leftMacKeyKept = false
+    /// `-critterFixtureDrop`.
+    var fixtureDrop: FixtureDrop?
     /// `-critterUnpair`: seconds after the settings are up.
     var unpairAfter: Double?
+    /// `-critterUnpair <seconds>:dialog`: the dialog is left up.
+    var unpairDialogOnly = false
     var systemBlocksActivities = false
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
@@ -410,7 +439,16 @@ struct DebugLaunch {
         default: break
         }
         leftMac = value("critterLeftMac")
-        unpairAfter = value("critterUnpair").flatMap(Double.init)
+        leftMacKeyKept = arguments.contains("-critterLeftMacKeyKept")
+        if let drop = value("critterFixtureDrop")?.split(separator: "@"), drop.count == 2,
+           let kind = FixtureDrop.Kind(rawValue: String(drop[0])), let at = Double(drop[1]) {
+            fixtureDrop = FixtureDrop(kind: kind, at: at)
+        }
+        if let unpair = value("critterUnpair") {
+            let parts = unpair.split(separator: ":")
+            unpairAfter = parts.first.flatMap { Double($0) }
+            unpairDialogOnly = parts.count > 1 && parts[1] == "dialog"
+        }
         systemBlocksActivities = arguments.contains("-critterSystemBlocksActivities")
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
@@ -494,15 +532,25 @@ struct DebugLaunch {
         let result = fixtureResult
         let offline = fixtureOffline
         let cached = offline ? CachedSnapshot(body: snapshot, receivedAt: Date(timeIntervalSinceNow: -300)) : nil
+        let linksMade = OSAllocatedUnfairLock(initialState: 0)
+        let drop = fixtureDrop
         return BridgeStore(
             storage: FixtureStorage(cached: cached),
             makeLink: { _, onEvent in
-                let link = FixtureLink(snapshot: snapshot, result: result, offline: offline, onEvent: onEvent)
+                let first = linksMade.withLock { made in
+                    made += 1
+                    return made == 1
+                }
+                let link = FixtureLink(
+                    snapshot: snapshot, result: result, offline: offline, drop: first ? drop : nil, onEvent: onEvent
+                )
                 FixtureLink.current = link
                 return link
             },
             pairer: pairing.map { $0.pairer as any PairingLink } ?? Pairer(transport: URLSessionTransport()),
-            background: UIKitBackgroundRunner()
+            background: UIKitBackgroundRunner(),
+            // As the real store: a Mac left that may still push here changes the push key and shows the line.
+            onUntoldMac: { PushSetup.shared.macLeftUntold($0) }
         )
     }
 
@@ -571,15 +619,20 @@ actor FixtureLink: BridgeLink {
     private var snapshot: SnapshotBody
     private let result: CommandResult
     private let offline: Bool
+    /// `-critterFixtureDrop`: what ends its connection, and when.
+    private let drop: DebugLaunch.FixtureDrop?
     private let onEvent: @Sendable (BridgeEvent) -> Void
     private var seq = 0
+    private var dropped = false
 
     init(
-        snapshot: SnapshotBody, result: CommandResult, offline: Bool, onEvent: @escaping @Sendable (BridgeEvent) -> Void
+        snapshot: SnapshotBody, result: CommandResult, offline: Bool, drop: DebugLaunch.FixtureDrop? = nil,
+        onEvent: @escaping @Sendable (BridgeEvent) -> Void
     ) {
         self.snapshot = snapshot
         self.result = result
         self.offline = offline
+        self.drop = drop
         self.onEvent = onEvent
     }
 
@@ -588,13 +641,36 @@ actor FixtureLink: BridgeLink {
             onEvent(.state(.offline(retryIn: .seconds(30), since: Date(timeIntervalSinceNow: -300))))
             return
         }
+        guard !dropped else { return }
         onEvent(.state(.connected(macName: DebugLaunch.fixtureMacName)))
         sendSnapshot()
+        if let drop {
+            Task {
+                try? await Task.sleep(for: .seconds(drop.at))
+                self.end(drop.kind)
+            }
+        }
         if let step = DebugLaunch.current.fixtureStep {
             Task {
                 try? await Task.sleep(for: .seconds(step.at))
                 self.take(step)
             }
+        }
+    }
+
+    /// `-critterFixtureDrop`: the connection ends, for good.
+    private func end(_ kind: DebugLaunch.FixtureDrop.Kind) {
+        guard !dropped else { return }
+        dropped = true
+        let log = Logger(subsystem: "com.braynlabs.critter", category: "notifications")
+        switch kind {
+        case .offline:
+            log.notice("fixture Mac: out of reach")
+            onEvent(.state(.offline(retryIn: .seconds(30), since: Date())))
+        case .denied:
+            log.notice("fixture Mac: denied badToken (as after revoking this phone)")
+            onEvent(.denied(.badToken))
+            onEvent(.state(.needsRepair(reason: "这台手机已不在电脑的配对列表里，请重新配对")))
         }
     }
 

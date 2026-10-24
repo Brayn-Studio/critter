@@ -279,6 +279,7 @@ public actor BridgeClient {
             guard isCurrent(mine) else { return }
             switch end {
             case .denied(let reason):
+                onEvent(.denied(reason))
                 setState(.needsRepair(reason: Self.deniedText(reason)))
                 return
             case .pinMismatch:

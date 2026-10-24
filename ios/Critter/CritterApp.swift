@@ -26,7 +26,10 @@ struct CritterApp: App {
     init() {
         #if DEBUG
         let launch = DebugLaunch.current
+        #if targetEnvironment(simulator)
+        // The public test key, for this run only: a run without the flag replaces it (`PushSetup`).
         if let key = launch.testPushKey { TestPushKey.install(key) }
+        #endif
         let store = launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore()
         _store = State(initialValue: store)
         NotificationCenterDelegate.shared.answerRoute = launch.fixtureAnswerRoute() ?? Self.answerRoute()
@@ -74,6 +77,8 @@ struct CritterApp: App {
                     syncActivity()
                 }
                 .onChange(of: store.canAct) { syncActivity() }
+                // Unpaired: the activity ends at once, wherever the app is (not only once the snapshot is gone).
+                .onChange(of: store.pairing != nil) { syncActivity() }
                 .onChange(of: store.isLive) {
                     // Skins are asked for once per connection: a new one asks again (even if its first snapshot is the
                     // same as the last one), and one that ends forgets what it asked.
@@ -94,8 +99,11 @@ struct CritterApp: App {
                     if DebugLaunch.current.sharedCheck { await SharedCheck.run() }
                 }
                 .task {
-                    // `-critterLeftMac`: the settings' line about a Mac left that may still push here, as if just left.
-                    if let name = DebugLaunch.current.leftMac { settings.leftMac = name }
+                    // `-critterLeftMac`: the line about a Mac left that may still push here, as if just left.
+                    if let name = DebugLaunch.current.leftMac {
+                        settings.leftMac = name
+                        settings.leftMacKeyChanged = !DebugLaunch.current.leftMacKeyKept
+                    }
                 }
                 .task {
                     if let step = DebugLaunch.current.notificationAction { await NotificationActionDebug.run(step, store: store) }
@@ -167,8 +175,7 @@ struct CritterApp: App {
     }
 
     /// The app's own Live Activity as things are now (spec §8.5): started and updated only in front while connected, ended
-    /// when switched off or unpaired (unpairing drops the snapshot, which brings this here); the Mac's pushes do the
-    /// rest.
+    /// when switched off or unpaired (a change of the pairing brings this here); the Mac's pushes do the rest.
     private func syncActivity() {
         LiveActivityManager.shared.sync(
             snapshot: store.snapshot, inFront: scenePhase == .active, live: store.canAct,

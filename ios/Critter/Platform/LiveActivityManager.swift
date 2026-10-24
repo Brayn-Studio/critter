@@ -14,7 +14,10 @@ import os
 ///   when it ends;
 /// - starts, updates and ends its own activity as `LocalActivity.step` says (`sync`): it starts one in front while
 ///   connected, with sessions and none running; updates it in front while connected when the content changed; ends
-///   every one at once when the switch is turned off. In the background it never touches it: the Mac pushes it.
+///   every one at once when the switch is turned off or the phone is unpaired (wherever the app is: the app calls
+///   `sync` when the pairing changes). In the background it never touches it otherwise: the Mac pushes it.
+/// - ends every one too when a Mac that may still push here was left untold (`PushSetup.macLeftUntold`): that Mac
+///   holds their tokens.
 /// - keeps one (`LocalActivity.keeper`: the registered one, else the app's own, else the newest). In front -- as of the
 ///   last `sync` -- it ends any other one, at each `sync` and as soon as another one comes up or a token comes.
 ///
@@ -117,7 +120,7 @@ final class LiveActivityManager {
             let next = ActivityContent(state: content, staleDate: Self.staleDate())
             Task { await Self.update(id, to: next) }
         case .endAll:
-            endAll()
+            endAll(because: "switched off or unpaired")
         }
     }
 
@@ -160,13 +163,17 @@ final class LiveActivityManager {
         }
     }
 
-    /// Ends every Live Activity of the app at once (the switch is off, or the phone unpaired).
-    func endAll() {
+    /// Ends every Live Activity of the app at once (the switch is off, the phone unpaired, or a Mac left untold holds
+    /// their tokens): their tokens are out of the registration from now on, not once the system says they ended.
+    func endAll(because reason: String) {
+        var changed = false
         for activity in Activity<CritterActivity>.activities {
             let id = activity.id
-            Self.log.notice("ending \(id, privacy: .public): switched off or unpaired")
+            Self.log.notice("ending \(id, privacy: .public): \(reason, privacy: .public)")
+            if tokens.activityEnded(id) { changed = true }
             Task { await Self.end(id) }
         }
+        if changed { PushSetup.shared.update() }
     }
 
     /// Ends activity `id` at once (found again here: an `Activity` does not cross actors).
