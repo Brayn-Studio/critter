@@ -264,11 +264,13 @@ private struct SessionCard: View {
                 .boardLines()
                 .padding(.top, 4)
         }
-        if request.isInline {
-            if let line = statusLine {
-                Text(verbatim: line.text)
+        let rule = HomeRules.inlineAnswer(request: request, canAct: canAct)
+        switch rule {
+        case .allowDeny, .allowDenyDisabled:
+            if let status = answer.status {
+                Text(verbatim: status.text)
                     .font(.nunito(size: 11.5, weight: .heavy))
-                    .foregroundStyle(line.color)
+                    .foregroundStyle(Self.color(status.tone))
                     .lineLimit(2)
                     .boardLines()
                     .padding(.top, 6)
@@ -278,18 +280,20 @@ private struct SessionCard: View {
                 BoardButton(title: "拒绝", primary: false) { onAnswer(request, false) }
                 BoardButton(title: "允许", primary: true) { onAnswer(request, true) }
             }
-            .disabled(!(canAct && (answer == .idle || isFailed)))
+            .disabled(!answer.buttonsEnabled(rule))
             .padding(.top, 3)
-            if !canAct {
+            if rule == .allowDenyDisabled {
                 Text("连上后才能作答")
                     .font(.nunito(size: 11, weight: .heavy))
                     .foregroundStyle(Theme.Board.dim)
                     .boardLines()
                     .frame(maxWidth: .infinity)
             }
-        } else {
+        case .open:
             BoardButton(title: "打开", primary: true) { onOpen(request.request.requestId) }
                 .padding(.top, 3)
+        case .none:
+            EmptyView()
         }
     }
 
@@ -307,18 +311,12 @@ private struct SessionCard: View {
         return prompt + AttributedString(command.map(String.init).joined(separator: "\u{200B}"))
     }
 
-    private var isFailed: Bool {
-        if case .failed = answer { true } else { false }
-    }
-
-    /// What became of the card's buttons, as the home list says it, in the board's colours.
-    private var statusLine: (text: String, color: Color)? {
-        switch answer {
-        case .idle: nil
-        case .sending: ("正在提交…", Theme.Board.dim)
-        case .sent(let label): label.map { ($0, Theme.Board.chipDone) }
-        case .closed(let text): (text, Theme.Board.dim)
-        case .failed(let text): (text, Theme.Board.wait)
+    /// The status line's colour on the board.
+    private static func color(_ tone: InlineAnswerState.Tone) -> Color {
+        switch tone {
+        case .quiet: Theme.Board.dim
+        case .success: Theme.Board.chipDone
+        case .failure: Theme.Board.wait
         }
     }
 }

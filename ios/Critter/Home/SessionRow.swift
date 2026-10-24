@@ -2,18 +2,6 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// What a card with a lone permission request shows once its buttons were used.
-enum InlineAnswerState: Equatable {
-    case idle
-    case sending
-    /// The Mac took it; the text is the success label ("已允许"), nil for a no.
-    case sent(String?)
-    /// The request is closed: answered on the Mac, or too late; the text says which.
-    case closed(String)
-    /// It did not get through; the buttons work again.
-    case failed(String)
-}
-
 /// One session on the home list (Android `SessionCard`, the mockups' `.scard`): its still Critter in a little patch
 /// of grass, the name and state, what it is doing, and "folder · branch · source"; the context meter at the bottom.
 /// With a request it has an orange edge, the command on a slip, and 「拒绝」「允许」 (a lone permission request,
@@ -104,9 +92,10 @@ struct SessionRow: View {
             if let command = request.command {
                 CommandSlip(text: command, maxLines: Self.slipLines)
             }
-            switch HomeRules.inlineAnswer(request: request.card, canAct: canAct) {
+            let rule = HomeRules.inlineAnswer(request: request.card, canAct: canAct)
+            switch rule {
             case .allowDeny, .allowDenyDisabled:
-                inlineButtons
+                inlineButtons(rule)
             case .open:
                 PixelButton(title: "打开回答", size: .small, wide: true, action: onOpenRequest)
             case .none:
@@ -115,13 +104,13 @@ struct SessionRow: View {
         }
     }
 
+    /// 「拒绝」「允许」 under `rule`, with what became of them above and, offline, why they are grey.
     @ViewBuilder
-    private var inlineButtons: some View {
-        let enabled = canAct && (answer == .idle || isFailed)
-        if let line = statusLine {
-            Text(verbatim: line.text)
+    private func inlineButtons(_ rule: InlineAnswer) -> some View {
+        if let status = answer.status {
+            Text(verbatim: status.text)
                 .font(.nunito(size: 12.5, weight: .heavy))
-                .foregroundStyle(line.color)
+                .foregroundStyle(Self.color(status.tone))
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .accessibilityAddTraits(.updatesFrequently)
         }
@@ -129,8 +118,8 @@ struct SessionRow: View {
             PixelButton(title: "拒绝", style: .secondary, size: .small, wide: true) { onAnswer(false) }
             PixelButton(title: "允许", size: .small, wide: true) { onAnswer(true) }
         }
-        .disabled(!enabled)
-        if !canAct {
+        .disabled(!answer.buttonsEnabled(rule))
+        if rule == .allowDenyDisabled {
             Text("连上后才能作答")
                 .font(.nunito(size: 11.5, weight: .heavy))
                 .foregroundStyle(Theme.ink2)
@@ -138,17 +127,11 @@ struct SessionRow: View {
         }
     }
 
-    private var isFailed: Bool {
-        if case .failed = answer { true } else { false }
-    }
-
-    private var statusLine: (text: String, color: Color)? {
-        switch answer {
-        case .idle: nil
-        case .sending: ("正在提交…", Theme.ink2)
-        case .sent(let label): label.map { ($0, Theme.done) }
-        case .closed(let text): (text, Theme.ink2)
-        case .failed(let text): (text, Theme.err)
+    private static func color(_ tone: InlineAnswerState.Tone) -> Color {
+        switch tone {
+        case .quiet: Theme.ink2
+        case .success: Theme.done
+        case .failure: Theme.err
         }
     }
 }
