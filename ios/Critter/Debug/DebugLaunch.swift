@@ -89,7 +89,9 @@ import Foundation
 ///   upright; at 26 s the setting 「充电横放时自动打开」 is switched off and at 29 s on again; at 32 s it is
 ///   unplugged. The fake sensor gives a reading every 100 ms while it is on, in g like CoreMotion, through the same
 ///   path as the real one. With `-critterBoardLog`. `-critterFakeDock unplug` plays a shorter one instead: plugged
-///   in and lying still in landscape at 2 s, unplugged at 10 s (the board closes 10 s later).
+///   in and lying still in landscape at 2 s, unplugged at 10 s (the board closes 10 s later). `-critterFakeDock
+///   hold-off`: plugged in and landscape at 2 s, the setting switched off at 4 s during the hold (no tick may follow),
+///   unplugged at 9 s and the setting on again at 9.5 s.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -244,7 +246,11 @@ struct DebugLaunch {
             }
         }
         if arguments.contains("-critterFakeDock") {
-            fakeDock = value("critterFakeDock") == "unplug" ? .unplug : .standard
+            switch value("critterFakeDock") {
+            case "unplug": fakeDock = .unplug
+            case "hold-off": fakeDock = .holdOff
+            default: fakeDock = .standard
+            }
         }
     }
 

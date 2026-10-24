@@ -82,6 +82,23 @@ private func firstOpen(_ t: BoardTrigger, times: StrideThrough<Int64>) -> Int64?
     #expect(t.onTick(nowMs: 9_000) == close)
 }
 
+@Test func switchingOffDuringTheHoldForgetsIt() {
+    let t = BoardTrigger()
+    _ = t.onPower(charging: true, nowMs: 0)
+    _ = t.onOrientation(pose: landscape, still: true, nowMs: 0)
+    #expect(t.nextDeadline() == 3_000)
+    t.autoOpen = false
+    // Nothing is due any more: an open that can no longer happen keeps no deadline alive.
+    #expect(t.nextDeadline() == nil)
+    #expect(t.onTick(nowMs: 3_000) == none)
+    #expect(t.nextDeadline() == nil)
+    // Switched on again, the hold starts afresh from the next still reading.
+    t.autoOpen = true
+    _ = t.onOrientation(pose: landscape, still: true, nowMs: 4_000)
+    #expect(t.nextDeadline() == 7_000)
+    #expect(t.onTick(nowMs: 7_000) == open)
+}
+
 @Test func brieflyUprightDoesNotExit() {
     let t = shownTrigger()
     #expect(t.onOrientation(pose: upright, still: true, nowMs: 1_000) == none)

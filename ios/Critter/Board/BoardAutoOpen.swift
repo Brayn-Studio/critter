@@ -121,8 +121,9 @@ final class BoardAutoOpen {
         }
     }
 
-    /// Gravity on or off, and the wake-up re-aimed, after anything the trigger was told.
-    private func update() {
+    /// Gravity on or off, and the wake-up re-aimed, after anything the trigger was told. `afterIdleTick`: right after a
+    /// tick that decided nothing.
+    private func update(afterIdleTick: Bool = false) {
         let wanted = active == true && trigger.sensorWanted
         if wanted, !listening {
             listening = true
@@ -135,24 +136,32 @@ final class BoardAutoOpen {
             gravity.stop()
             boardLog("auto-open: gravity off")
         }
-        reschedule()
+        reschedule(afterIdleTick: afterIdleTick)
     }
 
-    /// One sleep until the trigger's next deadline, if it has one.
-    private func reschedule() {
+    /// One sleep until the trigger's next deadline, if it has one. A deadline already past that a tick deciding
+    /// nothing left behind is not re-armed: it would only wake up at once to the same nothing, again and again. The
+    /// next thing the trigger is told re-aims the wake-up.
+    private func reschedule(afterIdleTick: Bool = false) {
         let deadline = trigger.nextDeadline()
         guard deadline != scheduledAt else { return }
         tick?.cancel()
         tick = nil
         scheduledAt = deadline
         guard let deadline else { return }
-        let wait = max(deadline - Self.now(), 0)
+        let wait = deadline - Self.now()
+        if afterIdleTick, wait <= 0 {
+            boardLog("auto-open: a deadline \(-wait) ms past is left after a tick that decided nothing; not re-armed")
+            return
+        }
         tick = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(wait))
+            try? await Task.sleep(for: .milliseconds(max(wait, 0)))
             guard !Task.isCancelled, let self else { return }
             scheduledAt = nil
-            perform(trigger.onTick(nowMs: Self.now()))
-            update()
+            let action = trigger.onTick(nowMs: Self.now())
+            boardLog("auto-open: tick (\(action))")
+            perform(action)
+            update(afterIdleTick: action == .none)
         }
     }
 

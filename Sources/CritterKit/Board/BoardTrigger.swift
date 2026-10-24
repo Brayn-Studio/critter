@@ -38,8 +38,15 @@ public final class BoardTrigger {
     private var shown = false
     private var suppressed = false
 
-    /// Whether the board may open by itself (the setting); closing works either way.
-    public var autoOpen = true
+    /// Whether the board may open by itself (the setting); closing works either way. Switched off, a hold in
+    /// progress is forgotten: its deadline would only come round to an open that can no longer happen (a caller
+    /// that sleeps until `nextDeadline()` would wake up to it again and again). Switched on again, the hold starts
+    /// afresh from the next still reading.
+    public var autoOpen = true {
+        didSet {
+            if !autoOpen { holdSince = nil }
+        }
+    }
 
     /// Since when the phone has been charging, landscape and still (while the board is not up).
     private var holdSince: Int64?
