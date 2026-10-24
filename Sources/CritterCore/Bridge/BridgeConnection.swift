@@ -22,6 +22,9 @@ public protocol BridgeServices: AnyObject {
     func interrupt(sessionId: String) -> SayOutcome
     func skinManifest(name: String) -> JSONValue?
     func snapshotMessage() -> ServerMessage
+    /// Keeps the device's push registration (an empty one takes it back). False if it could not
+    /// be kept.
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool
 }
 
 public extension BridgeServices {
@@ -60,9 +63,9 @@ public final class BridgeConnection {
             return []
         case .awaitingFirst:
             return receiveFirst(frame)
-        case .ready:
+        case .ready(let deviceId):
             guard let message = ClientMessage.decode(frame) else { return [] }
-            return handle(message)
+            return handle(message, deviceId: deviceId)
         }
     }
 
@@ -119,7 +122,7 @@ public final class BridgeConnection {
         [.send(.result(id: id, ok: reason == nil, reason: reason, message: message))]
     }
 
-    private func handle(_ message: ClientMessage) -> [Output] {
+    private func handle(_ message: ClientMessage, deviceId: String) -> [Output] {
         switch message {
         case .answer(let id, let requestId, let payload):
             guard let request = services.pendingRequest(requestId) else {
@@ -163,6 +166,12 @@ public final class BridgeConnection {
             case .failed: return result(id, .failed, "停止失败，请检查电脑端状态")
             case .unconfirmed: return result(id, .failed, "电脑端尚未确认停止结果，请先查看会话")
             }
+        case .push(let id, let registration):
+            // An empty token is an unregistration, whatever else it holds.
+            guard registration.token.isEmpty || (registration.hasValidKey && registration.hasValidTokens) else {
+                return result(id, .invalid, "推送登记无效")
+            }
+            return services.registerPush(deviceId: deviceId, registration) ? result(id, nil) : result(id, .failed, "保存失败")
         case .hello, .pair:
             return []
         }

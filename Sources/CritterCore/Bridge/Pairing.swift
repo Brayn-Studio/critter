@@ -7,13 +7,42 @@ public struct DeviceRecord: Codable, Equatable, Sendable {
     public var tokenHash: String
     public var pairedAt: Int64
     public var lastSeen: Int64?
+    /// How to push to this phone (an iPhone that registered). Added later: absent in older files.
+    public var push: PushRegistration?
+    /// The Mac's own, not the phone's: when it push-to-started a Live Activity on this phone whose token has
+    /// not arrived yet (`LiveActivityPlanner.unconfirmedStartAt`), so a restart does not start a second one.
+    /// Goes with the registration.
+    public var unconfirmedActivityStart: Int64?
 
-    public init(id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil) {
+    public init(
+        id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil, push: PushRegistration? = nil,
+        unconfirmedActivityStart: Int64? = nil
+    ) {
         self.id = id
         self.name = name
         self.tokenHash = tokenHash
         self.pairedAt = pairedAt
         self.lastSeen = lastSeen
+        self.push = push
+        self.unconfirmedActivityStart = unconfirmedActivityStart
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case id, name, tokenHash, pairedAt, lastSeen, push, unconfirmedActivityStart
+    }
+
+    /// A push registration this build cannot read (a value from a newer build, a field missing) is left out,
+    /// not the device: one bad registration must not make the whole file unreadable and unpair every phone.
+    /// The phone registers again the next time it connects.
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        id = try container.decode(String.self, forKey: .id)
+        name = try container.decode(String.self, forKey: .name)
+        tokenHash = try container.decode(String.self, forKey: .tokenHash)
+        pairedAt = try container.decode(Int64.self, forKey: .pairedAt)
+        lastSeen = try container.decodeIfPresent(Int64.self, forKey: .lastSeen)
+        push = (try? container.decodeIfPresent(PushRegistration.self, forKey: .push)) ?? nil
+        unconfirmedActivityStart = push == nil ? nil : (try? container.decodeIfPresent(Int64.self, forKey: .unconfirmedActivityStart)) ?? nil
     }
 }
 
@@ -27,6 +56,8 @@ public final class DeviceRegistry: @unchecked Sendable {
     private let log: @Sendable (String) -> Void
     private let hash: @Sendable (String) -> String
     private let lock = NSLock()
+    /// Devices whose unreadable push registration has been logged (under `lock`).
+    private var reportedUnreadablePush: Set<String> = []
 
     /// `log` hears about a devices file that had to be set aside (see `load`).
     public convenience init(file: URL, log: @escaping @Sendable (String) -> Void = { _ in }) {
@@ -71,7 +102,68 @@ public final class DeviceRegistry: @unchecked Sendable {
     }
 
     public func touch(deviceId: String, now: Int64) {
-        update { $0.map { $0.id == deviceId ? DeviceRecord(id: $0.id, name: $0.name, tokenHash: $0.tokenHash, pairedAt: $0.pairedAt, lastSeen: now) : $0 } }
+        change(deviceId) { $0.lastSeen = now }
+    }
+
+    /// Keeps `registration` as this device's push registration, replacing any earlier one; an
+    /// empty registration (see `PushRegistration.isEmpty`) removes it instead. False if there is
+    /// no such device or the file could not be written.
+    ///
+    /// A registration that shares a token with another device's (the same phone paired again before its old
+    /// registration was taken back) takes it over: the other device's registration goes, in the same write,
+    /// so nothing is pushed twice.
+    @discardableResult
+    public func setPush(deviceId: String, _ registration: PushRegistration) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard var records = load(), let index = records.firstIndex(where: { $0.id == deviceId }) else { return false }
+        let before = records
+        records[index].push = registration.isEmpty ? nil : registration
+        if registration.isEmpty { records[index].unconfirmedActivityStart = nil }
+        if !registration.isEmpty {
+            let tokens = PushCoordinatorRules.tokens(of: registration)
+            for other in records.indices where other != index {
+                guard let theirs = records[other].push, !PushCoordinatorRules.tokens(of: theirs).isDisjoint(with: tokens) else { continue }
+                records[other].push = nil
+                records[other].unconfirmedActivityStart = nil
+                log("bridge device \(records[other].id.prefix(8)): push registration taken over by \(deviceId.prefix(8))")
+            }
+        }
+        guard records != before else { return true }
+        return (try? save(records)) != nil
+    }
+
+
+    /// APNs said the device token is no good (the app was deleted): forgets the whole
+    /// registration, for the phone to make a new one.
+    public func dropPushToken(deviceId: String) {
+        change(deviceId) {
+            $0.push = nil
+            $0.unconfirmedActivityStart = nil
+        }
+    }
+
+    /// Keeps (or, with nil, clears) when the Mac push-to-started a Live Activity whose token has not come yet.
+    /// Does nothing for a device without a registration.
+    public func setUnconfirmedActivityStart(deviceId: String, at time: Int64?) {
+        change(deviceId) {
+            guard $0.push != nil else { return }
+            $0.unconfirmedActivityStart = time
+        }
+    }
+
+    /// Sets (or, with nil, clears) the running Live Activity's id and push token. Does nothing
+    /// for a device without a registration or without a Live Activity part.
+    public func setActivity(deviceId: String, activityId: String?, activityToken: String?) {
+        change(deviceId) {
+            guard $0.push?.activity != nil else { return }
+            $0.push?.activity?.activityId = activityId
+            $0.push?.activity?.activityToken = activityToken
+        }
+    }
+
+    /// The devices that have a push registration.
+    public func pushDevices() -> [DeviceRecord] {
+        list().filter { $0.push != nil }
     }
 
     public func revoke(deviceId: String) {
@@ -88,6 +180,18 @@ public final class DeviceRegistry: @unchecked Sendable {
         try? save(transform(current))
     }
 
+    /// Edits one device's record in place. Nothing is written when `edit` changes nothing.
+    /// False if there is no such device or the file could not be written.
+    @discardableResult
+    private func change(_ deviceId: String, _ edit: (inout DeviceRecord) -> Void) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard var records = load(), let index = records.firstIndex(where: { $0.id == deviceId }) else { return false }
+        let before = records[index]
+        edit(&records[index])
+        guard records[index] != before else { return true }
+        return (try? save(records)) != nil
+    }
+
     /// The records on disk; none when there is no file yet. A file that can't be read or
     /// decoded is not taken for an empty list (the next save would overwrite it): it is renamed
     /// `devices.json.corrupt-<ms>` beside it, kept for a look, and logged, and the list starts
@@ -95,6 +199,7 @@ public final class DeviceRegistry: @unchecked Sendable {
     private func load() -> [DeviceRecord]? {
         guard FileManager.default.fileExists(atPath: file.path) else { return [] }
         if let data = try? Data(contentsOf: file), let records = try? JSONDecoder().decode([DeviceRecord].self, from: data) {
+            reportUnreadablePushes(records, in: data)
             return records
         }
         let aside = file.deletingLastPathComponent()
@@ -106,6 +211,19 @@ public final class DeviceRegistry: @unchecked Sendable {
         } catch {
             log("bridge devices file unreadable and not set aside: \(error)")
             return nil
+        }
+    }
+
+    /// Logs, once per device, a push registration on disk that `DeviceRecord` had to leave out.
+    private func reportUnreadablePushes(_ records: [DeviceRecord], in data: Data) {
+        // Cheap test first: most files have no registration at all.
+        guard records.contains(where: { $0.push == nil }), data.range(of: Data("\"push\"".utf8)) != nil,
+              let raw = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]], raw.count == records.count
+        else { return }
+        for (record, object) in zip(records, raw) where record.push == nil && !reportedUnreadablePush.contains(record.id) {
+            guard let value = object["push"], !(value is NSNull) else { continue }
+            reportedUnreadablePush.insert(record.id)
+            log("bridge device \(record.id.prefix(8)): push registration unreadable, left out")
         }
     }
 

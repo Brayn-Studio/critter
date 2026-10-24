@@ -29,18 +29,25 @@ class ProtocolDocExamplesTest {
         val type: String? get() = json["type"]?.jsonPrimitive?.content
     }
 
-    /** Every ```json block, and which way it travels (by its `## Phone -> Mac` / `## Mac -> phone` section). */
+    /**
+     * Every ```json block, and which way it travels (by its `## Phone -> Mac` / `## Mac -> phone` section).
+     * The `## iOS push registration` section is skipped: it is an optional extension only the iPhone app speaks
+     * (a `push` frame and the APNs payloads), which this app neither sends nor reads.
+     */
     private fun examples(): List<Example> {
         val examples = mutableListOf<Example>()
         var fromPhone: Boolean? = null
+        var skipped = false
         var start = 0
         var block: MutableList<String>? = null
         doc.readLines().forEachIndexed { index, line ->
             val open = block
             when {
                 open != null && line.startsWith("```") -> {
-                    val direction = checkNotNull(fromPhone) { "docs line $start: a JSON example outside the message sections" }
-                    examples += Example(direction, start, BridgeJson.parseToJsonElement(open.joinToString("\n")).jsonObject)
+                    if (!skipped) {
+                        val direction = checkNotNull(fromPhone) { "docs line $start: a JSON example outside the message sections" }
+                        examples += Example(direction, start, BridgeJson.parseToJsonElement(open.joinToString("\n")).jsonObject)
+                    }
                     block = null
                 }
                 open != null -> open += line
@@ -48,10 +55,13 @@ class ProtocolDocExamplesTest {
                     block = mutableListOf()
                     start = index + 2
                 }
-                line.startsWith("## ") -> fromPhone = when {
-                    line.lowercase().startsWith("## phone -> mac") -> true
-                    line.lowercase().startsWith("## mac -> phone") -> false
-                    else -> null
+                line.startsWith("## ") -> {
+                    skipped = line.lowercase().startsWith("## ios push registration")
+                    fromPhone = when {
+                        line.lowercase().startsWith("## phone -> mac") -> true
+                        line.lowercase().startsWith("## mac -> phone") -> false
+                        else -> null
+                    }
                 }
             }
         }

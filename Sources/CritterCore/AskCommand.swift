@@ -6,9 +6,12 @@ public enum AskGate {
     public static let heartbeatFreshMs: Int64 = 10_000
     public static let clientRecentMs: Int64 = 600_000
 
-    /// The app is alive, the bridge is on, and a phone has been seen recently.
+    /// The app is alive, the bridge is on, and a phone could answer: one has been seen recently, or the Mac
+    /// can push to an iPhone (spec 6.7; an iPhone is not connected while its app is closed).
     public static func shouldStart(status: AppStatus?, now: Int64) -> Bool {
-        guard shouldKeepWaiting(status: status, now: now), let seen = status?.lastClientSeen else { return false }
+        guard shouldKeepWaiting(status: status, now: now), let status else { return false }
+        if status.pushReachable == true { return true }
+        guard let seen = status.lastClientSeen else { return false }
         return now - seen <= clientRecentMs
     }
 

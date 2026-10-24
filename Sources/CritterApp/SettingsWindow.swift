@@ -268,6 +268,8 @@ struct SettingsView: View {
 
             PhoneSettingsSection(store: store, phone: phone)
 
+            PushSettingsSection(store: store, push: phone.push, devices: phone.devices)
+
             Section {
                 Toggle("登录时自动启动", isOn: $store.launchAtLogin)
                 LabeledContent("宠物位置") {

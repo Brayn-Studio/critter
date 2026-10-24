@@ -17,8 +17,16 @@ usage: critter-bridge-client <command> [options]
   seen <sessionId>
   say <sessionId> <text>
   skin <name>
+  push --token <hex> [--env sandbox|production] [--bundle <bundle id>]
+       [--done] [--error] [--activity]
+                                   register for push as an iPhone would, with a new random
+                                   push key (--env defaults to sandbox, --bundle to
+                                   com.braynlabs.critter; --done and --error turn those
+                                   notifications on, --activity the Live Activity)
+  push --clear                     take the push registration back
 
-answer, seen, say and skin print the reply line and exit (status 1 if it isn't ok).
+answer, seen, say, skin and push print the reply line and exit (status 1 if it isn't ok).
+push gets no reply from an older Mac, which ignores it: it gives up after 10 s.
 --state defaults to ~/.critter/dev-client.json.
 """
 
@@ -76,14 +84,22 @@ func exitAfter(seconds: Double, _ what: String) {
 
 // MARK: - Arguments
 
+/// Options that stand alone, without a value.
+let switches: Set<String> = ["done", "error", "activity", "clear"]
+
 var positional: [String] = []
 var options: [String: [String]] = [:]
 do {
     var rest = Array(CommandLine.arguments.dropFirst())[...]
     while let arg = rest.popFirst() {
         if arg.hasPrefix("--") {
+            let name = String(arg.dropFirst(2))
+            if switches.contains(name) {
+                options[name, default: []].append("")
+                continue
+            }
             guard let value = rest.popFirst() else { fail("\(arg) needs a value\n\n\(usage)", status: 64) }
-            options[String(arg.dropFirst(2)), default: []].append(value)
+            options[name, default: []].append(value)
         } else {
             positional.append(arg)
         }
@@ -248,8 +264,8 @@ func watch(count: Int?) async -> Never {
 }
 
 /// Sends one command once the Mac has said `welcome`, then prints its reply and exits.
-func run(_ command: ClientMessage, id: String) async -> Never {
-    exitAfter(seconds: 15, "command")
+func run(_ command: ClientMessage, id: String, waitSeconds: Double = 15, what: String = "command") async -> Never {
+    exitAfter(seconds: waitSeconds, what)
     let link = await Link.hello(loadState())
     while true {
         let (text, message) = await link.receive()
@@ -272,6 +288,29 @@ func run(_ command: ClientMessage, id: String) async -> Never {
 }
 
 let commandId = "cli-1"
+
+/// The `push` command's registration, from its options: a new random push key every time.
+func pushRegistration(_ options: [String: [String]]) -> ClientMessage {
+    func setting(_ name: String) -> String? { options[name]?.last }
+    func flag(_ name: String) -> Bool { options[name] != nil }
+    let bundle = setting("bundle") ?? "com.braynlabs.critter"
+    if flag("clear") {
+        return .push(id: commandId, registration: PushRegistration(
+            token: "", environment: .sandbox, bundleId: bundle, key: PushCrypto.makeKey(), notifyDone: false, notifyError: false
+        ))
+    }
+    guard let token = setting("token")?.lowercased(), !token.isEmpty, token.allSatisfy(\.isHexDigit) else {
+        fail("push needs --token <hex> (or --clear)", status: 64)
+    }
+    guard let environment = PushEnvironment(rawValue: setting("env") ?? "sandbox") else {
+        fail("--env is sandbox or production", status: 64)
+    }
+    return .push(id: commandId, registration: PushRegistration(
+        token: token, environment: environment, bundleId: bundle, key: PushCrypto.makeKey(),
+        notifyDone: flag("done"), notifyError: flag("error"),
+        activity: flag("activity") ? ActivityRegistration(enabled: true) : nil
+    ))
+}
 switch positional.first {
 case "pair" where positional.count == 2:
     await pair(positional[1])
@@ -296,6 +335,8 @@ case "say" where positional.count == 3:
     await run(.say(id: commandId, sessionId: positional[1], text: positional[2]), id: commandId)
 case "skin" where positional.count == 2:
     await run(.skin(id: commandId, name: positional[1]), id: commandId)
+case "push" where positional.count == 1:
+    await run(pushRegistration(options), id: commandId, waitSeconds: 10, what: "push (an older Mac does not answer it)")
 default:
     fail(usage, status: 64)
 }

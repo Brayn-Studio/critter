@@ -33,6 +33,9 @@ public enum DenyReason: String, Codable, Sendable {
     case badToken, badCode, rejected
     /// Wire value is "protocol" (a Swift keyword, hence the case name).
     case protocolMismatch = "protocol"
+    /// A reason this build does not know (a newer Mac's). Phones read every other value they don't
+    /// know as this; the Mac never sends it.
+    case unknown
 }
 
 public enum ResultReason: String, Codable, Sendable {
@@ -209,6 +212,8 @@ public enum ClientMessage: Equatable, Sendable {
     case say(id: String?, sessionId: String, text: String)
     case interrupt(id: String?, sessionId: String)
     case skin(id: String?, name: String)
+    /// Optional extension: an iPhone registers for push. Answered with a `result`.
+    case push(id: String?, registration: PushRegistration)
 
     private struct Wire: Codable {
         var type: String
@@ -224,6 +229,7 @@ public enum ClientMessage: Equatable, Sendable {
         var sessionId: String?
         var text: String?
         var name: String?
+        var registration: PushRegistration?
     }
 
     public static func decode(_ frame: Data) -> ClientMessage? {
@@ -250,6 +256,9 @@ public enum ClientMessage: Equatable, Sendable {
         case "skin":
             guard let n = w.name else { return nil }
             return .skin(id: w.id, name: n)
+        case "push":
+            guard let r = w.registration else { return nil }
+            return .push(id: w.id, registration: r)
         default:
             return nil
         }
@@ -272,6 +281,8 @@ public enum ClientMessage: Equatable, Sendable {
             w = Wire(type: "interrupt"); w.id = id; w.sessionId = s
         case .skin(let id, let n):
             w = Wire(type: "skin"); w.id = id; w.name = n
+        case .push(let id, let r):
+            w = Wire(type: "push"); w.id = id; w.registration = r
         }
         return encodeWire(w)
     }
@@ -336,8 +347,8 @@ public enum ServerMessage: Equatable, Sendable {
             guard let d = w.deviceId, let t = w.token, let m = w.macName else { return nil }
             return .paired(deviceId: d, token: t, macName: m)
         case "denied":
-            guard let r = w.reason.flatMap(DenyReason.init(rawValue:)) else { return nil }
-            return .denied(reason: r)
+            guard let reason = w.reason else { return nil }
+            return .denied(reason: DenyReason(rawValue: reason) ?? .unknown)
         case "snapshot":
             guard let seq = w.seq, let at = w.sentAt, let s = w.sessions, let p = w.pending, let pr = w.prefs else { return nil }
             return .snapshot(seq: seq, sentAt: at, body: SnapshotBody(sessions: s, limits: w.limits, pending: p.elements, prefs: pr))

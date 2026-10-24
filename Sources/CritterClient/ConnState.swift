@@ -31,6 +31,8 @@ public enum BridgeEvent: Equatable, Sendable {
     case snapshot(seq: Int, sentAt: Int64, body: SnapshotBody)
     /// The address a connection was made to, once the Mac has welcomed it.
     case connectedTo(Endpoint)
+    /// What the Mac's `welcome` said it runs (before the `.connected` state it comes with).
+    case macVersion(String)
 }
 
 /// The Mac's `result` for a command, or why there is none.
@@ -49,4 +51,16 @@ public struct CommandResult: Equatable, Sendable {
     public static func failed(_ message: String) -> CommandResult {
         CommandResult(ok: false, reason: nil, message: message)
     }
+}
+
+/// What came of registering for push with the Mac.
+public enum PushRegistrationReply: Equatable, Sendable {
+    /// The Mac keeps the registration.
+    case stored
+    /// The Mac answered no, with its words if it had any.
+    case rejected(String?)
+    /// Nothing came back in time: an older Mac that does not know the frame. The connection is as it was.
+    case noReply
+    /// Not connected, or the connection went while the registration was on its way.
+    case offline
 }

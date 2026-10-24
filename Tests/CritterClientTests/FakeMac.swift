@@ -441,7 +441,7 @@ extension ClientMessage {
     /// The correlation id of a command frame.
     var commandId: String? {
         switch self {
-        case .answer(let id, _, _), .seen(let id, _), .say(let id, _, _), .interrupt(let id, _), .skin(let id, _): id
+        case .answer(let id, _, _), .seen(let id, _), .say(let id, _, _), .interrupt(let id, _), .skin(let id, _), .push(let id, _): id
         case .hello, .pair: nil
         }
     }

@@ -1,12 +1,6 @@
 # Critter iOS 版待办
 
-iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）和计划 2（`2026-10-24-critter-ios-2-critters-board-visual.md`，宠物、看板和像素外观）做完时，各轮审查留下、判定放到后面处理的事项。按要落到的计划分组，写后面的计划时逐条认领。计划 2 已经做完的条目（计划 2 一组、前端优化轮里的四条）已经删掉。
-
-## Mac 推送计划
-
-- **Mac 发来不认识的 `denied` 原因**（以后的新版本可能出现）：现在被忽略，客户端退避重试；Android 会停下并提示"连接被电脑拒绝"。要给 `DenyReason` 加一个"未知"值。配对时同样的情况现在显示的是"没人点允许"的文案，也要一起改。要在装真机之前做完。
-- 推送登记要用"超时不断开连接"的请求：旧版 Mac 会忽略这条不认识的消息，现在的请求超时会断开重连，形成循环。
-- 推送登记需要 `welcome.version`，`BridgeClient` 现在把它丢掉了。
+iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）、计划 2（`2026-10-24-critter-ios-2-critters-board-visual.md`，宠物、看板和像素外观）和计划 3（`2026-10-24-critter-ios-3-mac-push.md`，Mac 端推送）做完时，各轮审查留下、判定放到后面处理的事项。按要落到的计划分组，写后面的计划时逐条认领。计划 2 已经做完的条目（计划 2 一组、前端优化轮里的四条）已经删掉。
 
 ## iOS 推送与扩展计划（App Group）
 
@@ -18,6 +12,17 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - **首次引导（欢迎页）**：计划 2 没做（它属于推送计划，spec §14 第 5 步）。
 - **设置里计划 2 没做的行**：提醒和推送、实时活动、电池和保活、"看板被系统拦下"的提示、"保持后台连接"。草图里有，其中有些只属于 Android。草图的「悬浮球」一组 iOS 不做：iOS 不允许 App 画在其他 App 上面，由实时活动代替（spec §8.5）。
 - 自动打开看板时如果配对页开着（`RootView` 里没有首页），看板打不开，触发器 2 秒后报 `.blocked`，本次充电不再试。推送带来"点通知进入"之后，这条路径会常见，要有处理。
+- **真的往 APNs 发一条**（计划 3 只用假的传输层测过）：用户给 `.p8`、在开发者账号里给 App ID 开推送后，从 Mac 设置里"发送测试通知"。同时验证这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理（spec §13.6）：Mac 用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。
+- **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）：push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
+- Mac 端的联机检查（计划 3 推迟到合回 `main` 之后，因为要运行这条线构建的 Critter.app，会替换用户正在用的那个）：用 `critter-bridge-client` 配一台临时设备，`push --token <64 个 0> --done` 后 `~/.critter/bridge/devices.json` 里有这份登记、权限仍是 0600，设置里这台设备后面有"推送"标签；`push --clear` 后登记消失；没有 `.p8` 时设置显示"未配置"，`~/.critter/app.json` 的 `pushReachable` 为 false；`scripts/dev/e2e-phone.sh` 照常通过；最后撤销这台临时设备。
+- App 的 `ActivityAttributes` 类型要叫 `CritterActivity`：Mac 的 push-to-start 写的是 `LiveActivityContent.attributesName`。
+- App 的 bundle id 定下来后，核对 Mac 设置里的默认值 `com.braynlabs.critter`。Mac 只给登记的 `bundleId` 和设置一致的 iPhone 推送（不一致时设置里写"登记了的 iPhone 不是这个 bundle id 的 App"）。
+- 用户划掉实时活动后，Mac 分不清"划掉"和"结束"，有会话时最多每 10 分钟重新启动一次。真机上嫌烦的话，加一个开关，或者只在有会话开始等你确认时才重开。
+- Codex 控制通道在 Mac 重启后才列出的待批请求，晚于"只记下现状"的第一份快照到达，可能被当成新请求推一次。
+- `push` 帧解码失败（比如不认识的 `environment`）时 Mac 不回 `result`，手机会以为 Mac 版本太旧。只在两边版本不一致时出现。
+- `BridgeClient` 的 init 文档还写着每个请求超时都会断开连接，`registerPush` 例外，改掉。
+- 测试 `devicesFileStaysPrivate` 里 `setActivity` 那一步是空操作（登记里没有实时活动那一部分），补上实时活动再测。
+- 计划 3 的最终审查留下、指派给这份计划的 Mac 端修复（写不进 `devices.json` 时无限递归、被拒收的启动要马上写盘、启动规则和协议文档对齐），记在计划 3 的台账里，见计划 4 的 Task 1。
 
 ## 装到真机的计划
 

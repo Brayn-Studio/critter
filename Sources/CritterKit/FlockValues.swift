@@ -14,7 +14,7 @@ public struct FlockOverride: Sendable, Equatable {
 }
 
 /// How many sessions share a given state, for the merged flock's summary badge.
-public struct StateCount: Equatable, Sendable {
+public struct StateCount: Codable, Equatable, Sendable {
     public var state: PetState
     public var count: Int
 

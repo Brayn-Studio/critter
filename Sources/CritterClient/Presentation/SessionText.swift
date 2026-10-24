@@ -5,25 +5,16 @@ import Foundation
 public enum SessionText {
     /// Where a session runs, as phones say it. Not the desktop's `SessionSource.label`: "桌面版", "其它".
     public static func source(_ s: SessionSource) -> String {
-        switch s {
-        case .terminal: "终端"
-        case .vscode: "VS Code"
-        case .desktop: "桌面版"
-        case .other: "其它"
-        case .codex: "Codex"
-        case .codexTerminal: "Codex · 终端"
-        case .codexVSCode: "Codex · VS Code"
-        case .codexDesktop: "Codex · Desktop"
-        }
+        NotificationText.source(s)
     }
 
     /// Old phones cached Codex as `other`; its namespaced id still identifies the provider.
     public static func isCodex(_ s: BridgeSession) -> Bool {
-        s.source.isCodex || (s.source == .other && s.id.hasPrefix("codex-"))
+        NotificationText.isCodex(s)
     }
 
     public static func visibleSource(_ s: BridgeSession) -> SessionSource {
-        s.source == .other && isCodex(s) ? .codex : s.source
+        NotificationText.visibleSource(s)
     }
 
     /// Missing capabilities preserve the older Claude route; Codex needs a verified owner.
@@ -54,17 +45,12 @@ public enum SessionText {
 
     /// The last path component of `cwd` ("/Users/me/proj" -> "proj").
     public static func folderName(_ cwd: String) -> String {
-        let trimmed = cwd.reversed().drop { $0 == "/" }.reversed()
-        let name = trimmed.split(separator: "/", omittingEmptySubsequences: false).last.map(String.init) ?? ""
-        return name.isEmpty ? cwd : name
+        NotificationText.folderName(cwd)
     }
 
     /// "proj · main · 终端": folder, branch (left out when there is none), where it runs.
     public static func place(_ s: BridgeSession) -> String {
-        var parts = [folderName(s.cwd)]
-        if let branch = s.branch, !isBlank(branch) { parts.append(branch) }
-        parts.append(source(visibleSource(s)))
-        return parts.joined(separator: " · ")
+        NotificationText.place(s)
     }
 
     /// What the session is doing: the detail line, falling back to the activity, then the state name.

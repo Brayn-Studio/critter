@@ -82,6 +82,20 @@ extension BridgeController: BridgeServices {
         return try? JSONDecoder().decode(JSONValue.self, from: Data(SkinLoader.builtinJSON.utf8))
     }
 
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool {
+        guard registry.setPush(deviceId: deviceId, registration) else { return false }
+        refreshDevices()
+        pushRegistrationChanged(deviceId: deviceId)
+        return true
+    }
+
+    /// A device registered for push, or took its registration back. `refreshDevices()` has
+    /// handed `PushCoordinator` the new list; a snapshot now lets a new registration record
+    /// what is there, so the next change is judged against it.
+    func pushRegistrationChanged(deviceId: String) {
+        changed()
+    }
+
     /// `seq` is a placeholder: `BridgeServer` numbers snapshots per connection.
     func snapshotMessage() -> ServerMessage {
         .snapshot(seq: 0, sentAt: Self.nowMs(), body: buildSnapshot())

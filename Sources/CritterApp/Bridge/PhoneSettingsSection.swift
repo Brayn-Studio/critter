@@ -4,8 +4,9 @@ import CritterCore
 import SwiftUI
 
 /// What the "手机" section of the settings window shows and does (spec §6.6): the paired
-/// phones, the pairing sheet, the status-line hook-up and "重置配对". The bridge itself lives
-/// on its own queue; this only reads what `BridgeController` publishes and asks it to act.
+/// phones, the pairing sheet, the status-line hook-up and "重置配对" -- and, through `push`,
+/// the "iPhone 推送" section below it. The bridge itself lives on its own queue; this only
+/// reads what `BridgeController` publishes and asks it to act.
 @MainActor
 @Observable
 final class PhoneSettingsModel {
@@ -41,6 +42,9 @@ final class PhoneSettingsModel {
     var sheetOpen = false
     var confirmingReset = false
 
+    /// The "iPhone 推送" section's model.
+    let push: PushSettingsModel
+
     @ObservationIgnored private let bridge: BridgeController
     @ObservationIgnored private let paths: CritterPaths
     @ObservationIgnored private var requestToken = 0
@@ -49,6 +53,7 @@ final class PhoneSettingsModel {
     init(bridge: BridgeController, paths: CritterPaths) {
         self.bridge = bridge
         self.paths = paths
+        push = PushSettingsModel(bridge: bridge, paths: paths)
     }
 
     private var hookPath: String { paths.binDir.appendingPathComponent("critter-hook").path }
@@ -58,6 +63,7 @@ final class PhoneSettingsModel {
     func refresh() {
         devices = bridge.devices().sorted { $0.pairedAt < $1.pairedAt }
         codexStatus = bridge.codexControlStatus()
+        push.refresh()
         refreshStatusLine()
     }
 
@@ -241,7 +247,10 @@ struct PhoneSettingsSection: View {
                 LabeledContent {
                     Button("撤销") { phone.revoke(device) }
                 } label: {
-                    Text(device.name)
+                    HStack(spacing: 6) {
+                        Text(device.name)
+                        if device.push != nil { PushTag() }
+                    }
                     Text(PhoneLastSeen.text(lastSeen: device.lastSeen))
                 }
             }
@@ -302,6 +311,19 @@ struct PhoneSettingsSection: View {
         case .otherType: return "已被改成其它类型"
         case nil: return "读不到 ~/.claude/settings.json"
         }
+    }
+}
+
+/// The small "推送" after an iPhone that registered for push.
+private struct PushTag: View {
+    var body: some View {
+        Text("推送")
+            .font(.caption2)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 1)
+            .background(Capsule().fill(.quaternary))
+            .accessibilityLabel("已登记推送")
     }
 }
 

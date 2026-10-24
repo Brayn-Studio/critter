@@ -22,6 +22,8 @@ public struct CritterPaths: Sendable {
     public var answersDir: URL { critterHome.appendingPathComponent("answers") }
     public var inboxDir: URL { critterHome.appendingPathComponent("inbox") }
     public var bridgeDir: URL { critterHome.appendingPathComponent("bridge") }
+    /// The APNs key (`.p8`) and the iPhone push setup: 0700, files 0600, never anywhere else.
+    public var apnsDir: URL { bridgeDir.appendingPathComponent("apns") }
     public var backupDir: URL { critterHome.appendingPathComponent("backup") }
 
     public var claudeSessionsDir: URL { claudeHome.appendingPathComponent("sessions") }

@@ -28,26 +28,19 @@ public struct Question: Equatable, Sendable {
 /// What a request says and asks, read from its `input` (Android `AnswerSheet.kt` and `Alerts.requestTitle`).
 public enum RequestText {
     /// "critter 想 swift test": who is waiting and for what (Android `Alerts.requestTitle`). `what` is the
-    /// request's summary, else its tool's name.
+    /// request's summary, else its tool's name. The words are `NotificationText`'s, the same as in a push.
     public static func title(_ request: BridgePending, session: BridgeSession?) -> String {
-        let name = session?.name ?? "会话"
-        let what = isBlank(request.summary) ? request.toolName : request.summary
-        switch request.kind {
-        case .permission: return what.isEmpty ? "\(name) 想执行一个操作" : "\(name) 想 \(what)"
-        case .question: return what.isEmpty ? "\(name) 有问题要问你" : "\(name) 问：\(what)"
-        case .plan: return "\(name) 的计划等你批准"
-        }
+        NotificationText.title(request, session: session)
     }
 
     /// The first of `command`, `file_path`, `url` that the request has (and is not blank).
     public static func permissionBody(_ input: JSONValue) -> String? {
-        ["command", "file_path", "url"].lazy.compactMap { string(input, $0) }.first { !isBlank($0) }
+        NotificationText.permissionBody(input)
     }
 
     /// Codex approvals accept only a decision; Claude's older requests also accept an optional reason.
     public static func acceptsDenyMessage(_ input: JSONValue) -> Bool {
-        if case .bool(false)? = input["acceptsDenyMessage"] { return false }
-        return true
+        NotificationText.acceptsDenyMessage(input)
     }
 
     public static func planText(_ input: JSONValue) -> String {

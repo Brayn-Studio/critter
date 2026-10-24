@@ -6,6 +6,10 @@ import Testing
 private let home = Endpoint(host: "192.168.1.20", port: 47823)
 private let pin = String(repeating: "ab", count: 32)
 private let credentials = Credentials(deviceId: "d1", token: "t1")
+private let pushRegistration = PushRegistration(
+    token: "aa11", environment: .sandbox, bundleId: "com.braynlabs.critter", key: PushCrypto.makeKey(),
+    notifyDone: true, notifyError: false, activity: ActivityRegistration(enabled: true, startToken: "5a5a")
+)
 
 /// A client wired to a `FakeMac`, with its events and backoff sleeps recorded.
 private struct Rig {
@@ -137,6 +141,121 @@ struct BridgeClientTests {
         #expect(rig.mac.connects.count == 1)
         #expect(rig.mac.openSockets == 0)
         await rig.client.stop()
+    }
+
+    @Test func helloDeniedWithAnUnknownReasonStopsWithItsText() async throws {
+        let rig = Rig()
+        await rig.client.start()
+        _ = try #require(await rig.mac.nextFrame())
+        rig.mac.sendRaw(#"{"reason":"quarantined","type":"denied"}"#)
+        #expect(await rig.events.waitForState(.needsRepair(reason: "连接被电脑拒绝")))
+        await settle()
+        #expect(rig.mac.connects.count == 1)
+        #expect(rig.mac.openSockets == 0)
+        #expect(rig.sleeper.delays.isEmpty)
+        await rig.client.stop()
+    }
+
+    @Test func welcomeVersionIsKept() async throws {
+        let rig = Rig(sleeper: Sleeper(.hold))
+        #expect(await rig.client.macVersion == nil)
+        try await rig.connect()
+        #expect(await rig.client.macVersion == "1.4.0")
+        #expect(rig.events.all.contains(.macVersion("1.4.0")))
+        // Kept after the connection is gone.
+        rig.mac.drop()
+        #expect(await rig.sleeper.waitForDelays(1))
+        #expect(await rig.client.macVersion == "1.4.0")
+        // And replaced by the next welcome.
+        await rig.client.reconnectNow()
+        _ = try #require(await rig.mac.nextFrame())
+        rig.mac.send(.welcome(macName: "Mac", version: "1.5.0"))
+        #expect(await eventually { await rig.client.macVersion == "1.5.0" })
+        #expect(rig.events.all.contains(.macVersion("1.5.0")))
+        await rig.client.stop()
+    }
+
+    @Test func registerPushReturnsStoredOnOk() async throws {
+        let rig = Rig()
+        try await rig.connect()
+        async let reply = rig.client.registerPush(pushRegistration)
+        let frame = try #require(await rig.mac.nextFrame())
+        guard case .push(let id?, let sent) = frame else {
+            Issue.record("not a push: \(frame)")
+            return
+        }
+        #expect(sent == pushRegistration)
+        rig.mac.send(.result(id: id, ok: true, reason: nil, message: nil))
+        #expect(await reply == .stored)
+        await rig.client.stop()
+    }
+
+    @Test func registerPushRejectedCarriesTheMacsWords() async throws {
+        let rig = Rig()
+        try await rig.connect()
+        async let reply = rig.client.registerPush(pushRegistration)
+        let id = try #require(await rig.mac.nextFrame()?.commandId)
+        rig.mac.send(.result(id: id, ok: false, reason: .invalid, message: "推送登记无效"))
+        #expect(await reply == .rejected("推送登记无效"))
+        async let second = rig.client.registerPush(pushRegistration)
+        let secondId = try #require(await rig.mac.nextFrame()?.commandId)
+        rig.mac.send(.result(id: secondId, ok: false, reason: .failed, message: nil))
+        #expect(await second == .rejected(nil))
+        await rig.client.stop()
+    }
+
+    /// An older Mac ignores the frame and never answers. Unlike any other request, that is not a broken
+    /// connection: it stays, it is not made again, and what comes after still arrives.
+    @Test func registerPushWithoutAReplyKeepsTheConnection() async throws {
+        let rig = Rig(requestTimeout: .milliseconds(50))
+        try await rig.connect()
+        async let reply = rig.client.registerPush(pushRegistration)
+        let id = try #require(await rig.mac.nextFrame()?.commandId)
+        #expect(await reply == .noReply)
+        await settle()
+        #expect(rig.mac.connects.count == 1)
+        #expect(rig.mac.openSockets == 1)
+        #expect(rig.events.states == [.connecting, .connected(macName: "Mac")])
+        #expect(rig.sleeper.delays.isEmpty)
+
+        // A late result is ignored, and snapshots still come.
+        rig.mac.send(.result(id: id, ok: true, reason: nil, message: nil))
+        rig.mac.send(.snapshot(seq: 2, sentAt: 5, body: emptySnapshot))
+        #expect(await rig.events.waitFor { $0.contains(.snapshot(seq: 2, sentAt: 5, body: emptySnapshot)) })
+
+        // Other requests are matched as ever.
+        async let seen = rig.client.request(.seen(sessionId: "s1"))
+        let seenId = try #require(await rig.mac.nextFrame()?.commandId)
+        #expect(seenId != id)
+        rig.mac.send(.result(id: seenId, ok: true, reason: nil, message: nil))
+        #expect(await seen == CommandResult(ok: true, reason: nil, message: nil))
+        #expect(rig.mac.connects.count == 1)
+        await rig.client.stop()
+    }
+
+    @Test func registerPushOfflineReturnsOffline() async throws {
+        // Not started: nothing is open.
+        let idle = Rig()
+        #expect(await idle.client.registerPush(pushRegistration) == .offline)
+        #expect(idle.mac.received.isEmpty)
+
+        // Connecting, not welcomed yet: nothing but hello goes out.
+        let rig = Rig()
+        await rig.client.start()
+        _ = try #require(await rig.mac.nextFrame())
+        #expect(await rig.client.registerPush(pushRegistration) == .offline)
+        await settle()
+        #expect(rig.mac.received.count == 1)
+        await rig.client.stop()
+
+        // The connection drops while the registration is on its way.
+        let dropping = Rig()
+        try await dropping.connect()
+        async let reply = dropping.client.registerPush(pushRegistration)
+        _ = try #require(await dropping.mac.nextFrame())
+        dropping.mac.drop()
+        #expect(await reply == .offline)
+        await dropping.client.stop()
     }
 
     @Test func pinMismatchNeedsRepairAndStops() async throws {

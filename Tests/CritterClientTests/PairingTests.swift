@@ -77,6 +77,17 @@ struct PairingTests {
         #expect(await eventually { mac.openSockets == 0 })
     }
 
+    /// A reason from a newer Mac is a refusal this build cannot name; it reads as a version problem, not as
+    /// "nobody tapped allow".
+    @Test func pairingDeniedWithAnUnknownReasonReadsAsAVersionProblem() async throws {
+        let mac = FakeMac()
+        async let result = Pairer(transport: mac).pair(target, deviceName: "iPhone", onAwaitingApproval: {})
+        _ = try #require(await mac.nextFrame())
+        mac.sendRaw(#"{"reason":"quarantined","type":"denied"}"#)
+        #expect(await result == .failed(.protocolMismatch))
+        #expect(await eventually { mac.openSockets == 0 })
+    }
+
     @Test func closeWithoutDeniedIsNoAnswer() async throws {
         let mac = FakeMac()
         async let result = Pairer(transport: mac).pair(target, deviceName: "iPhone", onAwaitingApproval: {})
@@ -133,6 +144,7 @@ struct PairingTests {
         #expect(pairFailure(denied: .rejected, pinMismatch: false, timedOut: false, closedCleanly: false) == .rejected)
         #expect(pairFailure(denied: .protocolMismatch, pinMismatch: false, timedOut: false, closedCleanly: false) == .protocolMismatch)
         #expect(pairFailure(denied: .badToken, pinMismatch: false, timedOut: false, closedCleanly: false) == .protocolMismatch)
+        #expect(pairFailure(denied: .unknown, pinMismatch: false, timedOut: false, closedCleanly: false) == .protocolMismatch)
         // Then the certificate.
         #expect(pairFailure(denied: nil, pinMismatch: true, timedOut: true, closedCleanly: true) == .certMismatch)
         // Then nobody answering.
