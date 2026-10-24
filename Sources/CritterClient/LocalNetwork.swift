@@ -39,8 +39,8 @@ public enum LocalNetworkDenial {
     }
 
     /// A browser that reached `.ready` was let browse: the local network is allowed. Denied, it waits with the policy
-    /// error, and goes on to `.ready` once the user allows (a slow answer to the first-run prompt, or the switch turned
-    /// on in Settings). Pure.
+    /// error, and goes on to `.ready` once the user allows (the switch turned on in Settings; on an iPhone the first-run
+    /// prompt did not show as a refusal at all). Pure.
     public static func isAllowed(_ state: NWBrowser.State) -> Bool {
         if case .ready = state { return true }
         return false

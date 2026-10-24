@@ -14,7 +14,7 @@ struct WaitingPage: View {
     var position: StepPosition?
     /// The request is with the Mac (rather than still reaching it).
     let awaiting: Bool
-    /// Waiting for 本地网络 before reaching the Mac: iOS asks for it, or it is off.
+    /// Waiting for 本地网络 before reaching the Mac: it is off (refused, or turned off in Settings).
     var localNetwork = false
     /// This phone's name, as the Mac shows it.
     let deviceName: String

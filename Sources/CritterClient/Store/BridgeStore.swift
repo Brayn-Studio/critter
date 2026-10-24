@@ -144,8 +144,8 @@ public final class BridgeStore {
     ///   - makeLink: makes the connection for a pairing; it reports its events to the closure it is given.
     ///     Called when the store is created (if paired) and when pairing succeeds; the link is not started.
     ///   - network: tells when the network changed; the store reconnects at once, in the foreground.
-    ///   - localNetworkGate: waited on before a pairing reaches the Mac, while iOS asks for or refuses 本地网络; by
-    ///     default nothing is waited for.
+    ///   - localNetworkGate: waited on before a pairing reaches the Mac, while 本地网络 is refused (on an iPhone the
+    ///     first-run prompt did not show as a refusal: `PairingRetry` covers that one); by default nothing is waited for.
     ///   - backgroundGrace: how long a move to the background waits for answers on their way.
     ///   - now: stamps the snapshots.
     ///   - pushAcks: keeps what the Mac confirmed of the push registration.
