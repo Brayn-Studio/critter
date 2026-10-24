@@ -40,6 +40,11 @@ import Foundation
 ///   shadow shows on the ground under it).
 /// - `-critterFrameLog`: every 10 seconds, "frames <n>" on standard output: how many ticks changed the picture on any
 ///   Critter stage (`FrameLog`). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
+/// - Reduce motion has no flag: it is the app's own switch, `critter.settings.reduceMotion` in the app container's
+///   preferences. From the command line: terminate the app, then `xcrun simctl spawn <device> defaults write
+///   "$(xcrun simctl get_app_container <device> com.braynlabs.critter data)/Library/Preferences/com.braynlabs.critter"
+///   critter.settings.reduceMotion -bool YES` (with just the bundle id it writes another file, which the app never
+///   reads). The system's own setting cannot be changed with `simctl`.
 /// - `-critterSayDraft <text>`: the details sheet's 「发一句」 field starts with this text, through the same limit as
 ///   typing (past 4000 it is cut and the sheet says so). With `-critterAutoSay`, it is sent a second later, as if
 ///   the send button was tapped (the letter flies; `-critterFixtureResult` decides the receipt).

@@ -359,13 +359,16 @@ Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手�
 
 ## iOS（开发中）
 
-iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模拟器里跑，还没有装到真机上。它和安卓版一样连到 Mac 上的 Critter，只是少了很多东西。
+iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模拟器里跑，还没有装到真机上。它和安卓版一样连到 Mac 上的 Critter，外观是同一套像素风格，只是少了一些东西。
 
 现在能做的：
 
 - 配对：扫 Mac 上的二维码、打开 `critter-pair://` 链接，或者从局域网里选一台 Mac 再输入 8 位码，流程和安卓版一样。
-- 看会话：首页有 Mac 的名字和连接状态、5 小时和 7 天两张额度卡，下面是会话列表，等你确认的排在最前。点一行看详情；做完了的会话点开时会告诉 Mac 你看过了。
+- 看会话：首页上半是一片草地，每个会话一只宠物站在上面（等你确认的头顶冒橙色气泡，会话多了放不下的合成一堆）；草地跟着时间换天空，离线时天黑、宠物睡着。下面是 5 小时和 7 天两张额度卡和会话列表，等你确认的排在最前。点一行看详情；做完了的会话点开时会告诉 Mac 你看过了。
 - 回应会话：在详情里给会话发一句话（Codex 会话要电脑那边接通了控制通道才行），或者停止 Codex 当前这一回合；权限请求直接在首页点"拒绝""允许"，提问和计划点"打开回答"，在卡片里回答。
+- 形象：七个内置形象（`Skins/`，和 Mac、安卓是同一份）跟着 Mac 的设置走，也可以在设置里自己挑一个；手机上没有的形象先画小芽，Mac 把清单发来后再换。
+- 看板：充电、横放、静止约 3 秒时自动打开（也可以点首页的"看板"按钮），竖起来或拔电后退出。有宠物模式和专业模式，打开时屏幕调到设定的亮度并保持常亮，离开时还原。「看板提示音」默认关闭。
+- 减少动态效果：系统的或设置里的任一打开，界面过渡改成淡入淡出，宠物停在代表姿势。
 - 只在 App 开着（在前台）的时候连接。退到后台后会等正在送出的回答有了回执再断开；没有推送，也没有后台提醒。
 
 在模拟器里跑（需要 Xcode，最低 iOS 17.2，只支持 iPhone）：
@@ -373,11 +376,16 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模�
 ```sh
 make ios-sim                       # 为模拟器构建，输出在 ios/build
 scripts/dev/ios-sim-live.sh        # 模拟器里的 App 连这台 Mac 上真的 Critter
+scripts/dev/render-mockups.sh      # 把设计稿 mockups 页面渲染成切片，用来和模拟器截图对照
 ```
 
-`scripts/dev/ios-sim-live.sh` 的前提和 `scripts/dev/client-live-check.sh` 一样：Critter 在运行，并且 `defaults write local.critter.pet debugEnabled -bool true`。它会构建并安装 App，用一台临时的 `critter-bridge-client` 设备配对，10 秒后截图到 `ios/build/live/home.png`；再把 App 停掉、不带参数重新打开，5 秒后截图到 `ios/build/live/relaunch.png`（`OUT` 环境变量可以改目录）。两张图都应该显示"已连接"和 Mac 上真实的会话。脚本全程不会对你的会话发"看过了""发一句""停止"，也不会作答；结束时撤销这台临时设备，Mac 设置里的手机列表中不留痕迹。
+`scripts/dev/ios-sim-live.sh` 的前提和 `scripts/dev/client-live-check.sh` 一样：Critter 在运行，并且 `defaults write local.critter.pet debugEnabled -bool true`。它会构建并安装 App，用一台临时的 `critter-bridge-client` 设备配对，10 秒后截图到 `ios/build/live/home.png`；再把 App 停掉、不带参数重新打开，5 秒后截图到 `ios/build/live/relaunch.png`（`OUT` 环境变量可以改目录）。两张图都应该显示"已连接"和 Mac 上真实的会话，穿着 Mac 分配的形象。脚本全程不会对你的会话发"看过了""发一句""停止"，也不会作答；结束时撤销这台临时设备，Mac 设置里的手机列表中不留痕迹。
 
-装到真机、推送通知、实时活动（锁屏和灵动岛）、看板，以及像素风格的外观，都在后面的计划里。
+`scripts/dev/render-mockups.sh [--dark] [输出目录]` 用无头 Chrome 把设计稿页面（`docs/superpowers/specs/2026-10-19-critter-phone-visual-mockups.html`）渲染成 1400×1500 的切片，默认放在 `ios/build/mockups/`，`--dark` 渲染深色版放在 `ios/build/mockups-dark/`，需要装了 Google Chrome 和带 Pillow 的 python3。
+
+模拟器里的 Debug 构建有一批启动参数（`xcrun simctl launch <模拟器> com.braynlabs.critter -critterFixture home-mixed`），用来直接打开某个画面、某个状态：假数据（`-critterFixture`、`-critterFixtureOffline`）、直接打开某张作答卡、详情、设置或看板（`-critterOpen`、`-critterBoard`）、配对的各个状态（`-critterPairing`）、控件画廊（`-critterGallery`）、模拟充电横放（`-critterFakeDock`），以及帧数和看板的日志。参数和每个假数据的含义都写在 `ios/Critter/Debug/DebugLaunch.swift` 的文件注释里；Release 构建不含这些代码和假数据。
+
+装到真机、推送通知、实时活动（锁屏和灵动岛）、悬浮球和首次引导，都在后面的计划里。
 
 ## 调试日志
 
