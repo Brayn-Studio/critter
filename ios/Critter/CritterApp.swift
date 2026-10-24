@@ -53,6 +53,11 @@ struct CritterApp: App {
                 .onChange(of: store.snapshot, initial: true) { _, snapshot in
                     if let snapshot { skins.update(from: snapshot, store: store) }
                 }
+                .onChange(of: store.isLive) {
+                    // Skins are asked for once per connection: a new one asks again (even if its first snapshot is the
+                    // same as the last one), and one that ends forgets what it asked.
+                    skins.fetchIfNeeded(store: store)
+                }
                 .onOpenURL { url in
                     // Not a pairing link (or a broken one): ignored.
                     guard let uri = PairingURI(string: url.absoluteString) else { return }

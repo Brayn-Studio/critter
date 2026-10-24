@@ -26,8 +26,8 @@ final class SkinStore {
     @ObservationIgnored private var pushed: [String: Data] = [:]
     @ObservationIgnored private var forced: String?
     @ObservationIgnored private var clockSkin: String?
-    /// Names asked for and not answered yet: one request per name at a time.
-    @ObservationIgnored private var fetching: Set<String> = []
+    /// The names asked for on this connection: each once per connection (`SkinAsking`).
+    @ObservationIgnored private var asking = SkinAsking()
     @ObservationIgnored private let directory: URL?
 
     /// The order the settings show the skins in (visual design §8.8, Android `SettingsScreen.SKINS`): sprig first, the
@@ -99,19 +99,19 @@ final class SkinStore {
             clockSkin = snapshot.prefs.skin
             rebuild()
         }
-        fetchIfNeeded(names: snapshot.sessions.map(\.skin) + [snapshot.prefs.skin], store: store)
+        fetchIfNeeded(store: store)
     }
 
-    /// Asks the Mac for each of `names` the library does not have (`needsFetch`), one request per name at a time. A
-    /// name that fails (offline, refused, broken) is asked for again with the next snapshot.
-    func fetchIfNeeded(names: [String], store: BridgeStore) {
-        for name in Set(names) where !fetching.contains(name) && library.needsFetch(name) {
-            fetching.insert(name)
+    /// Asks the Mac for each skin the store's snapshot wears that the library does not have (`needsFetch`), once per
+    /// connection (`SkinAsking`): a name that fails (refused, not answered, broken) is asked for again only on the
+    /// next connection. Call it with every snapshot and whenever `isLive` changes (a connection that ends forgets
+    /// what it asked; the next one asks again).
+    func fetchIfNeeded(store: BridgeStore) {
+        let names = asking.toAsk(SkinAsking.names(in: store.snapshot), live: store.isLive, missing: library.needsFetch)
+        for name in names {
             Task { [weak self] in
-                let data = await store.requestSkin(name)
-                guard let self else { return }
-                fetching.remove(name)
-                if let data { put(name, data: data) }
+                guard let data = await store.requestSkin(name) else { return }
+                self?.put(name, data: data)
             }
         }
     }
