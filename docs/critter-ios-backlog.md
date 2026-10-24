@@ -1,24 +1,23 @@
 # Critter iOS 版待办
 
-iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）、计划 2（`2026-10-24-critter-ios-2-critters-board-visual.md`，宠物、看板和像素外观）和计划 3（`2026-10-24-critter-ios-3-mac-push.md`，Mac 端推送）做完时，各轮审查留下、判定放到后面处理的事项。按要落到的计划分组，写后面的计划时逐条认领。计划 2 已经做完的条目（计划 2 一组、前端优化轮里的四条）已经删掉。
+iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）、计划 2（`2026-10-24-critter-ios-2-critters-board-visual.md`，宠物、看板和像素外观）、计划 3（`2026-10-24-critter-ios-3-mac-push.md`，Mac 端推送）和计划 4（`2026-10-24-critter-ios-4-ios-push.md`，手机上的推送、实时活动和首次引导）做完时，各轮审查留下、判定放到后面处理的事项。按要落到的计划分组，写后面的计划时逐条认领。做完的条目已经删掉：计划 2 做完的（计划 2 一组、前端优化轮里的四条），以及计划 4 认领的整组"iOS 推送与扩展计划"（首次引导、设置里的推送和实时活动两组、`CritterActivity` 这个名字、bundle id、Mac 端的联机检查、计划 3 留给它的 Mac 端修复）。
 
-## iOS 推送与扩展计划（App Group）
+## Mac 端（推送）留下的
 
-- **首次引导（欢迎页）**：计划 2 没做（它属于推送计划，spec §14 第 5 步）。
-- **设置里计划 2 没做的行**：提醒和推送、实时活动、电池和保活、"看板被系统拦下"的提示、"保持后台连接"。草图里有，其中有些只属于 Android。草图的「悬浮球」一组 iOS 不做：iOS 不允许 App 画在其他 App 上面，由实时活动代替（spec §8.5）。
-- **真的往 APNs 发一条**（计划 3 只用假的传输层测过）：用户给 `.p8`、在开发者账号里给 App ID 开推送后，从 Mac 设置里"发送测试通知"。同时验证这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理（spec §13.6）：Mac 用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。
-- **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）：push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
-- Mac 端的联机检查（计划 3 推迟到合回 `main` 之后，因为要运行这条线构建的 Critter.app，会替换用户正在用的那个）：用 `critter-bridge-client` 配一台临时设备，`push --token <64 个 0> --done` 后 `~/.critter/bridge/devices.json` 里有这份登记、权限仍是 0600，设置里这台设备后面有"推送"标签；`push --clear` 后登记消失；没有 `.p8` 时设置显示"未配置"，`~/.critter/app.json` 的 `pushReachable` 为 false；`scripts/dev/e2e-phone.sh` 照常通过；最后撤销这台临时设备。
-- App 的 `ActivityAttributes` 类型要叫 `CritterActivity`：Mac 的 push-to-start 写的是 `LiveActivityContent.attributesName`。
-- App 的 bundle id 定下来后，核对 Mac 设置里的默认值 `com.braynlabs.critter`。Mac 只给登记的 `bundleId` 和设置一致的 iPhone 推送（不一致时设置里写"登记了的 iPhone 不是这个 bundle id 的 App"）。
-- 用户划掉实时活动后，Mac 分不清"划掉"和"结束"，有会话时最多每 10 分钟重新启动一次。真机上嫌烦的话，加一个开关，或者只在有会话开始等你确认时才重开。
 - Codex 控制通道在 Mac 重启后才列出的待批请求，晚于"只记下现状"的第一份快照到达，可能被当成新请求推一次。
 - `push` 帧解码失败（比如不认识的 `environment`）时 Mac 不回 `result`，手机会以为 Mac 版本太旧。只在两边版本不一致时出现。
 - `BridgeClient` 的 init 文档还写着每个请求超时都会断开连接，`registerPush` 例外，改掉。
 - 测试 `devicesFileStaysPrivate` 里 `setActivity` 那一步是空操作（登记里没有实时活动那一部分），补上实时活动再测。
-- 计划 3 的最终审查留下、指派给这份计划的 Mac 端修复（写不进 `devices.json` 时无限递归、被拒收的启动要马上写盘、启动规则和协议文档对齐），记在计划 3 的台账里，见计划 4 的 Task 1。
+- 撤销登记（空 token）也会走一遍 `canPush(to:)`：读一次推送配置、写一行日志，可以跳过。`PushCoordinator.swift` 里讲什么时候有定时器的那段注释过时了。
+- 按设计的取舍，真机上觉得不对再改：手机从通知按钮作答的那条连接（最多 20 秒）也算"连着"，这段时间 Mac 不会 push-to-start（`PushFanout` 认为连着的手机自己会启动实时活动）；手机连着时，7.5 小时到期的实时活动替换要等断开以后才做。
+- 计划 4 的联机检查（Task 11）没看 Mac 设置窗口里设备名后面的"推送"标签（不驱动窗口），也没跑 `scripts/dev/e2e-phone.sh`（它会开一个真的 Claude Code 会话）。`scripts/dev/ios-sim-live.sh` 在 Task 11 改成从 App Group 读配对和快照（计划 4 把它们挪过去了），只对着文件格式核对过，没有再联机跑。下次有人在 Mac 前时补上这三样。
 
 ## 装到真机的计划
+
+装之前必须先做的：
+
+- **不让 Xcode 自己去开发者账号里登记。** `ios/Config/Base.xcconfig` 是 `CODE_SIGN_STYLE = Automatic`，旁边是真的 entitlements（`ios/Config/Critter.entitlements` 等：App Group、钥匙串共享组、推送、时效性通知）。在 Xcode 界面里给真机构建时，自动签名会自己去账号里给 App ID 打开这些能力、登记 App Group、生成描述文件。**第一次真机构建之前**先加上 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`（至少写一句醒目的注释），并先问过用户；不加 `-allowProvisioningUpdates`。
+- **描述文件要带齐这些能力**，由用户自己在开发者账号里给 `com.braynlabs.critter` 和两个扩展打开：App Group `group.com.braynlabs.critter`（App、`CritterNotify`、`CritterWidgets` 三个都要）；钥匙串共享组 `<Team ID>.com.braynlabs.critter.shared`（App 和 `CritterNotify`）；推送（`aps-environment = development`，App）；Time Sensitive Notifications（App）。少一样签名就失败。模拟器构建的 entitlements 写在二进制的 `__TEXT,__entitlements` 里，`codesign -d` 显示为空是正常的。
 
 计划 1 留下的：
 
@@ -43,14 +42,22 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - **扫码页。** 相机只在 248 pt 的框里出画，草图是全屏相机加遮罩；真机相机上看了再定。
 - **Mac 上的自定义形象。** 手机没有的形象先画小芽，清单推来后只换这一只：只有单元测试，联机看到的是 Mac 分配的内置形象。
 
-计划 4 留下的，这个模拟器上做不到的（`xcrun simctl push` 把推送当本地通知投递，通知服务扩展从不运行；通知权限只有"临时"授权，通知安静地进通知中心，不出横幅，命令行打不开通知中心）：
+计划 4 留下的，这个模拟器上做不到的（`xcrun simctl push` 把推送当本地通知投递，通知服务扩展从不运行；通知只有"临时"授权，安静地进通知中心，不出横幅；命令行打不开通知中心、锁屏和待机模式，也锁不了屏；`simctl push` 现在连只有 `content-available` 的撤回推送都拒收："Notification has no user visible content"）。spec §13 的几条也在这里：
 
-- **通知服务扩展解密。** 真推送到真机后：标题、副标题、正文换成解密后的文字；类别（按钮）、线程（会话）、等你确认的是"时效性"级别；密钥不对、坏的密文显示"Critter / 有会话需要你"，按钮照样能用；锁屏、首次解锁前（钥匙串读不到）同样不崩。规则只有 `PushOpeningTests` 和 `scripts/dev/push-payloads/make.sh` 生成的载荷过了一遍纯函数；扩展本身没跑过。
-- **通知上的按钮和横幅。** 下拉后的「允许」「拒绝」「拒绝并写理由…」（输入框"拒绝的理由（可不写）"、发送"拒绝并发送理由"），点之前先要解锁；Codex 的只有两个；提问、计划的「打开」。模拟器里只从日志看到系统登记的类别和选项（`-critterNotificationAction` 走的是同一个处理函数，按不了真按钮）。前台：快照里已有的请求只轻震（模拟器没有触感），其它出横幅、有声音；"时效性"在专注模式里的表现。
-- **点按钮作答的整条路。** App 被划掉时点「允许」：系统在后台启动 App、连 Mac、送答案、用同一个通知 id（APNs 的 `apns-collapse-id`）换成"已允许"；Mac 连不上时 20 秒内换成"没送到…"并保留按钮，再点一次能成；后台时间用完时作答被截断（`BackgroundAnswer` 的取消）。点通知正文冷启动 App 时直接打开那张卡片。模拟器里 `simctl push` 没有 collapse id，同一个请求会有好几条通知，App 按推送里的 `r`/`k`/`s` 认通知，真机上要确认按 collapse id 换掉的是同一条。
-- **撤回推送。** `simctl push` 把只有 `content-available` 的推送变成一次不带载荷的 background fetch，`didReceiveRemoteNotification` 只用 DEBUG 的 `-critterWithdrawPush` 走过。真机上看后台推送能不能叫醒 App 删通知；App 被划掉、低电量模式时系统不送后台推送，那时靠回到前台后的对账（模拟器里验证过）。
+- **真的往 APNs 发一条**（spec §13.7）。用户给 `.p8`（他另一个 App 已经在用推送的话，可以用那一把）、在开发者账号里给 App ID 打开推送之后，在 Mac 设置里"发送测试通知"，手机上要看到"Critter 推送测试 / 能看到这条，说明推送通了"。计划 3、4 只用假的传输层和 `critter-bridge-client` 测过；计划 4 的联机检查里，Mac 收到了模拟器真的 sandbox token（80 字节），没有 `.p8` 时回"已登记；这台 Mac 还没配置推送"，手机设置里照原话显示。
+- **代理**（spec §13.6）。这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理：Mac 发推送用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。连不上时 Mac 设置里显示"出错：连不上 APNs"。
+- **机型和系统**（spec §13.5）。用户 iPhone 的型号（有没有灵动岛）和系统版本（至少 iOS 17.2）。没有灵动岛时实时活动只在锁屏上；iOS 17 没有 iOS 18 的广播频道（下面 §13.1 的退路）。
 - **推送环境。** App 一律登记 `sandbox`（`PushSetup.environment`）：Debug 和 Release 都用 `Critter.entitlements` 的 `aps-environment = development` 签名、从 Xcode 装，拿到的都是 sandbox 的 token。以后做发布构建（App Store、TestFlight，签的是 `production`）时，登记的环境要跟着签名改，否则 Mac 推送会被 APNs 拒（`BadDeviceToken`），Mac 删掉登记。真机上确认 Release 构建登记的是 sandbox、推送能到。
-- **时效性通知的能力。** `Critter.entitlements` 加了 `com.apple.developer.usernotifications.time-sensitive`（等你确认的通知要能穿过专注模式，spec §8.7）。装真机用的描述文件必须带上 Time Sensitive Notifications 能力（在开发者账号里给 App ID 打开），否则签名失败；没有这个能力时系统把时效性通知当普通通知。真机上确认通知服务扩展设的 `.timeSensitive` 生效（专注模式里能提醒）；不生效就给 `CritterNotify.entitlements` 也加上同一个键。
+- **通知服务扩展解密，包括锁着的手机。** 真推送到真机后：标题、副标题、正文换成解密后的文字；类别（按钮）、线程（会话）、等你确认的是"时效性"级别；密钥不对、坏的密文显示"Critter / 有会话需要你"，按钮照样能用。手机锁着时扩展也要解得开（钥匙串的可访问性是"首次解锁后"）；开机后还没解锁过时读不到密钥，要显示通用文字，不能崩。规则只有 `PushOpeningTests` 和 `scripts/dev/push-payloads/make.sh` 生成的载荷过了一遍纯函数；扩展本身没跑过。
+- **通知上的按钮和横幅，先面容 ID 再作答。** 下拉后的「允许」「拒绝」「拒绝并写理由…」（输入框"拒绝的理由（可不写）"、发送"拒绝并发送理由"）都要先解锁（`.authenticationRequired`）：锁着时点按钮先弹面容 ID，通过后答案才发出，取消时什么也不发。Codex 的只有两个按钮；提问、计划的「打开」。模拟器里只从日志看到系统登记的类别和选项（`-critterNotificationAction` 走的是同一个处理函数，按不了真按钮）。前台：快照里已有的请求只轻震（模拟器没有触感），其它出横幅、有声音。
+- **点按钮作答的整条路和耗时**（spec §13.3）。App 被划掉时点「允许」：系统在后台启动 App、连 Mac、送答案、用同一个通知 id（APNs 的 `apns-collapse-id`）换成"已允许"。量一下连接、`hello`、`answer`、`result` 一共多久，是不是在系统给的后台时间里（Android 送不到时约 8–9.5 秒给出提示）；后台作答只用存下的地址，20 秒内不做 Bonjour 查找。Mac 连不上时 20 秒内换成"没送到…"并保留按钮，再点一次能成；后台时间用完时（`BackgroundAnswer` 被取消），"没送到…"在 `onExpire` 里先发出去，要确认它在 App 被挂起前真的出现、带着按钮。点通知正文冷启动 App 时直接打开那张卡片。模拟器里 `simctl push` 没有 collapse id，同一个请求会有好几条通知，App 按推送里的 `r`/`k`/`s` 认通知，真机上要确认按 collapse id 换掉的是同一条。
+- **撤回推送。** `didReceiveRemoteNotification` 只用 DEBUG 的 `-critterWithdrawPush` 走过。真机上看后台推送能不能叫醒 App 删通知；App 被划掉、低电量模式时系统不送后台推送，那时靠回到前台后的对账（模拟器里验证过）。
+- **时效性通知和专注模式**（spec §13.4）。`Critter.entitlements` 有 `com.apple.developer.usernotifications.time-sensitive`（等你确认的通知要能穿过专注模式，spec §8.7），没有这个能力时系统把时效性通知当普通通知。真机上打开一个专注模式，看等你确认的通知能不能按用户的设置提醒；扩展设的 `.timeSensitive` 不生效，就给 `CritterNotify.entitlements` 也加上同一个键。做完了、出错是普通级别，专注模式里不该响。
+- **换了 Mac、取消配对之后旧 Mac 的推送。** 旧 Mac 连不上、没确认撤销时，手机换了推送密钥，并在设置里提示去那台 Mac 上撤销：旧 Mac 再推来的通知应该只显示"有会话需要你"（扩展解不开）。模拟器里扩展不运行，看不到。
+- **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）。push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去（模拟器里挂起时拿到的 token，要到下次回前台连上才送到）。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
+- **实时活动的更新预算**（spec §13.2）。Mac 在内容变化时更新（低优先级，最多每 10 秒一次；多了等你确认的会话时马上发、高优先级），安静时每约 12 分钟刷新一次，免得 15 分钟后变灰。看系统会不会把这些压住（压住了就会变灰，或者等你确认的数字来晚了）。
+- **实时活动在真机上的样子和点按。** 锁屏、push-to-start 启动时的提醒横幅、待机模式（StandBy，`isActivityFullscreen` 那套样子）、灵动岛的最小视图、展开视图的"可能不是最新的"、真的点一下进 App：模拟器里只看过 `-critterActivityDemo` 在 App 里画出的锁屏块，和 `simctl io recordVideo` 录到的灵动岛紧凑、展开两种。`.opacity` 在归档渲染里是否生效。
+- **实时活动的几处边角。** 用户划掉实时活动后，Mac 分不清"划掉"和"结束"，有会话时最多每 10 分钟重新启动一次：真机上嫌烦的话，加一个开关，或者只在有会话开始等你确认时才重开。迟到的、属于已结束活动的 token 被忽略，只有纯测试覆盖。活动在 App 订阅它之前就结束时，跟着它的任务可能留着；App 挂起期间结束的活动，`ActivityTokens` 可能一直把它当作登记的那个，直到 `.ended` 到达（可以在 `sync` 时和 `Activity.activities` 对一下）。
 
 ## 前端优化轮
 
@@ -66,6 +73,9 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - 启动画面只有一种颜色加居中的圆形图标（`UILaunchScreen` 做不出草图里分层的天空和草地，要换成 storyboard）。
 - 看板上字体跟随动态字体；像素对齐的看板可能想用固定字号。
 - 从通知打开的作答卡片，如果手机正充电横放，几秒后看板自动打开时会先把首页的卡片关掉（现有规则：看板自动打开前先关首页的卡片和详情，草稿保留）。可以考虑把这张卡片带到看板上（`boardRequestId`）。
+- 从通知打开的会话详情如果开在看板上面，会像点了关闭按钮那样关掉看板（算手动离开，本次充电不再自动打开）；该用一个不算手动的原因。
+- 实时活动只跟 Mac 分配的形象，不跟手机上单独选的形象。
+- 首次引导：配对的手动输入、等待、失败几页没有「跳过」；在已配对的手机上重新走引导，欢迎页的按钮还是「开始配对」；看板那一步在 iPhone 17 Pro 上，第 3 张步骤卡被底部按钮压住一截，要往上滚才看全。
 
 和草图或 Android 不一致、等用户看过再定的（计划 2 时已按"草图为准、Android 为参考"定下，写在提交说明里）：
 
@@ -76,6 +86,8 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - 「看板提示音」的副标题：Android 是"只在看板打开时响；勿扰模式下不响"，iOS 改成"只在看板打开时响；静音模式下不响"。iOS 的 `.ambient` 提示音跟着响铃/静音键，专注模式（勿扰）不会让 App 内的声音静音，照抄会说错话。
 - `BoardTrigger` 在"自动打开"被关掉时不清掉正在计的静止时间，唤醒点会反复 0 ms 重排：iOS 已修（`a89f1d5`，`autoOpen` 加了 `didSet`，加了测试 `switchingOffDuringTheHoldForgetsIt`）；Android 的同样写法还没修，记在 `docs/critter-phone-backlog.md` 第四部分。
 - 没有 Android 对应文案的新句子：已提交卡片的"这个请求已经在这台手机上答过了。"、4000 字的提示"一次最多发 4000 个字，多出来的没有放进输入框。"、看板的"关闭看板"按钮。Android 要不要同样处理，再定。
+- 计划 4：从通知按钮作答后的结果通知，正文是原来那条通知的标题（"已允许"下面一行"clawd 想 运行 swift test"）；Android 只有结果一行。
+- 计划 4 新写的、没有 Android 对应的文案：实时活动一步（第二个按钮是「关掉实时活动」，已经关着时才是「跳过」）、看板一步、设置里推送一组的几行和"离开的 Mac"那一行、配对时的"正在配对"和"手机没能保存这次配对，再配对一次。"。配对一步跳过的说明，iOS 写的是"之后手机不会连上电脑，走完引导后再配对"（Android 是"要用时在首页配对"；iOS 上没配对的手机走完引导就到配对页）。
 
 代码整理（审查时判为次要、没修）：
 
@@ -92,3 +104,8 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - ~~`InlineAnswerState`（首页和专业看板共用的行内作答状态：`status` 的文字和色调、`buttonsEnabled(_:)`）没有单元测试；它是纯逻辑，挪到 `CritterClient` 并补测试，和 `HomeRules` 放在一起。~~ **已完成**（`d30093e`，一起挪进库并补了测试的还有看板提示音的判断 `BoardSoundCue`、设置里形象的排序、开场动画的日期、"发一句"的 4000 字截断）。
 - `PhoneFlock` 和 Mac 的 `FlockModel` 近似重复（约 20 行，会话类型和排序键不同）；`PhoneFlock.merged` 对空数组会崩，和 Kotlin 一样，已在注释里写明。
 - 测试：`everyWayOutRestoresTheScreen` 失败不了（`restore(saved:on:)` 不看出口，签名是计划定的），真正的覆盖是 `-critterBoardLog` 对每种出口的检查；`MotionCues` 的测试比计划松（没有精确的提示前缀、12-2-10-2 的拆分）；`everyStateHasAnIcon` 里的循环是空转；`SkyTests` 没有把天空的随机数和 Kotlin 对上的黄金格；两个测试名里写的是 Pt 而不是 Dp。
+- 计划 4 的推送和配对：一个已被换掉的连接回来的推送登记结果直接返回，不再问一次要不要登记（`BridgeStore`，很窄的竞争；返回前调 `registerPushIfNeeded()`）；离开一台 Mac 时，还在路上的第一份登记不算进 `mayHold`，极少数情况下漏掉换推送密钥；`PushRegistrar.takingBack` 和 `shouldUnregister` 的版本检查、空 token 的写法重复了一遍；设置里"离开的 Mac"那一行没提实时活动的 token，推送密钥没写进去时也照样显示（`PushSetup`）。`BridgeStore` 少两条测试：正在连接、见过 Mac 版本但还没 `.connected` 时什么都不发；20 秒后才到的结果。
+- 计划 4 的存储：写配对记录失败的那条路没有测试（`DiskPairingStorage`）；`removeSecrets(keeping:)` 在 `accounts()` 为 nil 时什么也不说，该记一行日志；`SharedContainer.keychainGroup` 在 Info.plist 少了那个键时静静地是 ""，该像 `url` 那样记 fault；`KeychainPairingStorage.swift` 的文件名和里面的类型（`KeychainSecrets`）对不上。
+- 计划 4 的通知：点按和划掉的系统动作 id 是写死的（DEBUG 里可以断言等于 `UNNotificationDefaultActionIdentifier`）；读推送密钥的代码在 `NotificationService.swift` 和 `PushSetup.swift` 里各有一份；DEBUG 参数里 `@秒` 的解析重复了几处。
+- 计划 4 的实时活动：`ActivitySkins.bundled` 和 `SkinStore.bundled` 重复（少了 `isPlain`）；小组件里打包了用不到的 `silkscreen_bold.ttf`；两条"内容相同"的测试是同义反复；历史草图 HTML 里还是改色之前的颜色。
+- 看板自动打开：判断要不要重新武装时，在 `onTick`/`perform` 之后又读了一次时钟（`BoardAutoOpen.swift`；Android `BoardTriggerService.kt` 同样），每个 tick 该只读一次。
