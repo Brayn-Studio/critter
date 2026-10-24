@@ -1,3 +1,4 @@
+import CritterClient
 import Foundation
 import Observation
 import UIKit
@@ -65,7 +66,17 @@ final class PhoneSettings {
     /// may go on pushing here: its name, for the line in the settings and on the pairing screen until the user dismisses
     /// it (spec §8.8).
     var leftMac: String? {
-        didSet { save(leftMac, Key.leftMac) }
+        didSet {
+            save(leftMac, Key.leftMac)
+            if leftMac == nil { leftMacFingerprint = nil }
+        }
+    }
+
+    /// With `leftMac`: that Mac's certificate fingerprint, to take the line back when the phone is paired with the same
+    /// Mac again (`pairedWith(fingerprint:)`). Nil with a line kept from before it was, which then stays until
+    /// dismissed.
+    var leftMacFingerprint: String? {
+        didSet { save(leftMacFingerprint, Key.leftMacFingerprint) }
     }
 
     /// With `leftMac`: the push key was changed when it was left, so what it pushes can no longer be opened (the
@@ -101,6 +112,7 @@ final class PhoneSettings {
         static let onboardingDone = "critter.settings.onboardingDone"
         static let leftMac = "critter.settings.leftMac"
         static let leftMacKeyChanged = "critter.settings.leftMacKeyChanged"
+        static let leftMacFingerprint = "critter.settings.leftMacFingerprint"
         // The ones the extensions read too: their keys are shared (`SharedSettings`).
         static let liveActivity = SharedSettings.liveActivity
         static let notifyDone = SharedSettings.notifyDone
@@ -118,8 +130,10 @@ final class PhoneSettings {
         boardSounds = defaults.object(forKey: Key.boardSounds) as? Bool ?? false
         openingShownOn = defaults.string(forKey: Key.openingShownOn)
         onboardingDone = defaults.object(forKey: Key.onboardingDone) as? Bool ?? false
-        leftMac = defaults.string(forKey: Key.leftMac).flatMap { $0.isEmpty ? nil : $0 }
+        let left = defaults.string(forKey: Key.leftMac).flatMap { $0.isEmpty ? nil : $0 }
+        leftMac = left
         leftMacKeyChanged = defaults.object(forKey: Key.leftMacKeyChanged) as? Bool ?? false
+        leftMacFingerprint = left == nil ? nil : defaults.string(forKey: Key.leftMacFingerprint)
         liveActivity = shared.object(forKey: Key.liveActivity) as? Bool ?? true
         notifyDone = shared.object(forKey: Key.notifyDone) as? Bool ?? false
         notifyError = shared.object(forKey: Key.notifyError) as? Bool ?? false
@@ -129,6 +143,15 @@ final class PhoneSettings {
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.systemReduceMotion = UIAccessibility.isReduceMotionEnabled }
         }
+    }
+
+    /// The phone is paired with the Mac whose certificate fingerprint is `fingerprint`: if that is the Mac the line
+    /// about a left Mac is about (A, then B, then A again), the line goes (`PushRegistrar.leftMacLineStands`).
+    func pairedWith(fingerprint: String?) {
+        guard leftMac != nil,
+            !PushRegistrar.leftMacLineStands(leftFingerprint: leftMacFingerprint, pairedFingerprint: fingerprint)
+        else { return }
+        leftMac = nil
     }
 
     /// "yyyy-MM-dd" for `date` in the phone's time zone, as `openingShownOn` keeps it.

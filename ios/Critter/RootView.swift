@@ -51,6 +51,8 @@ struct RootView: View {
         }
         .onChange(of: showsHome, initial: true) { _, shown in autoOpen.homeShown(shown) }
         .onChange(of: store.pairing?.deviceId) { _, deviceId in
+            // Paired with the Mac the line about a left Mac is about (A, then B, then A): it goes.
+            settings.pairedWith(fingerprint: store.pairing?.fingerprint)
             // Tapped while pairing again: once the new pairing is made, it is the replaced Mac's, which the new one
             // knows nothing of (the home screen checks the same when it takes it).
             if let target = router.target, !target.belongs(to: deviceId) { router.target = nil }

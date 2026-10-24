@@ -325,6 +325,20 @@ private func confirmed(_ phone: PushRegistrar) -> PushAck {
     #expect(off.registration().token == "aa11")
 }
 
+/// The line about a Mac left untold goes away when the phone is paired with that same Mac again (A, then B, then A):
+/// its certificate fingerprint is kept with the line, and the Mac that is paired now is compared with it. Another Mac,
+/// no pairing, or a line kept without a fingerprint leaves it.
+@Test func theLeftMacLineGoesWhenThatMacIsPairedAgain() {
+    // Left A untold; paired with B: A may still push, the line stands.
+    #expect(PushRegistrar.leftMacLineStands(leftFingerprint: "aa", pairedFingerprint: "bb"))
+    // ... and back to A: it does not.
+    #expect(!PushRegistrar.leftMacLineStands(leftFingerprint: "aa", pairedFingerprint: "aa"))
+    // Unpaired (nothing to compare), or a line kept from before the fingerprint was kept with it.
+    #expect(PushRegistrar.leftMacLineStands(leftFingerprint: "aa", pairedFingerprint: nil))
+    #expect(PushRegistrar.leftMacLineStands(leftFingerprint: nil, pairedFingerprint: "aa"))
+    #expect(PushRegistrar.leftMacLineStands(leftFingerprint: nil, pairedFingerprint: nil))
+}
+
 /// Ledger (plan 4 final review, FI2): the line about a Mac left untold names the Live Activity too (its push-to-start
 /// token outlives any key), and says the notifications show only "有会话需要你" only when the new push key was written.
 @Test func theLeftMacLineSaysOnlyWhatIsTrue() {

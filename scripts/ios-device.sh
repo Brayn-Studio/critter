@@ -9,7 +9,8 @@
 #                                    # none or more than one
 #
 # A profile counts when it is for this team's explicit App ID (`<team>.<bundle id>`), has not expired, and carries
-# every entitlement the target's `ios/Config/*.entitlements` asks for (the App Group by name). Looked for where Xcode
+# every entitlement the target's `ios/Config/*.entitlements` asks for (the App Group by name; push with the value
+# `development`, as the build run from Xcode gets its token from the development APNs). Looked for where Xcode
 # keeps them: ~/Library/Developer/Xcode/UserData/Provisioning Profiles and ~/Library/MobileDevice/Provisioning
 # Profiles (CRITTER_PROFILE_DIRS, colon-separated, instead).
 #
@@ -20,13 +21,25 @@ set -euo pipefail
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 
+# Temporary files, removed however the script ends: an EXIT trap runs also when `set -e` stops it at a failing step
+# (a RETURN trap in the functions would not), and on Ctrl-C or a TERM (turned into an exit).
+DECODED_DIR=""
+DEVICES_FILE=""
+cleanup() {
+  [ -z "$DECODED_DIR" ] || rm -rf "$DECODED_DIR"
+  [ -z "$DEVICES_FILE" ] || rm -f "$DEVICES_FILE"
+}
+trap cleanup EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM HUP
+
 profiles() {
   local team
   team="$(sed -n 's/^DEVELOPMENT_TEAM = //p' "$REPO/ios/Config/Base.xcconfig")"
   local dirs="${CRITTER_PROFILE_DIRS:-$HOME/Library/Developer/Xcode/UserData/Provisioning Profiles:$HOME/Library/MobileDevice/Provisioning Profiles}"
   local decoded
   decoded="$(mktemp -d)"
-  trap 'rm -rf "$decoded"' RETURN
+  DECODED_DIR="$decoded"
   local IFS=:
   local n=0
   for dir in $dirs; do
@@ -64,7 +77,7 @@ def expires(p):
     return date if date.tzinfo else date.replace(tzinfo=datetime.timezone.utc)
 
 def missing(p, wanted):
-    """The entitlements `wanted` asks for that profile `p` does not carry."""
+    """The entitlements `wanted` asks for that profile `p` does not carry (or carries with another value)."""
     have = p.get("Entitlements", {})
     gaps = []
     for key, value in wanted.items():
@@ -72,6 +85,10 @@ def missing(p, wanted):
             gaps.append(key)
         elif key == "com.apple.security.application-groups":
             gaps += [g for g in value if g not in have[key]]
+        elif key == "aps-environment" and have[key] != value:
+            # A profile made for the App Store or TestFlight has "production"; a build run from Xcode on a phone gets
+            # its pushes from the development APNs, and that is what the token would be for.
+            gaps.append(f'aps-environment "{value}" (this profile has "{have[key]}")')
     return gaps
 
 found, problems = [], []
@@ -89,8 +106,8 @@ for variable, bundle, entitlements in targets:
         problems.append(f"{bundle}: no provisioning profile for {app_id}")
     else:
         newest = max(mine, key=expires)
-        why = "expired" if expires(newest) <= now else "missing " + ", ".join(missing(newest, wanted))
-        problems.append(f"{bundle}: profile \"{newest.get('Name', '?')}\" is {why}")
+        why = "is expired" if expires(newest) <= now else "lacks " + ", ".join(missing(newest, wanted))
+        problems.append(f"{bundle}: profile \"{newest.get('Name', '?')}\" {why}")
 if problems:
     print("make ios: the provisioning profiles are not all there:", file=sys.stderr)
     for line in problems:
@@ -108,7 +125,7 @@ iphone() {
     json="$CRITTER_DEVICES_JSON"
   else
     json="$(mktemp)"
-    trap 'rm -f "$json"' RETURN
+    DEVICES_FILE="$json"
     xcrun devicectl list devices --quiet --json-output "$json" >/dev/null
   fi
   python3 -I - "$json" <<'PY'

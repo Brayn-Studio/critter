@@ -138,8 +138,9 @@ final class PushSetup {
     /// - the running Live Activities end: that Mac holds their push tokens, which no key covers, and the Mac paired next
     ///   must not be given the same ones (the app starts a new one in front once connected). The push-to-start token is
     ///   the app's own and stays: only revoking this phone on that Mac takes it away;
-    /// - its name, and whether the new key was written, for the line in the settings and on the pairing screen
-    ///   (`PushRegistrar.leftMacLine`), until the user dismisses it.
+    /// - its name and certificate fingerprint, and whether the new key was written, for the line in the settings and on
+    ///   the pairing screen (`PushRegistrar.leftMacLine`), until the user dismisses it -- or the phone is paired with
+    ///   that same Mac again (`PhoneSettings.pairedWith(fingerprint:)`).
     func macLeftUntold(_ pairing: StoredPairing) {
         let key = PushCrypto.makeKey()
         let status = SharedKeychain.push.write(Data(key.utf8), account: SharedKeychain.pushKeyAccount)
@@ -150,6 +151,7 @@ final class PushSetup {
         }
         LiveActivityManager.shared.endAll(because: "a Mac that may still push here was left")
         settings?.leftMac = Theme.macName(pairing.macName)
+        settings?.leftMacFingerprint = pairing.fingerprint
         settings?.leftMacKeyChanged = status == errSecSuccess
         update()
     }

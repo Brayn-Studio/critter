@@ -75,6 +75,16 @@ public struct PushRegistrar: Equatable, Sendable {
         return "「\(macName)」没收到这台手机撤销推送的消息，可能还会发来\(what)。在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。"
     }
 
+    /// Whether the line about a Mac left untold (`leftMacLine`) still stands once the phone is paired with the Mac whose
+    /// certificate fingerprint is `pairedFingerprint`. Not when that is the Mac left (`leftFingerprint`, kept with the
+    /// line): pairing A, then B, then A again must not go on telling the user to revoke this phone on A -- the new
+    /// pairing registers the same token and A hands the old record's registration over to it. A line kept without its
+    /// fingerprint, or no pairing, stands. Pure.
+    public static func leftMacLineStands(leftFingerprint: String?, pairedFingerprint: String?) -> Bool {
+        guard let leftFingerprint, let pairedFingerprint else { return true }
+        return leftFingerprint != pairedFingerprint
+    }
+
     /// What the unpair dialog says, instead of "不再收到提醒", when the Mac cannot be told now
     /// (`BridgeStore.unpairingLeavesTheMacUntold`).
     public static func unpairingUntoldLine(_ macName: String) -> String {
