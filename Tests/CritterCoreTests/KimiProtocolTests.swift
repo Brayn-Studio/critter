@@ -151,6 +151,28 @@ private func instanceFile(_ dir: URL, _ name: String, pid: Int32, port: Int, sta
     }
 }
 
+@Test func kimiToolCallStartedKeepsWaiting() {
+    let waiting = KimiReducer.reduce(running, frame: frame("event.approval.requested", ["approval_id": "a1", "tool_name": "Bash"]))
+    let next = KimiReducer.reduce(waiting, frame: frame("tool.call.started", ["name": "Read", "args": ["path": "/work/app/a.swift"]]))
+    #expect(next.state == .waiting)
+    #expect(next.detail == waiting.detail)
+    #expect(next.activity == nil)
+}
+
+@Test func kimiResolvingOneRequestKeepsWaitingWhileAnotherIsOpen() {
+    var s = KimiReducer.reduce(running, frame: frame("event.approval.requested", ["approval_id": "a1", "tool_name": "Bash"]))
+    s = KimiReducer.reduce(s, frame: frame("event.approval.requested", ["approval_id": "a2", "tool_name": "Edit"]))
+    s = KimiReducer.reduce(s, frame: frame("event.question.requested", ["question_id": "q1", "questions": []]))
+    s = KimiReducer.reduce(s, frame: frame("event.approval.resolved", ["approval_id": "a1"]))
+    #expect(s.state == .waiting)
+    s = KimiReducer.reduce(s, frame: frame("event.approval.resolved", ["approval_id": "a2"]))
+    #expect(s.state == .waiting)
+    #expect(s.detail == BubbleText.askQuestion(entrypoint: "kimi-desktop"))
+    s = KimiReducer.reduce(s, frame: frame("event.question.dismissed", ["question_id": "q1"]))
+    #expect(s.state == .running)
+    #expect(s.activity == .think)
+}
+
 @Test func kimiTurnEndedByReason() {
     let done = KimiReducer.reduce(running, frame: frame("turn.ended", ["reason": "completed"]))
     #expect(done.state == .done)

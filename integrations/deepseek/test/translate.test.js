@@ -5,6 +5,7 @@ import {
   mapTool,
   isTopLevel,
   askAnswerToDeepSeek,
+  claudeQuestions,
 } from "../lib/translate.js";
 
 const HEADER = "session-2e9f86ca-ea7c-4451-a858-9a29326750c5";
@@ -154,7 +155,7 @@ test("approval asked becomes a PermissionRequest and joins first if needed", () 
   assert.deepEqual(second[0].tool_input, {});
 });
 
-test("approval decided: refusals are PermissionDenied, allowed is silent", () => {
+test("approval decided: refusals are PermissionDenied, allowed resumes the tool", () => {
   for (const outcome of ["rejected", "cancelled", "unavailable"]) {
     const t = newTranslator();
     t.feed(ev("turn/start", { turn: 1 }));
@@ -168,8 +169,45 @@ test("approval decided: refusals are PermissionDenied, allowed is silent", () =>
   const t = newTranslator();
   t.feed(ev("turn/start", { turn: 1 }));
   t.feed(ev("approval/asked", { id: "a1", toolName: "bash", callId: "c1", reason: "r" }));
-  assert.deepEqual(t.feed(ev("approval/decided", { id: "a1", outcome: "allowed-once" })), []);
+  assert.deepEqual(t.feed(ev("approval/decided", { id: "never-asked", outcome: "allowed-once" })), []);
   assert.deepEqual(t.feed(ev("approval/decided", { id: "never-asked", outcome: "rejected" })).map((p) => p.hook_event_name), ["PermissionDenied"]);
+});
+
+test("approval allowed in DeepSeek's panel retracts the request and shows the tool running", () => {
+  const t = newTranslator();
+  t.feed(ev("turn/start", { turn: 1 }));
+  const [pre] = t.feed(toolCall("c1", "bash", { command: "rm x" }));
+  t.feed(ev("approval/asked", { id: "a1", toolName: "bash", callId: "c1", reason: "r" }));
+  const out = t.feed(ev("approval/decided", { id: "a1", outcome: "allowed-once" }));
+  assert.deepEqual(names(out), ["PostToolUse", "PreToolUse"]);
+  assert.equal(out[0].tool_name, pre.tool_name);
+  assert.deepEqual(out[0].tool_input, pre.tool_input);
+  assert.deepEqual(out[1].tool_input, pre.tool_input);
+  assert.equal(out[1].tool_name, pre.tool_name);
+  // Decided twice (or an unknown id) is nothing.
+  assert.deepEqual(t.feed(ev("approval/decided", { id: "a1", outcome: "allowed-once" })), []);
+});
+
+test("a session that never joined emits nothing on turn end or approval decided", () => {
+  const t = newTranslator();
+  assert.deepEqual(t.feed(ev("approval/decided", { id: "a1", outcome: "rejected" })), []);
+  assert.deepEqual(t.feed(ev("approval/decided", { id: "a1", outcome: "allowed-once" })), []);
+  for (const kind of ["completed", "error", "max-tokens", "aborted", "blocked"]) {
+    assert.deepEqual(t.feed(ev("turn/end", { turn: 1, reason: { kind, error: { message: "x" } } })), []);
+  }
+});
+
+test("questions accept multi_select as well as multiSelect", () => {
+  assert.deepEqual(
+    claudeQuestions([
+      { question: "A?", multi_select: true, options: [] },
+      { question: "B?", multiSelect: true, options: [] },
+      { question: "C?", multi_select: "yes", options: [] },
+    ]).map((q) => q.multiSelect),
+    [true, true, false],
+  );
+  const { toolInput } = mapTool("ask_user_question", { questions: [{ question: "A?", multi_select: true }] });
+  assert.equal(toolInput.questions[0].multiSelect, true);
 });
 
 const assistant = (content) => ev("assistant/message", { turn: 1, step: 1, message: { role: "assistant", content } });

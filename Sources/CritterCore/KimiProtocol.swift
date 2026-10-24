@@ -92,9 +92,12 @@ public struct KimiSessionState: Equatable, Sendable {
     public var admitted: Bool
     /// The frame type that last changed this state (`KimiSession` for the initial one).
     public var lastEvent: String
+    /// Approval and question ids still open in the session: it keeps waiting until the last one closes.
+    public var openRequests: Set<String>
 
     public init(id: String, cwd: String, title: String?, state: PetState, detail: String?,
-                activity: WorkActivity?, admitted: Bool, lastEvent: String) {
+                activity: WorkActivity?, admitted: Bool, lastEvent: String, openRequests: Set<String> = []) {
+        self.openRequests = openRequests
         self.id = id
         self.cwd = cwd
         self.title = title
@@ -103,6 +106,14 @@ public struct KimiSessionState: Equatable, Sendable {
         self.activity = activity
         self.admitted = admitted
         self.lastEvent = lastEvent
+    }
+}
+
+extension KimiSessionState {
+    fileprivate func with(openRequests: Set<String>) -> KimiSessionState {
+        var copy = self
+        copy.openRequests = openRequests
+        return copy
     }
 }
 
@@ -136,8 +147,11 @@ public enum KimiReducer {
         switch frame.type {
         case "turn.started":
             guard isMainAgent(payload) else { return s }
+            next.openRequests = []
             think(&next)
         case "tool.call.started":
+            // A call that starts while a request is open does not answer it.
+            guard s.state != .waiting else { return s }
             let name = payload["name"]?.stringValue ?? "Kimi"
             next.admitted = true
             next.state = .running
@@ -147,12 +161,18 @@ public enum KimiReducer {
             guard s.state != .waiting else { return s }
             think(&next)
         case "event.approval.requested":
+            if let id = payload["approval_id"]?.stringValue { next.openRequests.insert(id) }
             wait(&next, ToolSummary.permission(toolName: payload["tool_name"]?.stringValue ?? "Kimi",
                                                input: displayInput(payload["tool_input_display"])))
         case "event.question.requested":
+            if let id = payload["question_id"]?.stringValue { next.openRequests.insert(id) }
             wait(&next, question)
         case "event.approval.resolved", "event.question.answered", "event.question.dismissed":
             guard s.state == .waiting else { return s }
+            for key in ["approval_id", "question_id"] {
+                if let id = payload[key]?.stringValue { next.openRequests.remove(id) }
+            }
+            guard next.openRequests.isEmpty else { return s.with(openRequests: next.openRequests) }
             think(&next)
         case "turn.ended":
             guard isMainAgent(payload) else { return s }
@@ -163,6 +183,7 @@ public enum KimiReducer {
                 settle(&next, .error, message.isEmpty ? failed : BubbleText.errorPrefix + ToolSummary.truncate(message, max: 50))
             default: settle(&next, .idle, nil) // cancelled, blocked
             }
+            next.openRequests = []
         case "event.session.work_changed":
             guard let changed = workChanged(s, payload) else { return s }
             next = changed

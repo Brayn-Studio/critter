@@ -236,11 +236,22 @@ private func respondWithSession(_ transport: FakeKimiTransport, sessions: [[Stri
     #expect(h.store.read(sessionId: "kimi-session_1")?.state == .done)
 }
 
-@Test func kimiLastMessageWithoutTimesIsTheLastItem() {
+@Test func kimiLastMessageWithoutTimesIsTheFirstItem() {
     let items = try! JSONDecoder().decode(JSONValue.self, from: Data(#"""
-    [{"content":[{"type":"text","text":"first"}]},{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"Second one."},{"type":"text","text":"More"}]}]
+    [{"content":[{"type":"thinking","thinking":"x"},{"type":"text","text":"Newest one."},{"type":"text","text":"More"}]},{"content":[{"type":"text","text":"older"}]}]
     """#.utf8))
-    #expect(KimiClient.lastAssistantText(items.ipcArray ?? []) == "Second one.\nMore")
+    // Kimi lists newest first, so without timestamps the first item is the newest.
+    #expect(KimiClient.lastAssistantText(items.ipcArray ?? []) == "Newest one.\nMore")
+}
+
+@Test func kimiClientFetchesBusySessionsBeforeIdleOnes() throws {
+    let h = try Harness()
+    defer { h.finish() }
+    respondWithSession(h.transport)
+    #expect(h.admitted())
+    let paths = h.transport.requests.map(\.path).filter { $0 == sessionsPath || $0 == busySessionsPath }
+    #expect(paths.first == busySessionsPath)
+    #expect(paths.prefix(2).last == sessionsPath)
 }
 
 @Test func kimiClientAnswerApprovalPostsDecision() throws {

@@ -250,3 +250,23 @@ test("apply wires session events, approvals and disposal", async () => {
   assert.equal(JSON.parse(children.at(-1).stdinText).hook_event_name, "SessionEnd");
   children.at(-1).finish();
 });
+
+test("a throwing map is treated like no phone answer", async () => {
+  const req = { signal: new AbortController().signal };
+  const { ask } = fakeAsk(ALLOW, 5);
+  const map = () => { throw new Error("bad stdout"); };
+  const result = await raceApproval({ req, next: async () => { await sleep(30); return "rejected"; }, ask, payload: PAYLOAD, map });
+  assert.equal(result, "rejected");
+});
+
+test("a failed event does not poison later events of the session", async () => {
+  const children = [];
+  let n = 0;
+  const { spawn: good } = fakeSpawn();
+  // The first spawn returns something unusable, which rejects inside the queue.
+  const spawn = (...args) => { n++; if (n === 1) { children.push({ broken: true }); return {}; } const c = good(...args); children.push(c); queueMicrotask(() => c.finish()); return c; };
+  const runner = createRunner({ spawn, hookPath: HOOK, env: {} });
+  await runner.event({ session_id: "deepseek-s1", hook_event_name: "SessionStart" }).catch(() => {});
+  await runner.event({ session_id: "deepseek-s1", hook_event_name: "Stop" });
+  assert.equal(children.length, 2, "the second event still runs");
+});

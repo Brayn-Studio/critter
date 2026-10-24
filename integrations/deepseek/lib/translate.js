@@ -39,7 +39,7 @@ function claudeQuestions(questions) {
   return questions.filter(isObject).map((q) => ({
     question: String(q.question ?? ""),
     header: String(q.header ?? ""),
-    multiSelect: q.multiSelect === true,
+    multiSelect: q.multiSelect === true || q.multi_select === true,
     options: (Array.isArray(q.options) ? q.options : []).filter(isObject).map((o) => ({
       label: String(o.label ?? ""),
       description: String(o.description ?? ""),
@@ -150,15 +150,23 @@ export class SessionTranslator {
       case "approval/decided": {
         const call = this.approvals.get(data.id);
         this.approvals.delete(data.id);
-        if (!REFUSED.has(data.outcome)) return [];
-        const { toolName, toolInput } = call ?? { toolName: "", toolInput: {} };
-        return [this.#payload("PermissionDenied", { tool_name: toolName, tool_input: toolInput })];
+        if (!this.joined) return []; // a restored session never becomes a pet through its history
+        if (REFUSED.has(data.outcome)) {
+          const { toolName, toolInput } = call ?? { toolName: "", toolInput: {} };
+          return [this.#payload("PermissionDenied", { tool_name: toolName, tool_input: toolInput })];
+        }
+        if (!call || typeof data.outcome !== "string" || !data.outcome.startsWith("allowed")) return [];
+        // Allowed in DeepSeek's own panel: the PostToolUse retracts the phone's pending request
+        // (critter-hook matches it by tool name and input), the PreToolUse shows the tool running.
+        const input = { tool_name: call.toolName, tool_input: call.toolInput };
+        return [this.#payload("PostToolUse", input), this.#payload("PreToolUse", input)];
       }
       case "turn/end": {
         const text = this.turnLastText;
         this.turnLastText = undefined;
         this.callMap.clear();
         this.approvals.clear();
+        if (!this.joined) return [];
         const reason = data.reason ?? {};
         switch (reason.kind) {
           case "completed":

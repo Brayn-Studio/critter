@@ -62,8 +62,10 @@ export function createRunner({ spawn = nodeSpawn, hookPath, env = {}, eventTimeo
     event(payload) {
       const sid = String(payload?.session_id ?? "");
       const next = (tails.get(sid) ?? Promise.resolve()).then(() => run("event", payload, { timeoutMs: eventTimeoutMs }));
-      tails.set(sid, next);
-      next.then(() => { if (tails.get(sid) === next) tails.delete(sid); });
+      // The queue's tail never rejects, so one failure cannot poison the session's later events.
+      const tail = next.then(() => {}, () => {});
+      tails.set(sid, tail);
+      tail.then(() => { if (tails.get(sid) === tail) tails.delete(sid); });
       return next.then(() => {});
     },
     ask(payload, signal) {
@@ -100,7 +102,8 @@ export async function raceApproval({ req, next, ask, payload, map }) {
   try {
     phone = Promise.resolve(ask(payload, askAbort.signal)).then(
       (stdout) => {
-        const outcome = map(stdout);
+        let outcome = null;
+        try { outcome = map(stdout); } catch {} // an unreadable answer is no answer: keep waiting for the UI
         return outcome === null || outcome === undefined ? new Promise(() => {}) : { from: "phone", outcome };
       },
       () => new Promise(() => {}),

@@ -424,10 +424,12 @@ public final class KimiClient: @unchecked Sendable {
         guard connected else { return }
         if listing { listAgain = true; return }
         listing = true
-        get(Self.sessionsPath(busy: false)) { [self] idle in
-            get(Self.sessionsPath(busy: true)) { [self] busy in
+        // Busy first: a session that finishes between the two requests then shows on the idle page
+        // too, and the later (idle) page wins.
+        get(Self.sessionsPath(busy: true)) { [self] busy in
+            get(Self.sessionsPath(busy: false)) { [self] idle in
                 listing = false
-                let pages = [idle, busy].map { $0?["items"]?.ipcArray }
+                let pages = [busy, idle].map { $0?["items"]?.ipcArray }
                 // The same session on both pages (it changed in between): the later page wins.
                 var items: [String: JSONValue] = [:]
                 var order: [String] = []
@@ -511,10 +513,10 @@ public final class KimiClient: @unchecked Sendable {
         }
     }
 
-    /// The text parts of the newest message: the greatest `created_at` where there is one, else the last.
+    /// The text parts of the newest message: the greatest `created_at` where there is one, else the first (Kimi lists newest first).
     static func lastAssistantText(_ items: [JSONValue]) -> String? {
         let timed = items.compactMap { item in time(item["created_at"]).map { (item, $0) } }
-        guard let newest = timed.max(by: { $0.1 < $1.1 })?.0 ?? items.last else { return nil }
+        guard let newest = timed.max(by: { $0.1 < $1.1 })?.0 ?? items.first else { return nil }
         let parts = (newest["content"]?.ipcArray ?? []).filter { $0["type"]?.stringValue == "text" }.compactMap { $0["text"]?.stringValue }
         return parts.isEmpty ? nil : parts.joined(separator: "\n")
     }

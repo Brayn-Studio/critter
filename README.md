@@ -146,7 +146,7 @@ Codex 会话的气泡会保留最新一条公开进度文字，例如“测试�
 
 ### Kimi Code 接入
 
-不用装任何东西，也不用改 Kimi 的设置。Critter 运行时会找本机正在运行的 Kimi Code（读 `~/.kimi-code/server/instances/` 里的实例文件），用 `~/.kimi-code/server.token` 连上它的本地服务，从事件流里读每个会话的状态。Kimi Code 后启动、重启或换了端口，Critter 会在几秒内自己重连；退出 Kimi Code 后，它的宠物会离开。标签是 `Kimi · Desktop`。
+不用装任何东西，也不用改 Kimi 的设置。Critter 运行时会找本机正在运行的 Kimi Code（读 `~/.kimi-code/server/instances/` 里的实例文件），用 `~/.kimi-code/server.token` 连上它的本地服务，从事件流里读每个会话的状态。Kimi Code 后启动、重启或换了端口，Critter 会自己重连：Critter 启动时如果 `~/.kimi-code` 还不存在，最多约 30 秒（重试间隔逐步拉长到 30 秒）内会发现；目录已存在时几秒内就会连上。如果同时运行了多个 Kimi 服务（比如桌面版和命令行版），Critter 跟随最近启动的那一个。退出 Kimi Code 后，它的宠物会离开。标签是 `Kimi · Desktop`。
 
 - 一个会话开始干活（或者正在等你确认）时才出现宠物；只是打开、恢复或历史里的会话不会出现。会话被归档或删除后宠物离开。
 - 运行中按工具换动作（`Bash` 跑命令、`Read`/`Grep`/`Glob`/`FetchURL` 读文件、`Agent` 抛种子、其它敲笔记本）；在等审批或回答提问时显示"等你确认"；做完了显示最后一条回复的第一句；出错显示错误信息（订阅不可用时 Kimi 返回 403，也会显示成出错）。
