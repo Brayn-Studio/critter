@@ -174,7 +174,8 @@ struct ActivityLockView: View {
     }
 }
 
-/// A small patch of meadow, stepped corners, with the pile standing on its grass: `cell` points a cell.
+/// A small patch of meadow, stepped corners, with the pile standing on its grass: about `cell` points a cell -- a whole
+/// number of pixels, so that the picture is shown at the size it was drawn and every cell is alike.
 struct ActivityPatch: View {
     let state: LiveActivityContent
     let look: ActivityLook
@@ -183,23 +184,24 @@ struct ActivityPatch: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        let width = CGFloat(ActivityPictures.pileColumns) * cell
-        let height = CGFloat(ActivityPictures.pileRows) * cell
+        let pixels = ActivityPictures.cellPixels(points: cell, scale: displayScale)
+        let unit = CGFloat(pixels) / displayScale
+        let width = CGFloat(ActivityPictures.pileColumns) * unit
+        let height = CGFloat(ActivityPictures.pileRows) * unit
         // The feet stand a point into the grass (as the app's grass tiles): the picture's ground is a cell above its
-        // bottom edge.
-        let grass = (cell * 7 / 3).rounded()
-        let lift = max(0, grass - 1 - cell)
+        // bottom edge. Whole pixels throughout.
+        let grass = onPixels(unit * 7 / 3)
+        let lift = max(0, onPixels(grass - 1 - unit))
         ZStack(alignment: .bottom) {
             VStack(spacing: 0) {
                 ForEach(Array(look.sky.enumerated()), id: \.offset) { _, band in band }
             }
             VStack(spacing: 0) {
-                look.grassTop.frame(height: (grass * 2 / 7).rounded())
-                look.grass.frame(height: grass - (grass * 2 / 7).rounded())
+                look.grassTop.frame(height: onPixels(grass * 2 / 7))
+                look.grass.frame(height: grass - onPixels(grass * 2 / 7))
             }
             if let image = ActivityPictures.pile(
-                lead: state.lead, back: state.back,
-                cellPixels: ActivityPictures.cellPixels(points: cell, scale: displayScale), scale: displayScale,
+                lead: state.lead, back: state.back, cellPixels: pixels, scale: displayScale,
                 dimLead: look.dimsLead(state.lead?.state), grey: look.grey
             ) {
                 Image(uiImage: image)
@@ -209,14 +211,19 @@ struct ActivityPatch: View {
                     .padding(.bottom, lift)
             }
         }
-        .frame(width: width + 2 * cell, height: height + lift + cell)
-        .clipShape(ActivityPixelShape(step: max(2, cell)))
+        .frame(width: width + 2 * unit, height: height + lift + unit)
+        .clipShape(ActivityPixelShape(step: max(2, onPixels(unit))))
         .accessibilityHidden(true)
+    }
+
+    /// `points` on the pixel grid.
+    private func onPixels(_ points: CGFloat) -> CGFloat {
+        (points * displayScale).rounded() / displayScale
     }
 }
 
-/// One Critter alone (the Dynamic Island's lead), `cell` points a cell, `ActivityPictures.loneCells` square; `grey` when
-/// stale.
+/// One Critter alone (the Dynamic Island's lead), about `cell` points a cell (a whole number of pixels, as the patch's),
+/// `ActivityPictures.loneCells` square; `grey` when stale.
 struct ActivityLone: View {
     let badge: PetBadge?
     let cell: CGFloat
@@ -226,12 +233,10 @@ struct ActivityLone: View {
     @Environment(\.displayScale) private var displayScale
 
     var body: some View {
-        let side = CGFloat(ActivityPictures.loneCells) * cell
+        let pixels = ActivityPictures.cellPixels(points: cell, scale: displayScale)
+        let side = CGFloat(ActivityPictures.loneCells * pixels) / displayScale
         Group {
-            if let image = ActivityPictures.lone(
-                badge, cellPixels: ActivityPictures.cellPixels(points: cell, scale: displayScale), scale: displayScale,
-                dim: dim, grey: grey
-            ) {
+            if let image = ActivityPictures.lone(badge, cellPixels: pixels, scale: displayScale, dim: dim, grey: grey) {
                 Image(uiImage: image)
                     .interpolation(.none)
                     .resizable()
