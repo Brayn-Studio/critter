@@ -10,6 +10,9 @@ import Foundation
 ///   storage and a fake link: paired with "Fixture Mac", and the link sends `connected` and this snapshot as soon as
 ///   it starts. The fixtures are written as of `fixtureNow` and moved to the launch time, so ages, quota resets and
 ///   expiries read as written.
+/// - `-critterFixtureOffline`: with `-critterFixture`, the phone is offline: the fixture is the snapshot cached five
+///   minutes ago, and the fake link never connects (it says it is offline and sends nothing), as when the Mac is
+///   out of reach (`offline-idle`, the home screen's offline look).
 /// - `-critterFixtureResult ok|resolved|expired|failed`: the fake link's reply to every request (default `ok`).
 /// - `-critterOpen answer:<requestId>|detail:<sessionId>|settings`: opens that sheet once launched.
 /// - `-critterAutoSubmit allow|approve|first-option`: one second after an answer card is up, does what its primary
@@ -56,6 +59,7 @@ struct DebugLaunch {
 
     var fixture: String?
     var fixtureResult = CommandResult(ok: true, reason: nil, message: nil)
+    var fixtureOffline = false
     var open: Open?
     var autoSubmit: AutoSubmit?
     var autoPick: AutoPick?
@@ -86,6 +90,7 @@ struct DebugLaunch {
             return arguments[i + 1]
         }
         fixture = value("critterFixture")
+        fixtureOffline = arguments.contains("-critterFixtureOffline")
         switch value("critterFixtureResult") {
         case "resolved": fixtureResult = CommandResult(ok: false, reason: .resolved, message: "已在电脑上处理")
         case "expired": fixtureResult = CommandResult(ok: false, reason: .expired, message: "这个请求已经过期了")
@@ -131,9 +136,13 @@ struct DebugLaunch {
         let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
         let snapshot = Self.moved(body, by: now - Self.fixtureNow)
         let result = fixtureResult
+        let offline = fixtureOffline
+        let cached = offline ? CachedSnapshot(body: snapshot, receivedAt: Date(timeIntervalSinceNow: -300)) : nil
         return BridgeStore(
-            storage: FixtureStorage(),
-            makeLink: { _, onEvent in FixtureLink(snapshot: snapshot, result: result, onEvent: onEvent) },
+            storage: FixtureStorage(cached: cached),
+            makeLink: { _, onEvent in
+                FixtureLink(snapshot: snapshot, result: result, offline: offline, onEvent: onEvent)
+            },
             pairer: Pairer(transport: URLSessionTransport()),
             background: UIKitBackgroundRunner()
         )
@@ -163,8 +172,10 @@ struct DebugLaunch {
     }
 }
 
-/// Paired with "Fixture Mac" for good: saves nothing, so every launch starts the same.
+/// Paired with "Fixture Mac" for good: saves nothing, so every launch starts the same, from `cached` if there is one.
 private struct FixtureStorage: PairingStorage {
+    let cached: CachedSnapshot?
+
     func load() -> (StoredPairing, Credentials)? {
         let pairing = StoredPairing(
             endpoint: Endpoint(host: "192.168.1.20", port: BridgeProtocol.defaultPort),
@@ -176,25 +187,34 @@ private struct FixtureStorage: PairingStorage {
     func save(_ pairing: StoredPairing, token: String) {}
     func updateEndpoint(_ endpoint: Endpoint) {}
     func clear() {}
-    func loadSnapshot() -> CachedSnapshot? { nil }
+    func loadSnapshot() -> CachedSnapshot? { cached }
     func saveSnapshot(_ snapshot: CachedSnapshot) {}
 }
 
 /// Connects at once and sends the fixture; answers every request with the same result after a moment. A request that
-/// is answered (`ok`) leaves the snapshot, as it does on the Mac: its session goes on running.
+/// is answered (`ok`) leaves the snapshot, as it does on the Mac: its session goes on running. `offline`, it never
+/// connects: offline since five minutes ago, retrying.
 private actor FixtureLink: BridgeLink {
     private var snapshot: SnapshotBody
     private let result: CommandResult
+    private let offline: Bool
     private let onEvent: @Sendable (BridgeEvent) -> Void
     private var seq = 0
 
-    init(snapshot: SnapshotBody, result: CommandResult, onEvent: @escaping @Sendable (BridgeEvent) -> Void) {
+    init(
+        snapshot: SnapshotBody, result: CommandResult, offline: Bool, onEvent: @escaping @Sendable (BridgeEvent) -> Void
+    ) {
         self.snapshot = snapshot
         self.result = result
+        self.offline = offline
         self.onEvent = onEvent
     }
 
     func start() {
+        if offline {
+            onEvent(.state(.offline(retryIn: .seconds(30), since: Date(timeIntervalSinceNow: -300))))
+            return
+        }
         onEvent(.state(.connected(macName: DebugLaunch.fixtureMacName)))
         sendSnapshot()
     }

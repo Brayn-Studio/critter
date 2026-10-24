@@ -16,6 +16,9 @@ struct AnswerSheet: View {
     let store: BridgeStore
     /// The drafts the home screen keeps: the rows' buttons and this card answer a request on the same one.
     let drafts: AnswerDrafts
+    /// What became of the home card's 「拒绝」「允许」 for this request: while that answer is on its way the card says
+    /// so and its buttons wait; once it landed the card says it was sent from here, not that the Mac handled it.
+    var inline: InlineAnswerState = .idle
 
     @Environment(\.dismiss) private var dismiss
     /// The request as it was the last time a live snapshot had it: whether the card ever saw it, and what to show
@@ -43,10 +46,11 @@ struct AnswerSheet: View {
         }
     }
 
-    init(requestId: String, store: BridgeStore, drafts: AnswerDrafts) {
+    init(requestId: String, store: BridgeStore, drafts: AnswerDrafts, inline: InlineAnswerState = .idle) {
         self.requestId = requestId
         self.store = store
         self.drafts = drafts
+        self.inline = inline
         // A permission request is short, and so is what a request that is gone says; a question or a plan wants
         // the room.
         let kind = store.snapshot?.pending.first { $0.requestId == requestId }?.kind
@@ -98,11 +102,30 @@ struct AnswerSheet: View {
             #endif
     }
 
+    /// The home card's answer is on its way.
+    private var inlineSending: Bool {
+        inline == .sending
+    }
+
+    /// What the card says once the home card's answer has landed or the request closed under it.
+    private var inlineClosing: String? {
+        switch inline {
+        case .sent: "已提交"
+        case .closed(let text): text
+        case .idle, .sending, .failed: nil
+        }
+    }
+
+    /// Why the home card's answer did not get through: the card's buttons work again.
+    private var inlineFailure: String? {
+        if case .failed(let text) = inline { text } else { nil }
+    }
+
     /// When the card closes by itself, counted from when what it shows is settled.
     private var autoClose: Duration? {
-        if closing != nil { return .seconds(2) }
+        if closing != nil || inlineClosing != nil { return .seconds(2) }
         if let sent { return sent.label == nil ? .zero : .milliseconds(900) }
-        if busy { return nil }
+        if busy || inlineSending { return nil }
         switch cardState {
         case .open: return nil
         case .handledElsewhere: return .seconds(2)
@@ -117,15 +140,15 @@ struct AnswerSheet: View {
     /// built in one place, so what is chosen or typed in it survives the switch between these.
     private var shownRequest: Seen? {
         if let sent { return sent.seen }
-        if busy, let seen { return seen }
+        if busy || inlineSending, let seen { return seen }
         if case .open(let request) = cardState { return Seen(request: request, session: session(of: request)) }
         return nil
     }
 
     @ViewBuilder
     private var content: some View {
-        if let closing {
-            ClosingCard(text: closing, done: closing == Theme.handledElsewhere)
+        if let closing = closing ?? inlineClosing {
+            ClosingCard(text: closing, done: closing == Theme.handledElsewhere || closing == "已提交")
         } else if let shown = shownRequest {
             form(shown, doneLabel: sent?.label)
         } else if case .handledElsewhere = cardState {
@@ -160,7 +183,8 @@ struct AnswerSheet: View {
         let request = shown.request
         let draft = drafts.draft(for: request)
         let answering = sent == nil
-        let enabled = store.canAct && !busy && answering
+        let enabled = store.canAct && !busy && !inlineSending && answering
+        let failure = failure ?? inlineFailure
         return VStack(alignment: .leading, spacing: 12) {
             VStack(alignment: .leading, spacing: 3) {
                 Text(verbatim: RequestText.title(request, session: shown.session))
@@ -177,6 +201,11 @@ struct AnswerSheet: View {
                 Text("未连接，连上后才能作答")
                     .font(.footnote.weight(.bold))
                     .foregroundStyle(Color(.systemRed))
+            }
+            if inlineSending {
+                Text("正在提交…")
+                    .font(.footnote.weight(.bold))
+                    .foregroundStyle(.secondary)
             }
             switch request.kind {
             case .permission:

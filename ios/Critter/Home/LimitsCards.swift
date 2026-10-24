@@ -2,77 +2,66 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// The two quota windows side by side, and how old the numbers are once they are not fresh.
+/// Claude Code's two quota windows side by side (Android `Limits`, the mockups' `.limits`), and how old they are
+/// once the Mac has not refreshed them for a while.
 struct LimitsCards: View {
     let limits: BridgeLimits?
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack(spacing: 12) {
-                LimitCard(name: "5 小时", window: limits?.fiveHour, now: now)
-                LimitCard(name: "7 天", window: limits?.sevenDay, now: now)
+        VStack(alignment: .leading, spacing: 0) {
+            Text("Claude Code 额度")
+                .font(.nunito(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.ink2)
+                .padding(.leading, 4)
+                .padding(.bottom, 6)
+            HStack(alignment: .top, spacing: 10) {
+                LimitCard(title: "5 小时额度", window: limits?.fiveHour, now: now)
+                LimitCard(title: "7 天额度", window: limits?.sevenDay, now: now)
             }
             if let limits, let age = LimitsText.staleness(updatedAt: limits.updatedAt, now: now) {
                 Text(verbatim: "额度更新于 \(age)")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.nunito(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.ink2)
                     .padding(.leading, 4)
+                    .padding(.top, 6)
             }
         }
     }
 }
 
+/// One window: its name, the share used in pixel digits, a meter of ten cells and when it resets.
 private struct LimitCard: View {
-    let name: String
+    let title: String
     let window: RateWindow?
     let now: Date
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .firstTextBaseline) {
-                Text(verbatim: name)
-                    .font(.subheadline.weight(.semibold))
-                    .foregroundStyle(.secondary)
-                Spacer(minLength: 4)
-                Text(verbatim: LimitsText.percent(window))
-                    .font(.title2.weight(.bold))
-                    .monospacedDigit()
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(verbatim: title)
+                    .font(.nunito(size: 12, weight: .heavy))
+                    .foregroundStyle(Theme.ink2)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                Text.percent(LimitsText.percent(window), digits: .silkscreen(size: 22), signSize: 17)
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .fixedSize()
             }
-            UsageBar(percent: window?.usedPercentage ?? 0, height: 8)
-            Text(verbatim: LimitsText.resets(window, now: now, calendar: .current))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+            SegmentMeter(fraction: window.map { $0.usedPercentage / 100 }, segments: 10)
+                .padding(.top, 8)
+            Text(verbatim: LimitsText.resets(window, now: now, calendar: .autoupdatingCurrent))
+                .font(.nunito(size: 11.5, weight: .semibold))
+                .foregroundStyle(Theme.ink2)
+                .lineLimit(1)
+                .padding(.top, 6)
         }
-        .padding(14)
+        .padding(.horizontal, 13)
+        .padding(.top, 11)
+        .padding(.bottom, 14)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemGroupedBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .pixelSurface(fill: Theme.surface, lip: Theme.shade, step: 4, lipHeight: 4)
         .accessibilityElement(children: .combine)
-    }
-}
-
-/// A used-share bar: green below 60 %, yellow to 85 %, red above.
-struct UsageBar: View {
-    /// 0...100; anything else is held to that.
-    let percent: Double
-    var height: CGFloat = 6
-
-    var body: some View {
-        let share = percent.isNaN ? 0 : min(max(percent, 0), 100) / 100
-        Capsule()
-            .fill(Color(.tertiarySystemFill))
-            .frame(height: height)
-            .overlay(alignment: .leading) {
-                GeometryReader { proxy in
-                    Capsule()
-                        .fill(tint)
-                        .frame(width: proxy.size.width * share)
-                }
-            }
-            .accessibilityHidden(true)
-    }
-
-    private var tint: Color {
-        percent < 60 ? .green : percent < 85 ? .yellow : .red
     }
 }

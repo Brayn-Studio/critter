@@ -16,6 +16,11 @@ struct RowRequest: Equatable {
     /// Only a lone permission request is answered in place; anything else opens the card.
     var isInline: Bool { more == 0 && request.kind == .permission }
 
+    /// The same as the board's `CardRequest`, for the rules they share (`HomeRules.inlineAnswer`).
+    var card: CardRequest {
+        CardRequest(request: request, what: what, detail: command, more: more)
+    }
+
     /// Every session's row request, by session id.
     static func all(in body: SnapshotBody?) -> [String: RowRequest] {
         guard let body else { return [:] }

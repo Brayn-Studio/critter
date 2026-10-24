@@ -1,0 +1,95 @@
+{
+  "sessions": [
+    {
+      "id": "s-c4",
+      "name": "critter-4c",
+      "source": "terminal",
+      "state": "idle",
+      "cwd": "~/CODE/critter",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 41,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "sprig",
+      "eventTime": 1759999600000,
+      "startedAt": 1759996400000,
+      "tracked": true
+    },
+    {
+      "id": "s-b8",
+      "name": "robocup-b8",
+      "source": "vscode",
+      "state": "idle",
+      "cwd": "~/CODE/demo-avoid",
+      "branch": "feat/avoid-path",
+      "model": "Sonnet 5.5",
+      "context": {
+        "usedPercent": 32,
+        "windowSize": 200000,
+        "estimated": true
+      },
+      "skin": "mochi",
+      "eventTime": 1759999500000,
+      "startedAt": 1759992800000,
+      "tracked": true
+    },
+    {
+      "id": "s-e3",
+      "name": "infra-e3",
+      "source": "terminal",
+      "state": "idle",
+      "cwd": "~/CODE/infra",
+      "branch": "fix/dns-cache",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 58,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "bristle",
+      "eventTime": 1759999400000,
+      "startedAt": 1759994600000,
+      "tracked": true
+    },
+    {
+      "id": "s-b21",
+      "name": "blog-21",
+      "source": "desktop",
+      "state": "idle",
+      "cwd": "~/CODE/blog",
+      "branch": "draft/autumn",
+      "model": "Sonnet 5.5",
+      "context": {
+        "usedPercent": 18,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "peep",
+      "eventTime": 1759999300000,
+      "startedAt": 1759991000000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": {
+      "usedPercentage": 11,
+      "resetsAt": 1760018000000
+    },
+    "sevenDay": {
+      "usedPercentage": 62,
+      "resetsAt": 1760345600000
+    },
+    "updatedAt": 1759999940000
+  },
+  "pending": [],
+  "prefs": {
+    "skin": "sprig",
+    "randomSkins": false,
+    "idleDim": 0.6,
+    "mergeThreshold": 5,
+    "soundTheme": "pixel"
+  }
+}

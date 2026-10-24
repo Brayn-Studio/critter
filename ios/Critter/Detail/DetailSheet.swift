@@ -69,7 +69,7 @@ struct DetailSheet: View {
                         .font(.title2.bold())
                         .lineLimit(1)
                     Spacer(minLength: 4)
-                    StateChip(state: session.state)
+                    StateTag(state: session.state)
                 }
                 Text(verbatim: SessionText.doing(session))
                     .font(.subheadline)
@@ -137,7 +137,7 @@ struct DetailSheet: View {
                                 .font(.footnote.weight(.bold))
                                 .monospacedDigit()
                         }
-                        UsageBar(percent: context.usedPercent, height: 8)
+                        SegmentMeter(fraction: context.usedPercent / 100, segments: 24)
                     }
                     .accessibilityElement(children: .combine)
                     .gridCellColumns(2)
