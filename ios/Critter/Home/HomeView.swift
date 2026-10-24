@@ -79,14 +79,12 @@ struct HomeView: View {
             .navigationDestination(isPresented: $showSettings) {
                 SettingsView(store: store, onPairAgain: onPairAgain)
             }
-            .sheet(item: answerTarget) { target in
-                AnswerSheet(
-                    requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle
-                )
-            }
         }
         .sheet(item: detailTarget) { target in
             DetailSheet(sessionId: target.id, store: store)
+        }
+        .sheetShell(item: answerTarget) { target in
+            AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
         }
         .fullScreenCover(isPresented: $showBoard) {
             BoardPlaceholder { showBoard = false }

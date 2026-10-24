@@ -2,8 +2,9 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// A permission request: the command or path, 「拒绝并写理由…」 (not for Codex approvals, which take only a decision),
-/// 「拒绝」 and 「允许」.
+/// A permission request (visual design §8.6, the mockups' "权限"): the command or path on a dark slip, all of it, up
+/// to about eight lines and then it scrolls; 「拒绝并写理由…」 (not for Codex approvals, which take only a decision),
+/// which opens a field under the slip; 「拒绝」 on the left and the wider 「允许」 on the right.
 struct PermissionForm: View {
     let request: BridgePending
     let enabled: Bool
@@ -15,38 +16,30 @@ struct PermissionForm: View {
 
     @State private var writingReason = false
     @State private var reason = ""
-    @FocusState private var reasonFocused: Bool
 
     var body: some View {
         let canExplain = RequestText.acceptsDenyMessage(request.input)
         let showingReason = writingReason && canExplain
         VStack(alignment: .leading, spacing: 12) {
             if let command = RequestText.permissionBody(request.input) {
-                CommandSlip(text: command, scrolls: true)
+                CommandSlip(text: command, maxLines: 8, scrolls: true)
             }
             if showingReason {
-                TextField("拒绝的理由（可不写）", text: $reason, axis: .vertical)
-                    .lineLimit(1...3)
-                    .focused($reasonFocused)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                PixelTextField("拒绝的理由（可不写）", text: $reason, maxLines: 3)
                     .disabled(!enabled)
             } else if canExplain {
-                Button("拒绝并写理由…") {
-                    writingReason = true
-                    reasonFocused = true
-                }
-                .disabled(!enabled)
+                PixelButton(title: "拒绝并写理由…", style: .text) { writingReason = true }
+                    .disabled(!enabled)
             }
             FailureLine(text: failure)
-            HStack(spacing: 10) {
-                Button { onDeny(canExplain ? reason : nil) } label: {
-                    Text(showingReason ? "拒绝并发送理由" : "拒绝").frame(maxWidth: .infinity)
+            // With a reason the deny button says so, and needs the room: the two share the row evenly then.
+            WeightedRow(weights: [1, showingReason ? 1 : 1.4]) {
+                PixelButton(
+                    title: showingReason ? "拒绝并发送理由" : "拒绝", style: .secondary, size: .large, wide: true
+                ) {
+                    onDeny(canExplain ? reason : nil)
                 }
-                .buttonStyle(.bordered)
-                .controlSize(.large)
-                .disabled(!enabled)
+                .disabled(!enabled || doneLabel != nil)
                 PrimaryAnswerButton(title: "允许", doneLabel: doneLabel, enabled: enabled, action: onAllow)
             }
         }

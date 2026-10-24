@@ -8,49 +8,70 @@ struct MarkdownBlocks: View {
 
     var body: some View {
         if let blocks = Self.blocks(of: markdown) {
-            VStack(alignment: .leading, spacing: 10) {
+            VStack(alignment: .leading, spacing: 0) {
                 ForEach(blocks) { block in
-                    view(for: block)
+                    view(for: block, first: block.id == blocks.first?.id)
                 }
             }
+            .font(.nunito(size: Self.bodySize))
+            .foregroundStyle(Theme.ink)
+            .lineSpacing(Self.lineSpacing)
         } else {
             Text(verbatim: markdown)
+                .font(.nunito(size: Self.bodySize, weight: .semibold))
+                .foregroundStyle(Theme.ink2)
+                .lineSpacing(Self.lineSpacing)
         }
     }
 
     // MARK: - Layout
 
+    /// The plan paper's type (mockup "计划", Android `MarkdownLite`): 13.5 pt lines 1.65 apart, a 16 pt first-level
+    /// heading and 13.5 pt bold ones under it, plain paragraphs in ink2, code in 12.5 pt monospace on the card's
+    /// colour.
+    private static let bodySize: CGFloat = 13.5
+    private static let lineSpacing: CGFloat = bodySize * 0.65 - 4
+
     @ViewBuilder
-    private func view(for block: Block) -> some View {
+    private func view(for block: Block, first: Bool) -> some View {
         switch block.kind {
         case .paragraph:
             Text(block.text)
+                .font(.nunito(size: Self.bodySize, weight: .semibold))
+                .foregroundStyle(Theme.ink2)
+                .padding(.top, first ? 0 : 4)
         case .heading(let level):
             Text(block.text)
-                .font(level <= 1 ? .title2.bold() : level == 2 ? .title3.bold() : .headline)
-                .padding(.top, level <= 2 ? 4 : 0)
+                .font(.nunito(size: level <= 1 ? 16 : Self.bodySize, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+                .padding(.top, first ? 0 : 10)
+                .padding(.bottom, level <= 1 ? 4 : 0)
         case .item(let marker, let depth):
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(verbatim: marker)
-                    .monospacedDigit()
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.ink2)
                 Text(block.text)
             }
-            .padding(.leading, CGFloat(depth) * 16)
+            .padding(.leading, 6 + CGFloat(depth) * 16)
+            .padding(.top, 2)
         case .code:
             Text(verbatim: String(block.text.characters).trimmingCharacters(in: .newlines))
-                .font(.system(.footnote, design: .monospaced))
-                .padding(10)
+                .font(.system(size: 12.5, design: .monospaced))
+                .foregroundStyle(Theme.ink)
+                .lineSpacing(12.5 * 0.55 - 3)
+                .padding(8)
                 .frame(maxWidth: .infinity, alignment: .leading)
-                .background(Color(.tertiarySystemFill), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .background(Theme.surface, in: PixelShape(step: 2))
+                .padding(.vertical, 6)
         case .quote:
             HStack(spacing: 8) {
                 Rectangle()
-                    .fill(Color.secondary.opacity(0.5))
+                    .fill(Theme.ink3)
                     .frame(width: 3)
                 Text(block.text)
-                    .foregroundStyle(.secondary)
+                    .foregroundStyle(Theme.ink2)
             }
+            .padding(.top, first ? 0 : 4)
         }
     }
 

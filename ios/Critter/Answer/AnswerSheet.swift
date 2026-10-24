@@ -2,25 +2,31 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// The card for one pending request (Android `AnswerActivity` and `AnswerSheet`), a sheet over the home list. It is
-/// opened with a request id only: the request is looked up in the latest snapshot every time, never taken from "the
-/// session's current request" (`CardState`).
+/// The card for one pending request (visual design §8.6, Android `AnswerActivity` and `AnswerSheet`), the content of
+/// a `sheetShell` over the home screen. It is opened with a request id only: the request is looked up in the latest
+/// snapshot every time, never taken from "the session's current request" (`CardState`).
 ///
-/// - A request that is no longer in the snapshot: "已在电脑上处理" (or, for one the card never saw in a live snapshot,
-///   "这个请求已经不在了"), and the card closes after two seconds.
-/// - What was sent: the primary button turns into the success label ("已允许") and the card closes after 0.9 s; a no
-///   (a deny, a revise) closes it at once. Too late or answered on the Mac first: the words, then two seconds. Not
-///   through: the text over the buttons, the card stays and the buttons work again (on a fresh draft).
+/// On top the session's Critter raising its hand on a tile of grass (it looks up at you once the sheet has settled),
+/// who wants what and where; then what is asked, the buttons, and "电脑上也能答，谁先答算谁的".
+///
+/// - What was sent (visual design §7): a yes turns the primary button green in three jumps, "✓ 已允许", the Critter
+///   switches to done and plays its entrance, and the card closes after 0.9 s; a no (a deny, a revise) makes the
+///   Critter notice and closes the card at once. Not through: the reason over the buttons, the card stays and the
+///   buttons work again (on a fresh draft). Offline: "未连接，连上后才能作答" under the header, the buttons grey.
+/// - A request that is no longer there: answered on the Mac first, the Critter in bloom and "已在电脑上处理"; too
+///   late, "已经过期了"; one the card never saw in a live snapshot, "这个请求已经不在了". Each closes after two seconds.
+/// - Answered from the home card's 「拒绝」「允许」 (`inline`): while that is on its way the card says "正在提交…" and
+///   its buttons wait; once it landed the card says "已提交" (it was this phone, not the Mac).
 struct AnswerSheet: View {
     let requestId: String
     let store: BridgeStore
-    /// The drafts the home screen keeps: the rows' buttons and this card answer a request on the same one.
+    /// The drafts the home screen keeps: the cards' buttons and this card answer a request on the same one.
     let drafts: AnswerDrafts
-    /// What became of the home card's 「拒绝」「允许」 for this request: while that answer is on its way the card says
-    /// so and its buttons wait; once it landed the card says it was sent from here, not that the Mac handled it.
+    /// What became of the home card's 「拒绝」「允许」 for this request.
     var inline: InlineAnswerState = .idle
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeSheet) private var closeSheet
+    @Environment(SkinStore.self) private var skins
     /// The request as it was the last time a live snapshot had it: whether the card ever saw it, and what to show
     /// while an answer is on its way and after it was taken, when the request has left the snapshot. A cached
     /// snapshot does not count: the request may have been gone for long, not just answered on the Mac.
@@ -29,11 +35,11 @@ struct AnswerSheet: View {
     @State private var failure: String?
     /// An answer the Mac took.
     @State private var sent: Seen.Sent?
-    /// The Mac's word that nothing is left to answer, which the card shows before it closes.
-    @State private var closing: String?
+    /// The Mac's word that nothing is left to answer: answered elsewhere, or expired (its words).
+    @State private var closing: Closing?
     /// Missing from a cached snapshot proves nothing: the live one gets a while to arrive.
     @State private var waitedOut = false
-    @State private var detent: PresentationDetent
+    @State private var stage = CritterStageControl()
 
     /// A request the card has had in front of it.
     private struct Seen {
@@ -46,15 +52,9 @@ struct AnswerSheet: View {
         }
     }
 
-    init(requestId: String, store: BridgeStore, drafts: AnswerDrafts, inline: InlineAnswerState = .idle) {
-        self.requestId = requestId
-        self.store = store
-        self.drafts = drafts
-        self.inline = inline
-        // A permission request is short, and so is what a request that is gone says; a question or a plan wants
-        // the room.
-        let kind = store.snapshot?.pending.first { $0.requestId == requestId }?.kind
-        _detent = State(initialValue: kind == nil || kind == .permission ? .medium : .large)
+    private enum Closing: Equatable {
+        case handledElsewhere
+        case expired(String)
     }
 
     private var cardState: CardState {
@@ -65,14 +65,17 @@ struct AnswerSheet: View {
         seen == nil && !store.isLive && !waitedOut
     }
 
+    private var inlineSending: Bool {
+        inline == .sending
+    }
+
+    /// Why the home card's answer did not get through: the card's buttons work again.
+    private var inlineFailure: String? {
+        if case .failed(let text) = inline { text } else { nil }
+    }
+
     var body: some View {
         content
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 12)
-            .presentationDetents([.medium, .large], selection: $detent)
-            .presentationDragIndicator(.visible)
             .onChange(of: store.snapshot, initial: true) { noteSeen() }
             // The first live snapshot can be the cached one over again: going live counts too.
             .onChange(of: store.isLive) { noteSeen() }
@@ -83,7 +86,7 @@ struct AnswerSheet: View {
             .task(id: autoClose) {
                 guard let delay = autoClose else { return }
                 try? await Task.sleep(for: delay)
-                if !Task.isCancelled { dismiss() }
+                if !Task.isCancelled { closeSheet() }
             }
             #if DEBUG
             .task(id: requestId) {
@@ -102,35 +105,11 @@ struct AnswerSheet: View {
             #endif
     }
 
-    /// The home card's answer is on its way.
-    private var inlineSending: Bool {
-        inline == .sending
-    }
-
-    /// What the card says once the home card's answer has landed or the request closed under it.
-    private var inlineClosing: String? {
-        switch inline {
-        case .sent: "已提交"
-        case .closed(let text): text
-        case .idle, .sending, .failed: nil
-        }
-    }
-
-    /// Why the home card's answer did not get through: the card's buttons work again.
-    private var inlineFailure: String? {
-        if case .failed(let text) = inline { text } else { nil }
-    }
-
     /// When the card closes by itself, counted from when what it shows is settled.
     private var autoClose: Duration? {
-        if closing != nil || inlineClosing != nil { return .seconds(2) }
+        if settledCard != nil { return .seconds(2) }
         if let sent { return sent.label == nil ? .zero : .milliseconds(900) }
-        if busy || inlineSending { return nil }
-        switch cardState {
-        case .open: return nil
-        case .handledElsewhere: return .seconds(2)
-        case .unknown: return waitingForLive ? nil : .seconds(2)
-        }
+        return nil
     }
 
     // MARK: - What the card shows
@@ -145,27 +124,47 @@ struct AnswerSheet: View {
         return nil
     }
 
-    @ViewBuilder
-    private var content: some View {
-        if let closing = closing ?? inlineClosing {
-            ClosingCard(text: closing, done: closing == Theme.handledElsewhere || closing == "已提交")
-        } else if let shown = shownRequest {
-            form(shown, doneLabel: sent?.label)
-        } else if case .handledElsewhere = cardState {
-            ClosingCard(text: Theme.handledElsewhere, done: true)
-        } else if waitingForLive {
-            VStack(spacing: 12) {
-                ProgressView()
-                Text("正在连接电脑…")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            ClosingCard(text: "这个请求已经不在了", done: false)
+    /// Nothing is left to answer, and what to say about it: the title, the line under it, whether it is good news.
+    private var settledCard: (title: String, text: String?, bloom: Bool)? {
+        if sent != nil || busy { return nil }
+        switch closing {
+        case .expired(let message)?: return ("已经过期了", message, false)
+        case .handledElsewhere?: return Self.handled(seen?.session)
+        case nil: break
+        }
+        switch inline {
+        case .sent: return ("已提交", "这个请求已经在这台手机上答过了。", true)
+        case .closed(let text) where text == Theme.handledElsewhere: return Self.handled(seen?.session)
+        case .closed(let text): return ("已经过期了", text, false)
+        case .sending: return nil
+        case .idle, .failed: break
+        }
+        if shownRequest != nil { return nil }
+        switch cardState {
+        case .open: return nil
+        case .handledElsewhere: return Self.handled(seen?.session)
+        case .unknown: return waitingForLive ? nil : ("这个请求已经不在了", nil, false)
         }
     }
 
+    private static func handled(_ session: BridgeSession?) -> (title: String, text: String?, bloom: Bool) {
+        let text = session.map { "\($0.name) 的这个请求已经在电脑上处理了。" } ?? "这个请求已经在电脑上处理了。"
+        return (Theme.handledElsewhere, text, true)
+    }
+
+    @ViewBuilder
+    private var content: some View {
+        if let card = settledCard {
+            SettledCard(
+                title: card.title, text: card.text, manifest: skins.library.manifest(seen?.session?.skin ?? ""),
+                bloom: card.bloom
+            )
+        } else if let shown = shownRequest {
+            form(shown, doneLabel: sent?.label)
+        } else {
+            SheetMessage(text: "正在连接电脑…")
+        }
+    }
 
     /// Remembers the request as the snapshot has it, if the snapshot is live.
     private func noteSeen() {
@@ -186,26 +185,16 @@ struct AnswerSheet: View {
         let enabled = store.canAct && !busy && !inlineSending && answering
         let failure = failure ?? inlineFailure
         return VStack(alignment: .leading, spacing: 12) {
-            VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: RequestText.title(request, session: shown.session))
-                    .font(.title3.bold())
-                    .lineLimit(3)
-                if let session = shown.session {
-                    Text(verbatim: SessionText.place(session))
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
+            SheetHeader(
+                manifest: skins.library.manifest(shown.session?.skin ?? ""),
+                state: doneLabel != nil ? .done : .waiting, activity: shown.session?.activity,
+                title: RequestText.title(request, session: shown.session), session: shown.session, control: stage
+            )
             if !store.canAct && answering {
-                Text("未连接，连上后才能作答")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(Color(.systemRed))
+                FailureLine(text: "未连接，连上后才能作答")
             }
             if inlineSending {
-                Text("正在提交…")
-                    .font(.footnote.weight(.bold))
-                    .foregroundStyle(.secondary)
+                FailureLine(text: "正在提交…", tone: Theme.ink2)
             }
             switch request.kind {
             case .permission:
@@ -240,18 +229,17 @@ struct AnswerSheet: View {
                     }
                 )
             }
-            Label("电脑上也能答，谁先答算谁的", systemImage: "laptopcomputer")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity)
+            AnswerFooter()
         }
+        .padding(.horizontal, 18)
+        .padding(.bottom, 16)
     }
 
     // MARK: - Sending
 
     /// Sends `draft` (complete: the buttons that call this have just filled it in) and acts on the Mac's receipt.
     private func submit(_ draft: AnswerDraft, request: BridgePending, session: BridgeSession?) {
-        guard !busy, sent == nil else { return }
+        guard !busy, !inlineSending, sent == nil else { return }
         let label = draft.payload().flatMap(successLabel)
         busy = true
         failure = nil
@@ -261,37 +249,18 @@ struct AnswerSheet: View {
             guard let outcome else { return }
             switch outcome {
             case .sent:
+                // A no: the Critter notices, and the card goes at once.
+                if label == nil { stage.notice(LonePet.petId) }
                 sent = Seen.Sent(seen: Seen(request: request, session: session), label: label)
             case .handledElsewhere:
-                closing = Theme.handledElsewhere
+                closing = .handledElsewhere
             case .expired(let message):
-                closing = message
+                closing = .expired(message)
             case .failed(let message):
                 failure = message
                 // This draft counts as submitted: a fresh one lets the user try again.
                 drafts.renew(request.requestId)
             }
         }
-    }
-}
-
-/// "已在电脑上处理" and the like: what is left to say once there is nothing to answer.
-private struct ClosingCard: View {
-    let text: String
-    /// Whether it is good news (answered on the Mac), rather than a loss.
-    let done: Bool
-
-    var body: some View {
-        VStack(spacing: 14) {
-            Image(systemName: done ? "checkmark.circle.fill" : "info.circle.fill")
-                .font(.system(size: 52))
-                .foregroundStyle(done ? Color(.systemGreen) : Color.secondary)
-                .accessibilityHidden(true)
-            Text(verbatim: text)
-                .font(.title3.bold())
-                .multilineTextAlignment(.center)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .accessibilityElement(children: .combine)
     }
 }
