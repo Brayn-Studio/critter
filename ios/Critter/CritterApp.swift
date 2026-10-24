@@ -25,6 +25,7 @@ struct CritterApp: App {
     init() {
         #if DEBUG
         let launch = DebugLaunch.current
+        if let key = launch.testPushKey { TestPushKey.install(key) }
         _store = State(initialValue: launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore())
         _link = State(initialValue: launch.launchLink)
         deviceName = launch.deviceName ?? UIDevice.current.name

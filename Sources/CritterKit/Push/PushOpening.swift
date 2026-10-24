@@ -1,0 +1,69 @@
+import Foundation
+
+/// What a notification shows once the notification service extension has looked at its push (spec §8.7, §11).
+public struct NotificationLook: Equatable, Sendable {
+    public var title: String
+    public var subtitle: String
+    public var body: String
+    /// `categoryIdentifier`: which buttons it has. Set also when the text did not open, so the buttons still work.
+    public var category: PushCategory
+    /// `threadIdentifier`: the session, so one session's notifications group together.
+    public var threadId: String
+    /// `interruptionLevel = .timeSensitive`: a session waits for the user.
+    public var timeSensitive: Bool
+    /// Whether the sealed text opened. When it did not, the words are the push's plain "Critter / 有会话需要你".
+    public var opened: Bool
+
+    public init(
+        title: String, subtitle: String, body: String, category: PushCategory, threadId: String, timeSensitive: Bool,
+        opened: Bool
+    ) {
+        self.title = title
+        self.subtitle = subtitle
+        self.body = body
+        self.category = category
+        self.threadId = threadId
+        self.timeSensitive = timeSensitive
+        self.opened = opened
+    }
+}
+
+extension PushCategory {
+    /// A session waits for the user: a request, or something only the computer can answer. The Mac sends these
+    /// `time-sensitive` (`PushContent`), and the phone shows them so (spec §8.7); done, error and the test are not.
+    public var waitsForTheUser: Bool {
+        switch self {
+        case .permission, .permissionNoReason, .question, .plan, .waitingElsewhere: true
+        case .done, .error, .test: false
+        }
+    }
+}
+
+/// The notification service extension's work, without the extension (spec §8.7): read the push the Mac sent
+/// (`PushPayload.parse`), open its sealed text with the push key (`PushCrypto.open`, bound to the push's `k|r|s`), and
+/// say what the notification shows. Pure, so it is tested on the Mac; the extension only reads the key from the shared
+/// keychain and copies the result into the notification's content.
+public enum PushOpening {
+    /// What the notification for `userInfo` shows, opened with `key` (nil: there is none, or the keychain cannot be
+    /// read, as before the first unlock).
+    ///
+    /// - A text that does not open (another key, no key, a broken or moved sealed text, not a notification's text
+    ///   inside) leaves the plain `PushPayload.title` / `PushPayload.body`, with the category, thread and level all the
+    ///   same, so the buttons still work (spec §11).
+    /// - nil for a push that is not one of Critter's notifications as this build knows them (a category it does not
+    ///   know, no session or sealed text, a withdrawal): the extension hands it on as it came.
+    public static func look(_ userInfo: [AnyHashable: Any], key: String?) -> NotificationLook? {
+        guard case .alert(let alert)? = PushPayload.parse(userInfo) else { return nil }
+        var look = NotificationLook(
+            title: PushPayload.title, subtitle: "", body: PushPayload.body, category: alert.category,
+            threadId: alert.sessionId, timeSensitive: alert.category.waitsForTheUser, opened: false
+        )
+        if let key, let text = try? PushCrypto.open(alert, key: key) {
+            look.title = text.title
+            look.subtitle = text.subtitle
+            look.body = text.body
+            look.opened = true
+        }
+        return look
+    }
+}

@@ -113,6 +113,12 @@ import Foundation
 ///   (`SharedCheck.swift` in each target; `xcrun simctl push` does not wake that extension in the simulator). The log
 ///   says what each side found: `xcrun simctl spawn <device> log show --last 2m --predicate 'subsystem ==
 ///   "com.braynlabs.critter" AND category == "sharedcheck"'`.
+/// - `-critterTestPushKey <key>`: the push key (base64url of 32 bytes) becomes this test key, in the shared keychain
+///   where the notification service extension reads it (`TestPushKey.swift`), so that the pushes of
+///   `scripts/dev/push-payloads/make.sh` (sealed with its test key, which it prints) open. Then `xcrun simctl push
+///   <device> com.braynlabs.critter ios/build/push-payloads/<file>.apns`. In this simulator `simctl push` posts the
+///   push as a local notification and the extension never runs, so what shows is the plain "Critter / 有会话需要你"
+///   (the decryption is tested in `PushOpeningTests`).
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -184,6 +190,8 @@ struct DebugLaunch {
     /// `-critterFakeDock`: which day on the desk the fake charger and sensor play; nil without it.
     var fakeDock: FakeDock.Script?
     var sharedCheck = false
+    /// `-critterTestPushKey`.
+    var testPushKey: String?
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -275,6 +283,7 @@ struct DebugLaunch {
             }
         }
         sharedCheck = arguments.contains("-critterSharedCheck")
+        testPushKey = value("critterTestPushKey")
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug

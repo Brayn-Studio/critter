@@ -126,6 +126,15 @@ private func opened(_ message: APNsMessage) throws -> PushText {
     ] {
         #expect(try aps(message)["interruption-level"] == nil)
     }
+    // The phone's notification service extension sets the level by the category (`waitsForTheUser`): the same rule.
+    let codex = request(.permission, input: .object(["acceptsDenyMessage": .bool(false)]))
+    for message in try kinds.map({ try PushContent.request(request($0), session: session(), key: key) }) + [
+        try PushContent.request(codex, session: session(), key: key), notice,
+        try PushContent.result(session(), state: .done, key: key), try PushContent.result(session(), state: .error, key: key),
+        try PushContent.test(key: key),
+    ] {
+        #expect(try alert(message).category.waitsForTheUser == (try aps(message)["interruption-level"] != nil))
+    }
 }
 
 @Test func theWaitingNoticeSendsYouToTheComputer() throws {

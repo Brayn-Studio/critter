@@ -1,8 +1,16 @@
+import CritterKit
+import os
 import UserNotifications
 
-/// The notification service extension (spec §8.7): it gets every push with `mutable-content` before it is shown.
-/// For now it hands the push on as it came ("Critter / 有会话需要你"); opening the sealed text is plan 4's Task 5.
+/// The notification service extension (spec §8.7): it gets every push with `mutable-content` before it is shown, and
+/// opens its sealed text with the push key from the shared keychain (`PushOpening`, which holds the rules and their
+/// tests): the real title, subtitle and body replace "Critter / 有会话需要你"; the category (the buttons), the thread
+/// (the session) and, for a session that waits for the user, the time-sensitive level are set. A text that does not
+/// open -- no key yet, the keychain locked before the first unlock, another key, a moved or broken text -- keeps the
+/// plain words, and the buttons still work (spec §11). The key and the text are never logged.
 final class NotificationService: UNNotificationServiceExtension {
+    private static let log = Logger(subsystem: "com.braynlabs.critter", category: "notify")
+
     private var contentHandler: ((UNNotificationContent) -> Void)?
     /// The best version so far: what goes out if the system ends the extension early.
     private var best: UNMutableNotificationContent?
@@ -12,15 +20,51 @@ final class NotificationService: UNNotificationServiceExtension {
     ) {
         self.contentHandler = contentHandler
         let content = (request.content.mutableCopy() as? UNMutableNotificationContent) ?? UNMutableNotificationContent()
-        #if DEBUG
-        if request.content.userInfo["critterSharedCheck"] != nil { SharedCheck.answer(content) }
-        #endif
         best = content
+        #if DEBUG
+        if request.content.userInfo["critterSharedCheck"] != nil {
+            SharedCheck.answer(content)
+            finish(content)
+            return
+        }
+        #endif
+        if let look = PushOpening.look(request.content.userInfo, key: Self.pushKey()) {
+            Self.apply(look, to: content)
+            Self.log.notice(
+                "push \(request.identifier, privacy: .public): \(look.category.rawValue, privacy: .public), opened \(look.opened)"
+            )
+        } else {
+            Self.log.notice("push \(request.identifier, privacy: .public): not a notification of this build's, as it came")
+        }
         finish(content)
     }
 
     override func serviceExtensionTimeWillExpire() {
         if let best { finish(best) }
+    }
+
+    /// The words when they opened; the category, thread and level either way.
+    private static func apply(_ look: NotificationLook, to content: UNMutableNotificationContent) {
+        if look.opened {
+            content.title = look.title
+            content.subtitle = look.subtitle
+            content.body = look.body
+        }
+        content.categoryIdentifier = look.category.rawValue
+        content.threadIdentifier = look.threadId
+        content.interruptionLevel = look.timeSensitive ? .timeSensitive : .active
+    }
+
+    /// The push key the app made (`SharedKeychain.pushKeyAccount`), or nil: none yet, or the keychain cannot be read
+    /// now (only its status is logged).
+    private static func pushKey() -> String? {
+        switch SharedKeychain.push.read(SharedKeychain.pushKeyAccount) {
+        case .found(let data): return String(data: data, encoding: .utf8)
+        case .missing: return nil
+        case .failed(let status):
+            log.error("reading the push key failed: \(status)")
+            return nil
+        }
     }
 
     /// Hands `content` to the system, once.

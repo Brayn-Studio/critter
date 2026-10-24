@@ -24,6 +24,14 @@ usage: critter-bridge-client <command> [options]
                                    com.braynlabs.critter; --done and --error turn those
                                    notifications on, --activity the Live Activity)
   push --clear                     take the push registration back
+  push-payload --key <push key> --category <k> --session <id> [--request <id>]
+               [--title T] [--subtitle S] [--body B] [--corrupt] [--bundle <bundle id>]
+  push-payload --withdraw <id>[,<id>...] [--bundle <bundle id>]
+                                   print, without connecting, the push the Mac would send
+                                   (the text sealed with that key, base64url as the phone's
+                                   registration has it; --corrupt breaks the sealed text) or
+                                   a withdrawal, as an `xcrun simctl push` file (with
+                                   "Simulator Target Bundle", default com.braynlabs.critter)
 
 answer, seen, say, skin and push print the reply line and exit (status 1 if it isn't ok).
 push gets no reply from an older Mac, which ignores it: it gives up after 10 s.
@@ -85,7 +93,7 @@ func exitAfter(seconds: Double, _ what: String) {
 // MARK: - Arguments
 
 /// Options that stand alone, without a value.
-let switches: Set<String> = ["done", "error", "activity", "clear"]
+let switches: Set<String> = ["done", "error", "activity", "clear", "corrupt"]
 
 var positional: [String] = []
 var options: [String: [String]] = [:]
@@ -311,6 +319,48 @@ func pushRegistration(_ options: [String: [String]]) -> ClientMessage {
         activity: flag("activity") ? ActivityRegistration(enabled: true) : nil
     ))
 }
+/// The `push-payload` command: a push as the Mac makes it (`PushPayload`, `PushCrypto`), for `xcrun simctl push`. Prints
+/// it and exits; nothing is sent anywhere.
+func pushPayload(_ options: [String: [String]]) -> Never {
+    func setting(_ name: String) -> String? { options[name]?.last }
+    var payload: [String: Any]
+    if let ids = setting("withdraw") {
+        payload = PushPayload.withdraw(ids: ids.split(separator: ",").map(String.init))
+    } else {
+        guard let key = setting("key"), PushCrypto.keyData(key) != nil else {
+            fail("push-payload needs --key <push key: base64url of 32 bytes> (or --withdraw)", status: 64)
+        }
+        guard let category = setting("category").flatMap(PushCategory.init(rawValue:)) else {
+            fail("--category is one of \(PushCategory.allCases.map(\.rawValue).joined(separator: ", "))", status: 64)
+        }
+        guard let sessionId = setting("session") else { fail("push-payload needs --session <id>", status: 64) }
+        let requestId = setting("request")
+        let text = PushText(title: setting("title") ?? "", subtitle: setting("subtitle") ?? "", body: setting("body") ?? "")
+        let sealed: String
+        do {
+            sealed = try PushCrypto.seal(text, key: key, category: category, requestId: requestId, sessionId: sessionId)
+        } catch {
+            fail("could not seal the text: \(error)")
+        }
+        payload = PushPayload.alert(
+            category: category, requestId: requestId, sessionId: sessionId,
+            sealed: options["corrupt"] != nil ? corrupted(sealed) : sealed, timeSensitive: category.waitsForTheUser
+        )
+    }
+    payload["Simulator Target Bundle"] = setting("bundle") ?? "com.braynlabs.critter"
+    guard let data = try? JSONSerialization.data(withJSONObject: payload, options: [.sortedKeys, .withoutEscapingSlashes])
+    else { fail("could not write the payload") }
+    emit(String(decoding: data, as: UTF8.self))
+    finish(0)
+}
+
+/// `sealed` with one bit of its ciphertext flipped: still base64 of the right shape, but it no longer opens.
+func corrupted(_ sealed: String) -> String {
+    guard var bytes = Data(base64Encoded: sealed), !bytes.isEmpty else { return sealed }
+    bytes[bytes.count / 2] ^= 0x01
+    return bytes.base64EncodedString()
+}
+
 switch positional.first {
 case "pair" where positional.count == 2:
     await pair(positional[1])
@@ -335,6 +385,8 @@ case "say" where positional.count == 3:
     await run(.say(id: commandId, sessionId: positional[1], text: positional[2]), id: commandId)
 case "skin" where positional.count == 2:
     await run(.skin(id: commandId, name: positional[1]), id: commandId)
+case "push-payload" where positional.count == 1:
+    pushPayload(options)
 case "push" where positional.count == 1:
     await run(pushRegistration(options), id: commandId, waitSeconds: 10, what: "push (an older Mac does not answer it)")
 default:
