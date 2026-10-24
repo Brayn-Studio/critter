@@ -406,7 +406,7 @@ final class BridgeController: @unchecked Sendable {
         refreshDevices()
     }
 
-    private func refreshDevices() {
+    func refreshDevices() {
         let list = registry.list()
         lock.withLock { deviceList = list }
     }

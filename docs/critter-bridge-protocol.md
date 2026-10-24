@@ -305,6 +305,7 @@ The Mac answers with a `result` (`id` echoed):
 
 - `ok: true` -- stored (or, for an empty `token`, cleared).
 - `ok: false`, `reason: "invalid"`, message `推送登记无效` -- `token` is not empty but `key` is not base64url without padding of exactly 32 bytes. Nothing was stored.
+- `ok: false`, `reason: "failed"`, message `保存失败` -- the Mac could not keep it (for example, it could not write its devices file). The phone may try again later.
 
 **An older Mac sends no `result`.** It does not know the frame and ignores it. A phone must therefore not treat the missing reply as a lost connection (the way it would for `answer` or `say`): wait up to 10 s, then keep the connection and tell the user "这台 Mac 上的 Critter 版本太旧，收不到推送". `welcome.version` says what the Mac runs.
 

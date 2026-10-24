@@ -15,6 +15,8 @@ private final class FakeServices: BridgeServices {
     var seen: [String] = []
     var said: [(String, String)] = []
     var interrupted: [String] = []
+    var registered: [(String, PushRegistration)] = []
+    var registerResult = true
 
     func verify(deviceId: String, token: String) -> DeviceRecord? {
         token == goodToken ? DeviceRecord(id: deviceId, name: "P", tokenHash: "h", pairedAt: 0) : nil
@@ -26,6 +28,10 @@ private final class FakeServices: BridgeServices {
     func markSeen(sessionId: String) { seen.append(sessionId) }
     func say(text: String, sessionId: String) -> SayOutcome { said.append((text, sessionId)); return sayResult }
     func interrupt(sessionId: String) -> SayOutcome { interrupted.append(sessionId); return .sent }
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool {
+        registered.append((deviceId, registration))
+        return registerResult
+    }
     func skinManifest(name: String) -> JSONValue? { name == "sprig" ? .object(["name": .string(name)]) : nil }
     func snapshotMessage() -> ServerMessage {
         .snapshot(seq: 1, sentAt: 2, body: SnapshotBody(
@@ -259,4 +265,55 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
     let ready = readyConnection(services)
     #expect(ready.receive(frame) == [.send(.result(id: "stop-1", ok: true, reason: nil, message: nil))])
     #expect(services.interrupted == ["codex-thread"])
+}
+
+private func registration(token: String = "aa11", key: String = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8") -> PushRegistration {
+    PushRegistration(token: token, environment: .sandbox, bundleId: "com.braynlabs.critter", key: key, notifyDone: true, notifyError: false)
+}
+
+@Test func connectionAnswersPushWithResult() {
+    let s = FakeServices()
+    let c = readyConnection(s)
+    // Stored.
+    #expect(c.receive(ClientMessage.push(id: "p1", registration: registration()).encode())
+        == [.send(.result(id: "p1", ok: true, reason: nil, message: nil))])
+    #expect(s.registered.map(\.0) == ["dev"])
+    #expect(s.registered.first?.1 == registration())
+    // A key that is not 32 bytes: nothing is stored.
+    #expect(c.receive(ClientMessage.push(id: "p2", registration: registration(key: "short")).encode())
+        == [.send(.result(id: "p2", ok: false, reason: .invalid, message: "推送登记无效"))])
+    #expect(s.registered.count == 1)
+    // An empty token takes the registration back, whatever the key.
+    #expect(c.receive(ClientMessage.push(id: "p3", registration: registration(token: "", key: "")).encode())
+        == [.send(.result(id: "p3", ok: true, reason: nil, message: nil))])
+    #expect(s.registered.count == 2)
+    // The Mac could not keep it.
+    s.registerResult = false
+    #expect(c.receive(ClientMessage.push(id: nil, registration: registration()).encode())
+        == [.send(.result(id: nil, ok: false, reason: .failed, message: "保存失败"))])
+    #expect(c.phase == .ready(deviceId: "dev"))
+}
+
+@Test func pushBeforeHelloIsAProtocolError() {
+    let s = FakeServices()
+    let frame = ClientMessage.push(id: "p1", registration: registration()).encode()
+    let c = BridgeConnection(services: s)
+    #expect(c.receive(frame) == denied(.protocolMismatch))
+    #expect(c.phase == .closed)
+    #expect(s.registered.isEmpty)
+    // Nor does a phone still waiting for approval get to register.
+    let waiting = BridgeConnection(services: s)
+    _ = waiting.receive(ClientMessage.pair(code: "CODE2345", deviceName: "Pixel").encode())
+    #expect(waiting.receive(frame).isEmpty)
+    #expect(s.registered.isEmpty)
+}
+
+@Test func aPairedPhoneMayRegisterRightAfterPairing() {
+    let s = FakeServices()
+    let c = BridgeConnection(services: s)
+    _ = c.receive(ClientMessage.pair(code: "CODE2345", deviceName: "Pixel").encode())
+    _ = c.approvePairing(deviceId: "d1", token: "t1")
+    #expect(c.receive(ClientMessage.push(id: "p1", registration: registration()).encode())
+        == [.send(.result(id: "p1", ok: true, reason: nil, message: nil))])
+    #expect(s.registered.first?.0 == "d1")
 }

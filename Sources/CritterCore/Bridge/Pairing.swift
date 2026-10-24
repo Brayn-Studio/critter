@@ -7,13 +7,16 @@ public struct DeviceRecord: Codable, Equatable, Sendable {
     public var tokenHash: String
     public var pairedAt: Int64
     public var lastSeen: Int64?
+    /// How to push to this phone (an iPhone that registered). Added later: absent in older files.
+    public var push: PushRegistration?
 
-    public init(id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil) {
+    public init(id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil, push: PushRegistration? = nil) {
         self.id = id
         self.name = name
         self.tokenHash = tokenHash
         self.pairedAt = pairedAt
         self.lastSeen = lastSeen
+        self.push = push
     }
 }
 
@@ -71,7 +74,36 @@ public final class DeviceRegistry: @unchecked Sendable {
     }
 
     public func touch(deviceId: String, now: Int64) {
-        update { $0.map { $0.id == deviceId ? DeviceRecord(id: $0.id, name: $0.name, tokenHash: $0.tokenHash, pairedAt: $0.pairedAt, lastSeen: now) : $0 } }
+        change(deviceId) { $0.lastSeen = now }
+    }
+
+    /// Keeps `registration` as this device's push registration, replacing any earlier one; an
+    /// empty registration (see `PushRegistration.isEmpty`) removes it instead. False if there is
+    /// no such device or the file could not be written.
+    @discardableResult
+    public func setPush(deviceId: String, _ registration: PushRegistration) -> Bool {
+        change(deviceId) { $0.push = registration.isEmpty ? nil : registration }
+    }
+
+    /// APNs said the device token is no good (the app was deleted): forgets the whole
+    /// registration, for the phone to make a new one.
+    public func dropPushToken(deviceId: String) {
+        change(deviceId) { $0.push = nil }
+    }
+
+    /// Sets (or, with nil, clears) the running Live Activity's id and push token. Does nothing
+    /// for a device without a registration or without a Live Activity part.
+    public func setActivity(deviceId: String, activityId: String?, activityToken: String?) {
+        change(deviceId) {
+            guard $0.push?.activity != nil else { return }
+            $0.push?.activity?.activityId = activityId
+            $0.push?.activity?.activityToken = activityToken
+        }
+    }
+
+    /// The devices that have a push registration.
+    public func pushDevices() -> [DeviceRecord] {
+        list().filter { $0.push != nil }
     }
 
     public func revoke(deviceId: String) {
@@ -86,6 +118,18 @@ public final class DeviceRegistry: @unchecked Sendable {
         lock.lock(); defer { lock.unlock() }
         guard let current = load() else { return }
         try? save(transform(current))
+    }
+
+    /// Edits one device's record in place. Nothing is written when `edit` changes nothing.
+    /// False if there is no such device or the file could not be written.
+    @discardableResult
+    private func change(_ deviceId: String, _ edit: (inout DeviceRecord) -> Void) -> Bool {
+        lock.lock(); defer { lock.unlock() }
+        guard var records = load(), let index = records.firstIndex(where: { $0.id == deviceId }) else { return false }
+        let before = records[index]
+        edit(&records[index])
+        guard records[index] != before else { return true }
+        return (try? save(records)) != nil
     }
 
     /// The records on disk; none when there is no file yet. A file that can't be read or
