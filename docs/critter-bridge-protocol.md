@@ -207,7 +207,7 @@ The complete current state; replace everything you had.
 
 Enums:
 
-- `sessions[].source`: `terminal` | `vscode` | `desktop` | `other` | `codex` | `codex_terminal` | `codex_vscode` | `codex_desktop`。旧客户端会把不认识的来源显示为 `other`。Codex 会话按可选 `capabilities` 开放手机操作；缺失时为只读。
+- `sessions[].source`: `terminal` | `vscode` | `desktop` | `other` | `codex` | `codex_terminal` | `codex_vscode` | `codex_desktop` | `kimi_desktop` | `kimi_terminal` | `deepseek_desktop`。旧客户端会把不认识的来源显示为 `other`。Codex 会话按可选 `capabilities` 开放手机操作；缺失时为只读。Kimi Code 和 DeepSeek Harness 会话总是带 `capabilities`：`canSay`、`canInterrupt` 为 `false`，`canAnswer` 在应答通道可用时为 `true`，并附 `readOnlyReason`。
 - `sessions[].state`: `idle` | `running` | `waiting` | `done` | `error`.
 - `pending[].kind`: `permission` | `question` | `plan`.
 - `prefs.soundTheme`: `voice` | `pixel` | `marimba` | `system`.

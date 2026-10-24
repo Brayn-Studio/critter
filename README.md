@@ -1,8 +1,8 @@
 # Critter
 
-Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex）。
+Claude Code、Codex、Kimi Code 和 DeepSeek Harness 的桌面宠物（a desktop pet for Claude Code, Codex, Kimi Code and DeepSeek Harness）。
 
-一只常驻在屏幕最上层的小家伙，默认形象是小芽，也可以在设置里换成团子、啾啾、刺球、六六、噗噗、菇菇等其他原创形象。本机每个接入的 Claude Code 或 Codex 会话都对应一只小 Critter，支持终端、VS Code、Claude Desktop 和 Codex Desktop。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
+一只常驻在屏幕最上层的小家伙，默认形象是小芽，也可以在设置里换成团子、啾啾、刺球、六六、噗噗、菇菇等其他原创形象。本机每个接入的 Claude Code、Codex、Kimi Code 或 DeepSeek Harness 会话都对应一只小 Critter，支持终端、VS Code、Claude Desktop、Codex Desktop、Kimi Code 桌面版和 DeepSeek Harness 桌面版。会话做完了、在等你确认、或者出错了，它都会换个样子、冒出气泡，还可以响一声提示音。点一下 Critter，就能跳回那个会话所在的窗口。
 
 这是一个原生 macOS 应用（Swift），没有任何第三方依赖。它只占大约 20 MB 内存，空闲时几乎不占 CPU。
 
@@ -18,7 +18,7 @@ Claude Code 和 Codex 的桌面宠物（a desktop pet for Claude Code and Codex�
 
 每个动作的细节和各种交互见下面的"动画"。
 
-- 每个会话一只 Critter，排成一排。气泡顶部只显示工作目录名，悬停可看完整路径；脚下显示会话名和来源（`cc · 终端 / VS Code / Desktop` 或 `Codex · 终端 / VS Code / Desktop`）。
+- 每个会话一只 Critter，排成一排。气泡顶部只显示工作目录名，悬停可看完整路径；脚下显示会话名和来源（`cc · 终端 / VS Code / Desktop`、`Codex · 终端 / VS Code / Desktop`、`Kimi · Desktop` 或 `DeepSeek · Desktop`）。
 - 气泡会一直显示，直到该会话的状态再次变化。超长的文字最多显示 2 行，鼠标悬停可以看到全文。
 - 会话数超过合并阈值（默认 4）时，所有 Critter 会合并成"一堆"：
   - 最前面那只显示最急的状态，上方显示各状态的数量。
@@ -97,7 +97,7 @@ hooks 在状态文件里多写一个可选字段 `activity`，表示会话正在
 
 - macOS 14 或更高版本（开发和测试用的是 macOS 27，Apple Silicon）。
 - Swift 6 工具链（Xcode 或 Command Line Tools）。
-- Claude Code 或 Codex。接入 Claude Code 需要 `claude` 命令在 `PATH` 里；只使用 Codex 时无需安装 Claude Code。
+- Claude Code、Codex、Kimi Code 或 DeepSeek Harness 中的任意一个或几个。接入 Claude Code 需要 `claude` 命令在 `PATH` 里；只用其它几个时无需安装 Claude Code。
 
 ## 安装
 
@@ -114,10 +114,12 @@ make install
 4. 检测到 `claude` 时，把 `/pet` 装成用户级命令：`~/.claude/commands/pet.md`，并接入状态栏数据。
 5. 检测到 `claude` 时，把本仓库添加为本地插件市场（已经添加过就只刷新），并安装或更新 `critter` 插件。插件里是上报状态用的 hooks。
    - 插件按版本号缓存在 `~/.claude/plugins/cache/critter-pet/critter/<版本>/`。改了 `plugin/` 里的 hooks，要同时把 `plugin/.claude-plugin/plugin.json` 和 `.claude-plugin/marketplace.json` 里的版本号加一，重新安装后才会生效。
+6. 检测到 DeepSeek Harness 时，把 `integrations/deepseek/` 复制到 `~/.critter/deepseek/`，并在第一次安装时把它登记进 DeepSeek 的桌面版配置。之后再装只更新文件。Kimi Code 不需要安装任何东西。
 
 装完后：
 
 - **已经打开的 Claude Code 会话要重启，才会加载 hooks。** 没重启的会话仍然会出现，但标签上会多一个"·未接入"，状态一直显示为空闲。
+- **DeepSeek Harness 要重启一次，才会加载 Critter 插件。**
 - 在任意会话里输入 `/pet`，或者运行 `open ~/Applications/Critter.app`，就能启动 Critter。
 
 ### Codex 接入
@@ -141,6 +143,29 @@ Codex 会话的气泡会保留最新一条公开进度文字，例如“测试�
 - 命令/文件审批只批准当前请求；原生权限请求仅授予请求中的权限、作用域为当前回合。普通提问保留原始问题 ID；秘密输入、验证、MCP 登录或未识别的请求保留电脑端处理。
 - 消息超时或写出后断线时提示“尚未确认”，不会自动重发。审批卡片绑定参数指纹和当前本地代次，旧卡片不会按复用的数字 ID 授权变化后的操作。
 - 当前适配使用官方 Desktop / VS Code 客户端现有的 `$CODEX_HOME/ipc/ipc.sock` 协调协议，不启动第二个 app-server，不修改 Codex 设置。它是未公开保证稳定的客户端接口；当前版本校验不通过时禁用操作。已在本机客户端和模拟会话上验证；升级 Codex 后应核对状态栏中的连接状态。
+
+### Kimi Code 接入
+
+不用装任何东西，也不用改 Kimi 的设置。Critter 运行时会找本机正在运行的 Kimi Code（读 `~/.kimi-code/server/instances/` 里的实例文件），用 `~/.kimi-code/server.token` 连上它的本地服务，从事件流里读每个会话的状态。Kimi Code 后启动、重启或换了端口，Critter 会在几秒内自己重连；退出 Kimi Code 后，它的宠物会离开。标签是 `Kimi · Desktop`。
+
+- 一个会话开始干活（或者正在等你确认）时才出现宠物；只是打开、恢复或历史里的会话不会出现。会话被归档或删除后宠物离开。
+- 运行中按工具换动作（`Bash` 跑命令、`Read`/`Grep`/`Glob`/`FetchURL` 读文件、`Agent` 抛种子、其它敲笔记本）；在等审批或回答提问时显示"等你确认"；做完了显示最后一条回复的第一句；出错显示错误信息（订阅不可用时 Kimi 返回 403，也会显示成出错）。
+- 手机上可以批准或拒绝 Kimi 的权限请求，回答它的提问。手机和 Kimi 窗口谁先答算谁的；电脑上先答了，手机上那张卡片会消失，晚到的回答会提示已经处理过。不能从手机给 Kimi 会话发消息或停止回合。
+- 点宠物只会把 Kimi Code 切到前台：Kimi 没有能打开某一个会话的链接（`kimi-code://open` 每次都会新建对话）。
+- 设置的"手机连接"里有一行"Kimi Code："显示连接状态。
+- 用自定义 `KIMI_CODE_HOME` 时，要让 Critter 进程也收到同一个环境变量，同 Codex 的 `CODEX_HOME`。
+- 用的是 Kimi Code 桌面版自带的本地服务接口，未公开保证稳定；Kimi 升级后如果连不上或状态不对，可能需要更新适配器。
+
+### DeepSeek Harness 接入
+
+`make install` 检测到 `/Applications/DeepSeek Harness.app` 时，会把 `integrations/deepseek/` 里的小插件复制到 `~/.critter/deepseek/`，再用 DeepSeek 自带的命令装进它的桌面版配置（`dsh plugin --profile desktop add link:~/.critter/deepseek`）。**装完要重启一次 DeepSeek Harness** 才会加载。插件在 DeepSeek 的进程里运行，把会话事件翻译成和 Claude Code hooks 一样的格式交给 `critter-hook`。标签是 `DeepSeek · Desktop`。
+
+- 会话第一次开始干活或请求审批时才出现宠物；启动时自动恢复的会话、子代理会话不会单独出现。退出 DeepSeek Harness 后宠物离开。
+- 状态和动作与 Claude Code 一致：`bash` 跑命令，`read`/`grep`/`glob`/网页读取是读文件，`subagent` 抛种子；沙箱越权等审批显示"等你确认"；做完了显示最后一条回复的第一句；中断回到空闲。
+- 手机上可以批准或拒绝 DeepSeek 的审批请求，回答它的提问（需要打开"允许手机连接"，且手机最近连过或能收到 iPhone 推送）。DeepSeek 自己的审批面板照常出现，手机和面板谁先答算谁的；手机先答时，面板会自动撤下。Critter 没在运行或手机连不上时，插件不做任何事，一切由 DeepSeek 自己处理。
+- 点宠物只会把 DeepSeek Harness 切到前台：它没有能打开某一个会话的链接。
+- `make uninstall` 会先把插件从 DeepSeek 的配置里卸掉，再删除 `~/.critter`。
+- 插件依赖 DeepSeek Harness 0.2.1 的内部插件接口，未公开保证稳定；DeepSeek 升级后可能需要更新插件。
 
 ## 卸载
 
@@ -186,6 +211,7 @@ make uninstall
 | 其它终端，例如 Ghostty、Warp | 激活该应用 |
 | Claude Desktop | 激活 Claude.app |
 | Codex Desktop | 用 `codex://threads/<id>` 打开对应聊天；打不开时尝试激活宿主应用 |
+| Kimi Code、DeepSeek Harness | 激活该应用（它们没有能定位到某个会话的链接） |
 
 第一次跳回 Terminal 或 iTerm2 时，macOS 会弹出"自动化"授权，问是否允许 Critter 控制该终端，选"好"即可。
 
@@ -195,6 +221,7 @@ make uninstall
 
 - 本机所有交互式 Claude Code 会话都会显示。
 - 本机 Codex 进程当前持有日志的 Desktop、CLI 和 VS Code 会话也会显示。
+- 正在运行的 Kimi Code、装了插件的 DeepSeek Harness 里开始干活的会话也会显示。
 - `claude -p` 和 SDK 调用不会显示，这是有意的。
 - 云端会话、其它机器上的会话也不会显示。
 
@@ -526,6 +553,7 @@ make app               # 组装 dist/Critter.app
 - 插件 hooks 里写死的是 `$HOME/.critter/bin/critter-hook`，而 `Critter.app` 由 Launch Services 启动，拿不到 shell 里的环境变量，始终读 `~/.critter` 和 `~/.claude`。设了这两个变量，hooks 和 App 就会各看各的目录。
 - 所以 `make install` / `make uninstall` 会忽略 `CRITTER_HOME`（并给出提示），始终使用 `~/.critter`；设了 `CLAUDE_CONFIG_DIR` 时也会提示 App 看不到那些会话。
 - `CODEX_HOME`：替换 Codex 的默认目录 `~/.codex`。这是 Codex 本身支持的配置；Critter 需使用相同值。
+- `KIMI_CODE_HOME`：替换 Kimi Code 的默认目录 `~/.kimi-code`，同上。
 
 调试开关：
 

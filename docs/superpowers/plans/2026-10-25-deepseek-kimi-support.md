@@ -245,4 +245,12 @@
 
 ## Verification
 
-(filled in by Task 9)
+Run 2026-10-25 on the development Mac (macOS 27.0.1, DeepSeek Harness 0.2.1-rc.3, Kimi Code 1.1.2 / server 2.3.0).
+
+- `swift test`: all pass except the two pre-existing flaky real-process tests in `CodexTests` (`codexDiscoveryRequiresALiveProcessHoldingTheRollout`, `codexDiscoveryUsesCurrentDesktopHostInsteadOfCreationSource`), which fail the same way on the baseline 16023f8.
+- `node --test "integrations/deepseek/test/*.test.js"`: 32/32. `bash -n scripts/*.sh` clean. Android `:core:test :app:testDebugUnitTest`: 421 passed. `make ios-sim`: BUILD SUCCEEDED.
+- `make install`: installed Critter.app and critter-hook, copied the plugin to `~/.critter/deepseek` and registered it in `~/.dsh/profiles/desktop` (`dsh.profile.bundles` gained `critter-deepseek`).
+- **DeepSeek live** (prompt submitted to the default-workspace session through a temporary trigger-only probe plugin, removed afterwards): first turn → record `deepseek-session-2e9f…` with `entrypoint deepseek-desktop`, owner pid = DeepSeek host; `bash` → `PreToolUse`/`PostToolUse`; sandbox escalation → `PermissionRequest` → state `waiting`, bubble `需要你确认：Bash(mkdir -p ~/critter-live-chec…`, a `permission` pending request with toolName `Bash` (bridge on, iPhone push reachable); writing `{"decision":"allow"}` as the phone answer → DeepSeek logged `approval/decided allowed-once`, the command ran, `Stop` → `done` with the reply's first sentence; pending and answer files cleaned up; quitting DeepSeek removed the record.
+- **Kimi live**: Critter connected to the running Kimi server (pid 75662). A session created over REST and prompted once failed with Kimi's 403 → record `kimi-session_fb88…` `state error`, detail `出错了：403 Your current subscription does not have acces…`, `entrypoint kimi-desktop`, owner pid 75662; deleting the session removed the record. The test session and workspace were deleted.
+- **Not verified live:** DeepSeek's own panel answering first, and DeepSeek questions (no way to click its UI unattended); the panel-withdraw on a phone win was verified with screenshots in the spike, but this run's screenshots were black (display asleep); every Kimi tool call, approval, question and completed turn (the account's subscription returns 403 for all models) — these are covered by schema-shaped unit tests only; the phone UI itself (answers were simulated by writing the answer file the bridge writes).
+- Plan correction: Task 6 listed sessions with `busy=false` only; Kimi filters on it, so the client lists `busy=false` and `busy=true` and unions them (fix b160988).
