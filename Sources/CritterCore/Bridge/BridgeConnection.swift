@@ -163,7 +163,7 @@ public final class BridgeConnection {
             case .failed: return result(id, .failed, "停止失败，请检查电脑端状态")
             case .unconfirmed: return result(id, .failed, "电脑端尚未确认停止结果，请先查看会话")
             }
-        case .hello, .pair:
+        case .hello, .pair, .push:
             return []
         }
     }

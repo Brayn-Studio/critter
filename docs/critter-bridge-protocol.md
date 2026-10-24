@@ -273,3 +273,87 @@ Codex messages use the existing `say` command. Current Desktop/VS Code coordinat
 Supported native Codex pending requests become the existing permission/question cards. Question text keys map back to native question IDs. Approval input sets `acceptsDenyMessage:false`; clients hide the unsupported reason field. One-off permissions never become session-wide grants. Request IDs include canonical parameters and a fresh local generation, so cards from a previous state snapshot cannot authorize a new reused raw request ID. Unmapped/secret/verification requests stay on the computer.
 
 Codex prompts have no synthetic phone expiry: `pending[].expiresAt` is omitted while the live owner holds the request. A maximum integer is not sent as an Android notification timeout. Owner disconnects and resolved requests withdraw the card.
+
+## iOS push registration (protocol 1, optional)
+
+An iPhone does not stay connected, so the Mac pushes to it through APNs. After `hello` (or `paired`) the phone tells the Mac how to reach it with a `push` frame. The protocol version stays 1: a phone that never sends it (the Android app) is unaffected, and an older Mac ignores the frame (see below).
+
+```json
+{"id":"p1","registration":{"activity":{"activityId":"3F2504E0-4F89-41D3-9A0C-0305E82C3301","activityToken":"0f1e2d3c4b5a69788796a5b4c3d2e1f00f1e2d3c4b5a69788796a5b4c3d2e1f0","enabled":true,"startToken":"5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"},"bundleId":"com.braynlabs.critter","environment":"sandbox","key":"AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8","notifyDone":true,"notifyError":false,"token":"a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f60718293a4b5c6d7e8f90"},"type":"push"}
+```
+
+`id` is the usual optional correlation id, echoed in the `result`. `registration`:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `token` | string | The APNs device token, lowercase hex. **Empty = unregister.** |
+| `environment` | `"sandbox"` \| `"production"` | The APNs environment the token belongs to; the Mac sends to `api.sandbox.push.apple.com` or `api.push.apple.com` accordingly. |
+| `bundleId` | string | The app's bundle id (the APNs topic). |
+| `key` | string | The push key: 32 random bytes the phone makes, base64url without padding (43 characters). It seals the notification text (below). |
+| `notifyDone` | bool | Push when a session is done. |
+| `notifyError` | bool | Push when a session fails. |
+| `activity` | object, optional | The Live Activity: `enabled` (bool), and when they exist `startToken` (the push-to-start token), `activityId` and `activityToken` (the running activity and its push token), all lowercase hex or ids. Absent = no Live Activity. |
+
+Rules:
+
+- **Every registration is complete and replaces the old one.** To change one thing, send everything again. An empty `token` takes the registration back: the Mac forgets everything it had for this device (the other fields are ignored).
+- The Mac keeps it with the device record (`devices.json`, mode 0600). Revoking the device or resetting pairing on the Mac deletes it.
+- Required: every field except `activity` and the optional parts of it. A `push` frame that is missing one cannot be decoded and is ignored, like any frame the Mac cannot decode.
+- Before `hello` or `pair`, like any other frame, a `push` gets `denied` `protocol`.
+
+The Mac answers with a `result` (`id` echoed):
+
+- `ok: true` -- stored (or, for an empty `token`, cleared).
+- `ok: false`, `reason: "invalid"`, message `推送登记无效` -- `token` is not empty but `key` is not base64url without padding of exactly 32 bytes. Nothing was stored.
+
+**An older Mac sends no `result`.** It does not know the frame and ignores it. A phone must therefore not treat the missing reply as a lost connection (the way it would for `answer` or `say`): wait up to 10 s, then keep the connection and tell the user "这台 Mac 上的 Critter 版本太旧，收不到推送". `welcome.version` says what the Mac runs.
+
+### Push payload
+
+What the Mac gives APNs, and the phone and its notification service extension receive. Nothing readable is in it except `Critter` / `有会话需要你`: the notification's own title, subtitle and body are sealed in `c`.
+
+```json push
+{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"permission","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXno6EOA5+y9hJa13muqvV0Dj","k":"permission","r":"r1","s":"s1"}
+```
+
+| Key | Meaning |
+|---|---|
+| `aps.category`, `k` | What the notification is. One of `permission`, `permissionNoReason` (a permission request that cannot be denied with a reason: Codex), `question`, `plan`, `waitingElsewhere` (a session is waiting but cannot be answered on the phone: "请在电脑上处理"), `done`, `error`, `test`. These are the iOS notification category ids. |
+| `aps.thread-id`, `s` | The session id. |
+| `r` | The request id. Only for notifications about a request (`permission`, `permissionNoReason`, `question`, `plan`). |
+| `c` | The sealed text (below). |
+| `aps.mutable-content` | Always 1: the service extension opens `c`. If it cannot, the system shows the plain `Critter` / `有会话需要你`. |
+| `aps.interruption-level` | `time-sensitive`, only when a session waits for the user. |
+
+A notification's **id** is its `apns-collapse-id`: the request id for a request, otherwise `<category>:<session id>` (for example `done:s1`).
+
+To take notifications down the Mac sends a background push naming their ids; the phone removes the delivered notifications with those ids (best effort):
+
+```json push
+{"aps":{"content-available":1},"w":["r1","done:s1"]}
+```
+
+### Sealed text
+
+`c` is AES-256-GCM, with the push key `key` (the 32 bytes). Its value is the standard base64 (with padding) of `nonce || ciphertext || tag`: a 12-byte nonce, the ciphertext, a 16-byte tag (CryptoKit's `AES.GCM.SealedBox.combined`). The plaintext is the UTF-8 JSON `{"title":…,"subtitle":…,"body":…}`; all three are strings. The whole push JSON stays within 4096 bytes: the Mac cuts the body, then the subtitle, before sealing.
+
+Test vector, with the `key` of the registration above (a fixed nonce, which the Mac never uses: it makes a new one each time):
+
+```json push-text
+{"body":"swift test","subtitle":"~/CODESPACE/clawd · main · 终端","title":"critter 想运行"}
+```
+
+seals to the `c` value shown in the push payload above.
+
+### Live Activity content
+
+The Live Activity's `ContentState`, as the Mac sends it in `content-state`. The system renders it straight from the push, so it has no text but skin and state names: nothing about a session is in it. `attributes-type` of a push-to-start is `CritterActivity`.
+
+```json push-content
+{"back":[{"skin":"mochi","state":"running"}],"counts":[{"count":2,"state":"waiting"},{"count":1,"state":"running"}],"fiveHour":12,"lead":{"skin":"sprig","state":"waiting"},"sevenDay":30,"total":3,"updatedAt":1760000000000}
+```
+
+- `counts`: how many sessions are in each state, most urgent first (`waiting`, `error`, `done`, `running`, `idle`); states with none are left out.
+- `lead`: the first pet (the most urgent session); `back`: at most 2 more. Each is a `skin` name and a `state`. Absent `lead` = no sessions.
+- `total`: the number of sessions. `fiveHour`, `sevenDay`: used percentage of the 5-hour and 7-day limits, 0...100; absent = unknown.
+- `updatedAt`: milliseconds since the Unix epoch.

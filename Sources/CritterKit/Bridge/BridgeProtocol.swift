@@ -209,6 +209,8 @@ public enum ClientMessage: Equatable, Sendable {
     case say(id: String?, sessionId: String, text: String)
     case interrupt(id: String?, sessionId: String)
     case skin(id: String?, name: String)
+    /// Optional extension: an iPhone registers for push. Answered with a `result`.
+    case push(id: String?, registration: PushRegistration)
 
     private struct Wire: Codable {
         var type: String
@@ -224,6 +226,7 @@ public enum ClientMessage: Equatable, Sendable {
         var sessionId: String?
         var text: String?
         var name: String?
+        var registration: PushRegistration?
     }
 
     public static func decode(_ frame: Data) -> ClientMessage? {
@@ -250,6 +253,9 @@ public enum ClientMessage: Equatable, Sendable {
         case "skin":
             guard let n = w.name else { return nil }
             return .skin(id: w.id, name: n)
+        case "push":
+            guard let r = w.registration else { return nil }
+            return .push(id: w.id, registration: r)
         default:
             return nil
         }
@@ -272,6 +278,8 @@ public enum ClientMessage: Equatable, Sendable {
             w = Wire(type: "interrupt"); w.id = id; w.sessionId = s
         case .skin(let id, let n):
             w = Wire(type: "skin"); w.id = id; w.name = n
+        case .push(let id, let r):
+            w = Wire(type: "push"); w.id = id; w.registration = r
         }
         return encodeWire(w)
     }
