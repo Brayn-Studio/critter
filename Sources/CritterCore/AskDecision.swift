@@ -15,6 +15,7 @@ public enum AskDecision {
     public static func reviseMessage(_ changes: String) -> String {
         "用户在手机上没有批准这个计划，要求修改：\(changes)"
     }
+
     /// Keys whose strings are shown in full; everything else is cut at `displayLimit`.
     public static let untruncatedKeys: Set<String> = ["command", "plan", "question", "file_path", "notebook_path", "url"]
     /// How a multi-select question's chosen option labels are joined into its one answer

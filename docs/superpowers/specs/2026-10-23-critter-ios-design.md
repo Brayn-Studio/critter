@@ -177,7 +177,7 @@ Android 设计 §6.3 的第 3 条门槛是"最近 10 分钟内有任何一台已
 - "只对终端会话开启"（`CLAUDE_CODE_ENTRYPOINT == cli`）的限制不变。
 
 ### 6.8 Makefile
-- `make ios`：用 `xcodebuild` 编译真机 Release 版，手动签名（`CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`）：先找这台 Mac 上装好的三份描述文件（App 和两个扩展，带齐 entitlements 里的能力），不齐就说缺什么并停下。`ALLOW_PROVISIONING=1` 时这一次改成自动签名加 `-allowProvisioningUpdates`，让 Xcode 在开发者账号里登记能力和 App Group，开头打印提醒；只在账号主人同意时用【计划 5 定：原来是默认自动签名】。
+- `make ios`：用 `xcodebuild` 编译真机 Release 版，手动签名（`CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`）：先找这台 Mac 上装好的三份描述文件（App 和两个扩展，带齐 entitlements 里的能力），不齐就说缺什么并停下。`ALLOW_PROVISIONING=1` 时这一次改成自动签名加 `-allowProvisioningUpdates`，让 Xcode 在开发者账号里登记能力和 App Group，开头打印提醒；只在账号主人同意时用【计划 5 定：原来是默认自动签名】。做过一次 `ALLOW_PROVISIONING=1` 之后，装好的三份描述文件都是 Xcode 管理的（手动签名用不了这种），这时不带它的 `make ios` 也改成自动签名，但不加 `-allowProvisioningUpdates`：只用已经装好的描述文件，不连开发者账号；三份都有手动做的描述文件时，仍用手动签名，手动的优先；两种混着（没有哪一种是三个目标都有的）就说明并停下【计划 5，真机】。
 - `make ios-install`：用 `xcrun devicectl list devices` 找到唯一一台连着的真 iPhone，用 `xcrun devicectl device install app` 装上；没有或不止一台时报错退出。
 - `make ios-test`：先为模拟器构建一遍，再跑 `swift test --filter 'CritterClientTests|CritterKitTests'`（iOS 工程没有单独的测试 target，纯逻辑测试都在包里）。
 

@@ -263,7 +263,7 @@ Critter 可以让同一 Wi-Fi 下的安卓手机和 iPhone 看到所有会话，
 
 ### iPhone 推送
 
-iPhone 上的 Critter 只在前台时连着 Mac，所以平时由 Mac 通过 Apple 的推送服务（APNs）把"等你确认"、做完了、出错送到手机上，并更新锁屏和灵动岛上的实时活动。iPhone 上的 Critter 每次连上 Mac 时自己登记推送（见下面"iOS"一节），这一侧只要给 Mac 一把 APNs 密钥。iPhone 版目前只在模拟器里跑过，还没有真的经 APNs 发到手机上。
+iPhone 上的 Critter 只在前台时连着 Mac，所以平时由 Mac 通过 Apple 的推送服务（APNs）把"等你确认"、做完了、出错送到手机上，并更新锁屏和灵动岛上的实时活动。iPhone 上的 Critter 每次连上 Mac 时自己登记推送（见下面"iOS"一节），这一侧只要给 Mac 一把 APNs 密钥。iPhone 版已在真机上经 APNs 收到过推送（iPhone 16 Pro / iOS 27.0.1，2026-10-24）。
 
 配置在设置 › 手机下面的"iPhone 推送"一节，要先打开"允许手机连接"：
 
@@ -396,13 +396,13 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，没有上架 App St
 现在能做的：
 
 - 首次引导：第一次打开（没配对、也没走过引导）依次是欢迎页、配对、通知权限、实时活动说明、充电时自动打开看板（在「快捷指令」里建一个自动化的三步图解），上面一排种子写着 `n / 4`。每一步都能跳过，并说跳过少了什么（配对这一步的「跳过」在扫码页上，手动输入、等 Mac 同意、配对失败这几页要先回到扫码页）；跳过了配对，走完引导就到配对页。设置里「重新走一遍引导」可以再看一遍。
-- 配对：扫 Mac 上的二维码、打开 `critter-pair://` 链接，或者从局域网里选一台 Mac 再输入 8 位码，流程和安卓版一样。第一次配对时系统会弹出「本地网络」权限，答完后 App 自己再连一次，不用重新扫码；等 Mac 点允许时屏幕保持常亮；相机开不了时扫码框里说原因；本地网络权限被拒时，首页的离线卡片、手动输入页和连不上的失败页会说"没有本地网络权限"，带「去设置」（模拟器不管这个权限，只用 `-critterLocalNetworkDenied` 看过）。
+- 配对：扫 Mac 上的二维码、打开 `critter-pair://` 链接，或者从局域网里选一台 Mac 再输入 8 位码，流程和安卓版一样。第一次配对时系统会弹出「本地网络」权限，答完后 App 自己再连一次，不用重新扫码；本地网络已经是拒绝的时候，配对停在「等你允许「本地网络」」这一页，带「去设置」（真机上还没试过；模拟器不管这个权限，用 `-critterPairing local-network` 看过）；等 Mac 点允许时屏幕保持常亮；相机开不了时扫码框里说原因；本地网络权限被拒时，首页的离线卡片、手动输入页和连不上的失败页会说"没有本地网络权限"，带「去设置」（模拟器不管这个权限，只用 `-critterLocalNetworkDenied` 看过）。
 - 看会话：首页上半是一片草地，每个会话一只宠物站在上面（等你确认的头顶冒橙色气泡，会话多了放不下的合成一堆）；草地跟着时间换天空，离线时天黑、宠物睡着。下面是 5 小时和 7 天两张额度卡和会话列表，等你确认的排在最前。点一行看详情；做完了的会话点开时会告诉 Mac 你看过了。
 - 回应会话：在详情里给会话发一句话（Codex 会话要电脑那边接通了控制通道才行），或者停止 Codex 当前这一回合；权限请求直接在首页点"拒绝""允许"，提问和计划点"打开回答"，在卡片里回答。
 - 通知（要 Mac 配好 APNs 密钥，见"iPhone 推送"）：
   - 等你确认的权限请求，通知上有「允许」「拒绝」「拒绝并写理由…」（Codex 的只有前两个），提问和计划有「打开」；按钮都要先解锁。点按钮时 App 在后台连上 Mac 送出回答，最多 20 秒，然后把这条通知换成结果："已允许""已拒绝""已在电脑上处理""已经过期了"；送不到时是"没送到：连不上 Mac（要和电脑在同一个 Wi‑Fi）"，原来的按钮留着，可以再点。
   - 手机答不了的（VS Code、Desktop 里的会话，只读的 Codex 会话）推一条"…（请在电脑上处理）"；做完了、出错要在设置的「提醒」里打开才推。点通知进 App，打开那张卡片或那个会话的详情。
-  - 推送里的文字是加密的，由通知服务扩展用手机上的密钥解开（密钥只在共享钥匙串里）；解不开时显示"Critter / 有会话需要你"，权限请求这时只有「打开」（进 App 看清楚再答），不会对一条看不到的命令给「允许」「拒绝」：Mac 发出的权限请求推送本来就只带「打开」，扩展解开文字后才换上「允许」「拒绝」，所以扩展没运行、来不及解完时也一样。等你确认的通知是"时效性"级别，应当能在专注模式里按你的设置提醒（待真机验证）。
+  - 推送里的文字是加密的，由通知服务扩展用手机上的密钥解开（密钥只在共享钥匙串里）；解不开时显示"Critter / 有会话需要你"，权限请求这时只有「打开」（进 App 看清楚再答），不会对一条看不到的命令给「允许」「拒绝」：Mac 发出的权限请求推送本来就只带「打开」，扩展解开文字后才换上「允许」「拒绝」，所以扩展没运行、来不及解完时也一样。等你确认的通知是"时效性"通知：能不能穿过专注模式，取决于你自己的专注模式设置（允许"时效性通知"时能穿过）。
   - App 开着时，首页已经列着的请求不弹横幅，只轻震一下。请求在电脑上了结后 Mac 会撤回通知；撤回没送到的，App 回到前台时自己删掉。
 - 实时活动：锁屏和灵动岛上显示各状态的会话数（等你确认、出错、做完、运行中、空闲）、打头的宠物，以及 5 小时和 7 天额度（推送里没有任何会话的文字）。App 开着、连着 Mac 时由 App 自己启动和更新；App 不开着时由 Mac 推送启动和更新（要 APNs 密钥）：多了等你确认的会话时马上更新，别的变化最多每 10 秒一次。15 分钟没更新就变灰，写"可能不是最新的"（有会话时 Mac 每约 12 分钟刷新一次）。设置里「显示实时活动」可以关掉；取消配对时也会结束它。
 - 设置：推送一组显示这台手机在 Mac 上的推送登记（"已登记""已登记；这台 Mac 还没配置推送""这台 Mac 上的 Critter 版本太旧，收不到推送"等，或者"通知被关掉了，去系统设置打开"）；测试通知从 Mac 的设置里发。取消配对、换配对另一台 Mac 前，先尽量让原来的 Mac 撤销推送登记；那台 Mac 连不上时，手机换掉推送密钥、结束实时活动，并在设置和配对的每一页提示去那台 Mac 上撤销这台手机（没连上时，取消配对的对话框里先说）。那台 Mac 已经撤销了这台手机（手机显示"这台手机已不在电脑的配对列表里"）时，它什么也没留，不提示；重新配对的还是同一台 Mac（证书一样）时也不提示：它自己把旧记录上的推送登记转给新配对。离开 A、配了 B、又配回 A（证书一样）时，之前留下的"去 A 上撤销"提示自己消失。
@@ -411,14 +411,7 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，没有上架 App St
 - 减少动态效果：系统的或设置里的任一打开，界面过渡改成淡入淡出，宠物停在代表姿势。
 - 只在 App 开着（在前台）的时候连接。退到后台后会等正在送出的回答有了回执再断开；之后的提醒都靠推送。不用后台刷新、后台定位或静音音频保活。
 
-这些只在模拟器里试过，其中不少连模拟器也做不到真的，还没在真机上试过：
-
-- 推送：从没真的经 APNs 发到手机上（Mac 还没配密钥）。`xcrun simctl push` 在这个模拟器上把推送当成本地通知投递，通知服务扩展不运行，所以解密只有单元测试，通知上看到的都是"Critter / 有会话需要你"；通知权限只有"临时"授权，不出横幅；命令行按不了通知上的按钮，打不开锁屏和通知中心。点按钮作答、撤回通知用 DEBUG 启动参数走的是同一个处理函数。
-- 实时活动：只有 App 自己启动、更新的那一个；Mac 推送的启动和更新没跑过（要 APNs 密钥）。锁屏的样子是 App 里按小组件画出来的，灵动岛用 `xcrun simctl io <模拟器> recordVideo` 录到紧凑和展开两种；待机模式、真的点按都没看过。
-- 和 Mac 的联机：模拟器里的 App 连这台 Mac 上真的 Critter，登记推送（模拟器自己拿到的 sandbox token）、设置里显示 Mac 回的那句话、取消配对时先撤销登记，都对着真的 Mac 走过。
-- 计划 2 留下的：看板自动打开（模拟器没有充电状态和重力传感器，只能用 `-critterFakeDock` 模拟充电横放）、亮度调节和保持常亮（模拟器不理亮度写入，日志只证明调用对）、系统的"减少动态效果"开关（`simctl` 改不了，只试了 App 自己的开关）、Mac 把清单发来后换掉小芽（只有单元测试）、扫码（模拟器没有相机，只看到了没有相机时的那一页）。模拟器也发不了触摸和键盘，点按、拖动、输入这几条路径只读过代码。
-
-真机上验证过什么、还有哪些没验证，列在 `docs/critter-ios-backlog.md` 的"真机上还没验证的"里。iPhone 上没有悬浮球：iOS 不允许 App 画在其他 App 上面，由实时活动代替。
+真机上验证过什么、还有哪些没验证，列在 `docs/critter-ios-backlog.md` 的"真机上还没验证的"里。还没在真机上看过的，主要是：本地网络被拒的那条路（不允许 → 「去设置」→ 打开 → 回到 App）、实时活动安静 20 分钟后会不会变灰、Mac 在手机不连着时用 push-to-start 启动的实时活动能不能在后台把 token 送回、换了 Mac 之后旧 Mac 的推送、开机后还没解锁时收到推送，以及 Mac 上的自定义形象换掉小芽（只有单元测试）。iPhone 上没有悬浮球：iOS 不允许 App 画在其他 App 上面，由实时活动代替。
 
 在模拟器里跑（需要 Xcode，最低 iOS 17.2，只支持 iPhone）：
 
@@ -441,7 +434,7 @@ xcrun simctl launch booted com.apple.Preferences          # 把 Critter 放到�
 xcrun simctl push booted com.braynlabs.critter ios/build/push-payloads/permission.apns
 ```
 
-在这个模拟器上，每条都以本地通知投递，类别（按钮）是推送里写的，文字是"Critter / 有会话需要你"（扩展不运行，见上）；所以权限请求（`permission.apns`、`permissionNoReason.apns`、`new-request.apns`、解不开的 `bad.apns`）在这里都只有「打开」，真机上扩展解开文字后才换上「允许」「拒绝」，解不开的仍只有「打开」（单元测试 `aDecryptedPushGetsItsRealCategory`、`anUndecryptedPushStaysOpenOnly`）。通知上的「允许」「拒绝」用 `-critterNotificationAction` 走。`withdraw.apns` 只有 `content-available`，`simctl push` 不收（"Notification has no user visible content"）；撤回用 `-critterWithdrawPush` 代替。投递了哪些，看系统日志里的 "Posting notification"，或者让 App 列出来（`-critterNotificationAction`、`-critterWithdrawPush` 都会在日志 `notifications` 一类里列出投递前后的通知）。
+在这个模拟器上，每条都以本地通知投递（`xcrun simctl push` 这样做，通知服务扩展不运行），类别（按钮）是推送里写的，文字是"Critter / 有会话需要你"；所以权限请求（`permission.apns`、`permissionNoReason.apns`、`new-request.apns`、解不开的 `bad.apns`）在这里都只有「打开」，真机上扩展解开文字后才换上「允许」「拒绝」，解不开的仍只有「打开」（单元测试 `aDecryptedPushGetsItsRealCategory`、`anUndecryptedPushStaysOpenOnly`）。通知上的「允许」「拒绝」用 `-critterNotificationAction` 走。`withdraw.apns` 只有 `content-available`，`simctl push` 不收（"Notification has no user visible content"）；撤回用 `-critterWithdrawPush` 代替。投递了哪些，看系统日志里的 "Posting notification"，或者让 App 列出来（`-critterNotificationAction`、`-critterWithdrawPush` 都会在日志 `notifications` 一类里列出投递前后的通知）。
 
 模拟器里的 Debug 构建有一批启动参数（`xcrun simctl launch <模拟器> com.braynlabs.critter -critterFixture home-mixed`），用来直接打开某个画面、某个状态：假数据（`-critterFixture`、`-critterFixtureOffline`）、直接打开某张作答卡、详情、设置或看板（`-critterOpen`、`-critterBoard`）、配对的各个状态（`-critterPairing`）、首次引导的某一步（`-critterOnboarding`）、实时活动的样子（`-critterActivityDemo`）、点通知上的按钮（`-critterNotificationAction`）、Mac 对推送登记的各种回答（`-critterFixturePush`）、设置里取消配对（`-critterUnpair`）、离开一台没能告诉的 Mac（`-critterFixtureDrop`、`-critterLeftMac`）、控件画廊（`-critterGallery`）、模拟充电横放（`-critterFakeDock`）、本地网络权限被拒（`-critterLocalNetworkDenied`）、扫码器启动失败（`-critterScannerForce`），以及帧数和看板的日志。参数和每个假数据的含义都写在 `ios/Critter/Debug/DebugLaunch.swift` 的文件注释里；Release 构建不含这些代码和假数据。
 

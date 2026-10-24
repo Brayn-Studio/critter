@@ -83,7 +83,7 @@ Permission, allow:
 {"id":"c1","payload":{"decision":"allow"},"requestId":"req-1","type":"answer"}
 ```
 
-Permission, deny (`message` optional). The Mac does not pass the reason to Claude on its own: Claude reads "用户在手机上拒绝了，没有执行。用户的理由：<message>", or "用户在手机上拒绝了" without one (with the reason alone, Claude took it for the command's own error and retried). A plan's `revise` reaches Claude as "用户在手机上没有批准这个计划，要求修改：<message>":
+Permission, deny (`message` optional). The Mac does not hand Claude the bare reason: Claude reads "用户在手机上拒绝了，没有执行。用户的理由：<message>", or "用户在手机上拒绝了" without one (with the reason alone, Claude took it for the command's own error and retried):
 
 ```json
 {"id":"c2","payload":{"decision":"deny","message":"Not now"},"requestId":"req-2","type":"answer"}
@@ -95,7 +95,7 @@ Question:
 {"id":"c3","payload":{"answers":{"Which database?":"PostgreSQL"}},"requestId":"req-3","type":"answer"}
 ```
 
-Plan, approve is `{"decision":"approve"}`; revise needs a `message` that is non-empty after trimming whitespace (Claude Code gets the trimmed text):
+Plan, approve is `{"decision":"approve"}`; revise needs a `message` that is non-empty after trimming whitespace. Claude reads a revise as "用户在手机上没有批准这个计划，要求修改：<trimmed message>", not as the bare text:
 
 ```json
 {"id":"c4","payload":{"decision":"revise","message":"Split step 2"},"requestId":"req-4","type":"answer"}

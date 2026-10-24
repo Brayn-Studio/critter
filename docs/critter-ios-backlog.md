@@ -38,6 +38,9 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
   - 回到前台的自动重连（`PairingRetry`）只管连不上的失败，管不到这一页。
 
   下一步：在 设置 › Critter 里关掉本地网络，重走一遍配对。系统日志（子系统 `com.braynlabs.critter`，类别 `pairing`）会记下浏览器的每个状态和场景切换，用 Mac 的「控制台」看。首页离线卡片、手动输入页、失败页上的"没有本地网络权限"提示也一起看。
+- **等 Mac 点「允许」时屏幕保持常亮。** 真机上每次配对都很快就点了「允许」，自动锁屏来不及起作用，没验证过屏幕真的不灭。下一步：把自动锁定调到最短，配对时在 Mac 前多等一会儿，看屏幕灭不灭，点完「允许」后有没有还原。
+- **扫码页的出错说明。** 相机被限制（比如屏幕使用时间里关了相机）时，扫码框里说原因的那句话（`ScannerTrouble`），真机上没看到过；只有单元测试，和模拟器上的 `-critterScannerForce`。
+- **用手动做的描述文件签名。** 真机上只走过 Xcode 管理的描述文件（自动签名，不加 `-allowProvisioningUpdates`）。手动做的那条路（`CRITTER_PROFILE_APP`、`_NOTIFY`、`_WIDGETS` 按 UUID 填进 `PROVISIONING_PROFILE_SPECIFIER`）没在真机上构建过：Xcode 要是不认 UUID，就改成按描述文件的名字填。
 - **撤回推送没叫醒 App。** 在 Mac 上答掉以后，通知要等打开 App 才消失（回到前台的对账起作用）。后台推送的设置都对：`remote-notification`、`apns-push-type: background`、优先级 5。系统按自己的节奏送后台推送，App 被划掉时完全不送，所以这符合 spec 的"尽力而为"。想更快的话，可以改成用同一个 `apns-collapse-id` 发一条安静的可见通知，把原来的替换成"已在电脑上处理"。
 - **Codex**（Mac 端的问题，不只是 iOS）：
   - Codex 用工具提的问题，桌面上和手机上都不显示；
