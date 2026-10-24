@@ -119,3 +119,14 @@ private func editFirstSession(_ object: inout [String: Any], _ key: String, _ va
     #expect(decoded.limits?.sevenDay?.usedPercentage == 61)
     #expect(decoded.capabilities?.readOnlyReason == "只读：会话在别处")
 }
+
+/// A newer Mac may say `denied` with a reason this build does not know. It is still a refusal.
+@Test func unknownDenyReasonDecodes() throws {
+    let unknown = try #require(ServerMessage.decode(Data(#"{"reason":"quarantined","type":"denied"}"#.utf8)))
+    #expect(unknown == .denied(reason: .unknown))
+    for reason in [DenyReason.badToken, .badCode, .rejected, .protocolMismatch] {
+        #expect(ServerMessage.decode(ServerMessage.denied(reason: reason).encode()) == .denied(reason: reason))
+    }
+    // No reason at all is not a refusal this build can read: the frame is dropped, as before.
+    #expect(ServerMessage.decode(Data(#"{"type":"denied"}"#.utf8)) == nil)
+}

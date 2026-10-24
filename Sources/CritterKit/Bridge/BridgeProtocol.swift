@@ -33,6 +33,9 @@ public enum DenyReason: String, Codable, Sendable {
     case badToken, badCode, rejected
     /// Wire value is "protocol" (a Swift keyword, hence the case name).
     case protocolMismatch = "protocol"
+    /// A reason this build does not know (a newer Mac's). Phones read every other value they don't
+    /// know as this; the Mac never sends it.
+    case unknown
 }
 
 public enum ResultReason: String, Codable, Sendable {
@@ -344,8 +347,8 @@ public enum ServerMessage: Equatable, Sendable {
             guard let d = w.deviceId, let t = w.token, let m = w.macName else { return nil }
             return .paired(deviceId: d, token: t, macName: m)
         case "denied":
-            guard let r = w.reason.flatMap(DenyReason.init(rawValue:)) else { return nil }
-            return .denied(reason: r)
+            guard let reason = w.reason else { return nil }
+            return .denied(reason: DenyReason(rawValue: reason) ?? .unknown)
         case "snapshot":
             guard let seq = w.seq, let at = w.sentAt, let s = w.sessions, let p = w.pending, let pr = w.prefs else { return nil }
             return .snapshot(seq: seq, sentAt: at, body: SnapshotBody(sessions: s, limits: w.limits, pending: p.elements, prefs: pr))

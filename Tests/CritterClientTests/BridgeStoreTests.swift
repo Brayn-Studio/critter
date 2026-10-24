@@ -167,6 +167,8 @@ private final class FakeLink: BridgeLink {
         var skinRequests: [String] = []
         var holdRequests = false
         var reply = CommandResult(ok: true, reason: nil, message: nil)
+        var pushes: [PushRegistration] = []
+        var pushReply = PushRegistrationReply.stored
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -185,6 +187,7 @@ private final class FakeLink: BridgeLink {
     var requests: [BridgeCommand] { state.withLock { $0.requests } }
     var pingIntervals: [TimeInterval] { state.withLock { $0.pingIntervals } }
     var skinRequests: [String] { state.withLock { $0.skinRequests } }
+    var pushes: [PushRegistration] { state.withLock { $0.pushes } }
 
     /// The link reports `event`, as the client does.
     func emit(_ event: BridgeEvent) { onEvent(event) }
@@ -193,6 +196,8 @@ private final class FakeLink: BridgeLink {
     func holdRequests() { state.withLock { $0.holdRequests = true } }
 
     func reply(with result: CommandResult) { state.withLock { $0.reply = result } }
+
+    func replyToPush(with reply: PushRegistrationReply) { state.withLock { $0.pushReply = reply } }
 
     /// From now on the Mac has a skin of this name, with this manifest.
     func serve(_ manifest: JSONValue, named name: String) { state.withLock { $0.skins[name] = manifest } }
@@ -221,6 +226,13 @@ private final class FakeLink: BridgeLink {
         state.withLock { s in
             s.skinRequests.append(name)
             return s.skins[name]
+        }
+    }
+
+    func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply {
+        state.withLock { s in
+            s.pushes.append(registration)
+            return s.pushReply
         }
     }
 
@@ -324,6 +336,11 @@ private final class FakeNetwork: NetworkWatching {
 private let target = PairingTarget(
     endpoint: Endpoint(host: "192.168.1.30", port: 47824), fingerprint: String(repeating: "cd", count: 32),
     code: "K7M2QX9P", macName: "Pair Mac"
+)
+
+private let pushRegistration = PushRegistration(
+    token: "aa11", environment: .sandbox, bundleId: "com.braynlabs.critter", key: PushCrypto.makeKey(),
+    notifyDone: true, notifyError: true
 )
 
 private let answer = BridgeCommand.answer(requestId: "r1", payload: AnswerPayload(decision: "allow"))
@@ -672,6 +689,55 @@ struct BridgeStoreTests {
         #expect(rig.link.requests == [answer, .seen(sessionId: "s1")])
     }
 
+    @Test func registerPushIsOnlySentWhileConnected() async {
+        let unpaired = Rig(paired: false)
+        #expect(await unpaired.makeStore().registerPush(pushRegistration) == .offline)
+
+        let rig = Rig()
+        let store = rig.makeStore()
+        #expect(await store.registerPush(pushRegistration) == .offline)
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(await store.registerPush(pushRegistration) == .offline)
+        #expect(rig.link.pushes.isEmpty)
+
+        rig.link.emit(.state(connected))
+        #expect(await becomes { store.conn == connected })
+        #expect(await store.registerPush(pushRegistration) == .stored)
+        rig.link.replyToPush(with: .noReply)
+        #expect(await store.registerPush(pushRegistration) == .noReply)
+        rig.link.replyToPush(with: .rejected("推送登记无效"))
+        #expect(await store.registerPush(pushRegistration) == .rejected("推送登记无效"))
+        #expect(rig.link.pushes == [pushRegistration, pushRegistration, pushRegistration])
+    }
+
+    @Test func macVersionFollowsTheLinkAndOutlastsTheConnection() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        #expect(store.macVersion == nil)
+        rig.link.emit(.macVersion("1.4.0"))
+        rig.link.emit(.state(connected))
+        #expect(await becomes { store.macVersion == "1.4.0" })
+        // Kept while the connection is down.
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(store.macVersion == "1.4.0")
+        rig.link.emit(.macVersion("1.5.0"))
+        #expect(await becomes { store.macVersion == "1.5.0" })
+        // The version of a Mac that is no longer paired is not kept.
+        store.unpair()
+        #expect(store.macVersion == nil)
+    }
+
+    @Test func aNewPairingForgetsTheOldMacsVersion() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        rig.link.emit(.macVersion("1.4.0"))
+        #expect(await becomes { store.macVersion == "1.4.0" })
+        _ = await store.pair(target, deviceName: "iPhone")
+        #expect(store.macVersion == nil)
+    }
+
     // MARK: - Pairing
 
     @Test func pairingSuccessReplacesTheOldLink() async {
@@ -848,6 +914,7 @@ struct BridgeStoreWithTheClientTests {
         #expect(hello == .hello(protocolVersion: 1, deviceId: "d1", token: "t1", app: "critter-ios/test"))
         #expect(mac.connects == [FakeMac.Connect(host: home.host, port: home.port, fingerprint: pin)])
         #expect(storage.endpointUpdates.isEmpty)
+        #expect(await becomes { store.macVersion == "1.4.0" })
 
         // A snapshot makes it live.
         mac.send(snapshot(body("a")).serverMessage)

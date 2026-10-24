@@ -6,12 +6,6 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 - `BoardTrigger` 移植成 Swift；`SpriteAtlas`、`CritterSpriteLayer`、`MotionClock` 移进 `CritterKit`（计划 1 推迟的部分）。
 
-## Mac 推送计划
-
-- **Mac 发来不认识的 `denied` 原因**（以后的新版本可能出现）：现在被忽略，客户端退避重试；Android 会停下并提示"连接被电脑拒绝"。要给 `DenyReason` 加一个"未知"值。配对时同样的情况现在显示的是"没人点允许"的文案，也要一起改。要在装真机之前做完。
-- 推送登记要用"超时不断开连接"的请求：旧版 Mac 会忽略这条不认识的消息，现在的请求超时会断开重连，形成循环。
-- 推送登记需要 `welcome.version`，`BridgeClient` 现在把它丢掉了。
-
 ## iOS 推送与扩展计划（App Group）
 
 - 存储搬到 App Group 容器和共享钥匙串。这一步在装真机之前完成，所以不需要迁移旧数据。

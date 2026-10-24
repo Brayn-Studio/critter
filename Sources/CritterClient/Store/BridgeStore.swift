@@ -27,6 +27,9 @@ public final class BridgeStore {
     public private(set) var isLive = false
     /// Set while a pairing is under way.
     public private(set) var pairingPhase: PairingPhase?
+    /// What the paired Mac's latest `welcome` said it runs (e.g. "1.4.0"); kept while the connection is down,
+    /// nil until the Mac has welcomed this pairing.
+    public private(set) var macVersion: String?
 
     /// Whether the Mac can be told something and what is on screen is up to date: connected, and a
     /// snapshot has come since.
@@ -204,11 +207,23 @@ public final class BridgeStore {
     public func send(_ command: BridgeCommand) async -> CommandResult {
         guard let link = connection?.link, case .connected = conn else { return .failed("未连接") }
         inFlight += 1
-        defer {
-            inFlight -= 1
-            if inFlight == 0 { drainWaiters.forEach { $0.finish() } }
-        }
+        defer { commandFinished() }
         return await link.request(command)
+    }
+
+    /// Tells the Mac how to push to this phone. Only while connected: otherwise `.offline`, and nothing is sent.
+    /// An older Mac never answers; after `.noReply` the connection is as it was.
+    public func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply {
+        guard let link = connection?.link, case .connected = conn else { return .offline }
+        inFlight += 1
+        defer { commandFinished() }
+        return await link.registerPush(registration)
+    }
+
+    /// A command in flight has been answered.
+    private func commandFinished() {
+        inFlight -= 1
+        if inFlight == 0 { drainWaiters.forEach { $0.finish() } }
     }
 
     /// A skin's manifest from the Mac, as JSON (keys in a fixed order, so the same manifest is the same bytes). nil
@@ -273,6 +288,7 @@ public final class BridgeStore {
 
     /// Nothing is known of any Mac: no snapshot, no connection.
     private func clearLiveState() {
+        macVersion = nil
         snapshot = nil
         snapshotAt = nil
         isLive = false
@@ -328,6 +344,8 @@ public final class BridgeStore {
             snapshotAt = receivedAt
             isLive = true
             storage.saveSnapshot(CachedSnapshot(body: body, receivedAt: receivedAt))
+        case .macVersion(let version):
+            macVersion = version
         case .connectedTo(let endpoint):
             guard var current = pairing, current.endpoint != endpoint else { return }
             current.endpoint = endpoint

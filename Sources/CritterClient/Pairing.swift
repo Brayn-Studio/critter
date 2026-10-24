@@ -29,7 +29,7 @@ public enum PairFailure: Equatable, Sendable {
     case badCode
     /// `denied rejected`: the user declined on the Mac.
     case rejected
-    /// `denied protocol` (or any other reason a pairing should never get).
+    /// `denied protocol` (or any other reason a pairing should never get, one this build does not know too).
     case protocolMismatch
     /// The Mac's certificate is not the one pinned. Nothing was sent.
     case certMismatch
@@ -65,7 +65,7 @@ public func pairFailure(denied: DenyReason?, pinMismatch: Bool, timedOut: Bool, 
         switch denied {
         case .badCode: return .badCode
         case .rejected: return .rejected
-        case .protocolMismatch, .badToken: return .protocolMismatch
+        case .protocolMismatch, .badToken, .unknown: return .protocolMismatch
         }
     }
     if pinMismatch { return .certMismatch }

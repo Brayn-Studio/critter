@@ -53,6 +53,8 @@ public protocol BridgeLink: Sendable {
     func request(_ command: BridgeCommand) async -> CommandResult
     /// A skin's manifest from the Mac; nil if it has no such skin or cannot be reached.
     func requestSkin(_ name: String) async -> JSONValue?
+    /// Tells the Mac how to push to this phone. No reply in time does not drop the connection.
+    func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply
 }
 
 extension BridgeClient: BridgeLink {}

@@ -51,7 +51,9 @@ func sampleBody() -> SnapshotBody {
     #expect(ClientMessage.decode(Data(#"{"type":"hello","deviceId":"d"}"#.utf8)) == nil)
     #expect(ClientMessage.decode(Data(#"{"type":"say","sessionId":"s"}"#.utf8)) == nil)
     #expect(ClientMessage.decode(Data("not json".utf8)) == nil)
-    #expect(ServerMessage.decode(Data(#"{"type":"denied","reason":"zzz"}"#.utf8)) == nil)
+    // A refusal for a reason this build does not know is still a refusal (`DenyReason.unknown`); none at all is not.
+    #expect(ServerMessage.decode(Data(#"{"type":"denied","reason":"zzz"}"#.utf8)) == .denied(reason: .unknown))
+    #expect(ServerMessage.decode(Data(#"{"type":"denied"}"#.utf8)) == nil)
 }
 
 @Test func deniedProtocolUsesWireValueProtocol() throws {

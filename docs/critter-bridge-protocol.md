@@ -155,7 +155,7 @@ Asks for a skin's manifest (answered with a `skin` message).
 {"reason":"badToken","type":"denied"}
 ```
 
-`reason`: `badToken` (unknown device or wrong token), `badCode` (wrong, expired or used pairing code), `rejected` (the user declined on the Mac), `protocol` (version mismatch or malformed first frame). The Mac closes the connection after `denied`.
+`reason`: `badToken` (unknown device or wrong token), `badCode` (wrong, expired or used pairing code), `rejected` (the user declined on the Mac), `protocol` (version mismatch or malformed first frame). The Mac closes the connection after `denied`. A phone that meets a `reason` it does not know (a newer Mac may add some) treats it as a refusal too: it stops reconnecting and says the computer refused the connection (while pairing, it reads it like `protocol`: a version problem). A `denied` without a `reason` is ignored.
 
 ### snapshot
 

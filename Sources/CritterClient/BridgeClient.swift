@@ -23,6 +23,8 @@ public actor BridgeClient {
     private let pingSleep: @Sendable (Duration) async throws -> Void
 
     private var state = ConnState.idle
+    /// What the Mac's latest `welcome` said it runs; kept when the connection ends.
+    public private(set) var macVersion: String?
     private var backoff = ReconnectBackoff()
     /// When the current streak of being offline began; a connection clears it.
     private var offlineSince: Date?
@@ -176,6 +178,25 @@ public actor BridgeClient {
         }
     }
 
+    /// Tells the Mac how to push to this phone. Unlike any other request, no reply within `requestTimeout` is not
+    /// a broken connection: an older Mac ignores a frame it does not know, so `.noReply` leaves the connection as
+    /// it is. A `result` that comes after that is dropped.
+    public func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply {
+        let id = nextRequestId()
+        switch await exchange(.push(id: id, registration: registration), id: id, dropsConnectionOnTimeout: false) {
+        case .reply(.result(_, true, _, _)):
+            return .stored
+        case .reply(.result(_, false, _, let message)):
+            return .rejected(message)
+        case .reply:
+            return .rejected(nil)
+        case .notConnected:
+            return .offline
+        case .timedOut:
+            return .noReply
+        }
+    }
+
     /// A skin's manifest from the Mac. nil if the Mac has no such skin, the connection is down
     /// or it does not answer in time (which drops the connection, as in `request`).
     public func requestSkin(_ name: String) async -> JSONValue? {
@@ -189,7 +210,9 @@ public actor BridgeClient {
         return "a\(lastRequestId)"
     }
 
-    private func exchange(_ message: ClientMessage, id: String) async -> Reply {
+    /// - Parameter dropsConnectionOnTimeout: whether no reply in time ends the connection (it does for
+    ///   everything the Mac always answers) or only the wait.
+    private func exchange(_ message: ClientMessage, id: String, dropsConnectionOnTimeout: Bool = true) async -> Reply {
         guard welcomed, let link = current else { return .notConnected }
         let text = Self.text(message)
         let timeout = requestTimeout
@@ -197,7 +220,7 @@ public actor BridgeClient {
         let timer = Task {
             try? await Task.sleep(for: timeout)
             guard !Task.isCancelled else { return }
-            self.timeOut(id)
+            self.timeOut(id, dropsConnection: dropsConnectionOnTimeout)
         }
         Task {
             do {
@@ -217,11 +240,12 @@ public actor BridgeClient {
         waiter.continuation.resume(returning: reply)
     }
 
-    /// The Mac answers within milliseconds: none in time means the connection is broken.
-    private func timeOut(_ id: String) {
+    /// The Mac answers within milliseconds: none in time means the connection is broken (unless `dropsConnection`
+    /// is false, for a frame an older Mac does not answer).
+    private func timeOut(_ id: String, dropsConnection: Bool) {
         guard let waiter = waiters[id] else { return }
         settle(id, .timedOut)
-        finish(waiter.serial)
+        if dropsConnection { finish(waiter.serial) }
     }
 
     // MARK: - Connection loop
@@ -309,9 +333,11 @@ public actor BridgeClient {
                 guard isCurrent(mine), current?.serial == link.serial else { return .ended }
                 guard let message = ServerMessage.decode(Data(text.utf8)) else { continue }
                 switch message {
-                case .welcome(let macName, _):
+                case .welcome(let macName, let version):
                     guard !welcomed else { continue }
                     welcomed = true
+                    macVersion = version
+                    onEvent(.macVersion(version))
                     backoff.reset()
                     offlineSince = nil
                     setState(.connected(macName: macName))
@@ -418,6 +444,7 @@ public actor BridgeClient {
         case .badToken: "这台手机已不在电脑的配对列表里，请重新配对"
         case .protocolMismatch: "协议版本不匹配，请更新 Critter"
         case .badCode, .rejected: "配对被拒绝"
+        case .unknown: "连接被电脑拒绝"
         }
     }
 }
