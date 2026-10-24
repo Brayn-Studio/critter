@@ -30,8 +30,21 @@ final class SkinStore {
     @ObservationIgnored private var fetching: Set<String> = []
     @ObservationIgnored private let directory: URL?
 
-    /// The skins the app ships, in the order the settings show them (sprig first: the default).
-    static let bundledNames = ["sprig", "mochi", "peep", "bristle", "bonnet", "frill", "spout"]
+    /// The skins the app ships, as the app's `Skins` folder has them (every folder with a manifest that decodes), in
+    /// the order the settings show them: sprig first (the default), then the others by name.
+    static let bundledNames: [String] = {
+        guard let folder = Bundle.main.url(forResource: "Skins", withExtension: nil),
+              let entries = try? FileManager.default.contentsOfDirectory(
+                  at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
+              )
+        else { return [PhoneSkinLibrary.fallback] }
+        let names = entries.map(\.lastPathComponent).filter { bundled($0) != nil }
+        let first = PhoneSkinLibrary.fallback
+        return names.sorted { a, b in
+            if (a == first) != (b == first) { return a == first }
+            return a < b
+        }
+    }()
 
     /// - Parameter directory: where pushed skins are saved; nil keeps them in memory only. The default is
     ///   Application Support's `Skins`.

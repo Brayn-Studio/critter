@@ -84,7 +84,8 @@ private struct ScanBackdrop: View {
             let page = proxy.frame(in: .global)
             let size = proxy.size
             let hole = window?.offsetBy(dx: -page.minX, dy: -page.minY)
-            let center = hole.map { CGPoint(x: $0.midX, y: $0.midY) } ?? CGPoint(x: size.width / 2, y: size.height * 0.375)
+            let center = hole.map { CGPoint(x: $0.midX, y: $0.midY) }
+                ?? CGPoint(x: size.width / 2, y: size.height * 0.375)
             let reach = 300 * max(size.width, 1) / 360
             ZStack(alignment: .topLeading) {
                 RadialGradient(
@@ -195,7 +196,9 @@ private struct LookingUp: View {
     private static func lookingUp(_ skin: SkinManifest) -> MotionClip {
         let n = skin.interactions
         let round = [
-            ClipKey(pose: n.lookUp, ticks: 40), ClipKey(pose: n.blinkPose, ticks: 2), ClipKey(pose: n.lookUp, ticks: 60),
+            ClipKey(pose: n.lookUp, ticks: 40),
+            ClipKey(pose: n.blinkPose, ticks: 2),
+            ClipKey(pose: n.lookUp, ticks: 60),
         ]
         return Array(repeating: round, count: rounds).flatMap { $0 } + [ClipKey(pose: n.lookCenter, ticks: 2)]
     }

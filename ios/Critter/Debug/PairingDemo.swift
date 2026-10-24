@@ -105,7 +105,8 @@ enum PairingDemoFakes {
     static let fingerprint = "3f9a2c417be0d5c8" + String(repeating: "0a1b2c3d", count: 6)
     static let code = "4829H735"
     static let uri = PairingURI(
-        host: "192.168.1.23", port: BridgeProtocol.defaultPort, fingerprint: fingerprint, code: code, name: "MacBook Pro"
+        host: "192.168.1.23", port: BridgeProtocol.defaultPort, fingerprint: fingerprint, code: code,
+        name: "MacBook Pro"
     )
 }
 

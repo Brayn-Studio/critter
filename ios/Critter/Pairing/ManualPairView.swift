@@ -181,7 +181,9 @@ struct ManualPairView: View {
             title: "信任这台 Mac？", confirm: "信任并配对",
             onConfirm: {
                 self.trust = nil
-                onPair(PairingTarget(endpoint: trust.mac.endpoint, fingerprint: trust.fingerprint, code: code, macName: trust.mac.name))
+                onPair(PairingTarget(
+                    endpoint: trust.mac.endpoint, fingerprint: trust.fingerprint, code: code, macName: trust.mac.name
+                ))
             },
             onDismiss: { self.trust = nil }
         ) {
