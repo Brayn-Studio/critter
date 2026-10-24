@@ -215,7 +215,7 @@ make uninstall
 | 全局快捷键 | ⌃⌥C | 点"录制"，然后按下新的组合键。组合里必须有 ⌃、⌥ 或 ⌘；按 Esc 取消。"恢复默认"可改回 ⌃⌥C |
 | 登录时自动启动 | 关 | 打开后写入 `~/Library/LaunchAgents/local.critter.pet.plist`，下次登录时生效 |
 | 重置位置 | — | 把宠物放回主屏幕右下角 |
-| 手机 | 关 | 允许安卓手机连接，见下一节 |
+| 手机 | 关 | 允许安卓手机和 iPhone 连接，见下一节 |
 
 提示音有四套，每套都不到一秒半，比系统音效轻一点：
 
@@ -230,7 +230,7 @@ make uninstall
 
 ## 手机连接（Mac 端）
 
-Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手机上回答权限请求、提问和计划；不开着 App 的 iPhone 由 Mac 通过 Apple 的推送服务提醒（见下面的"iPhone 推送"）。这一节只讲 Mac 这一侧；手机应用在 `android/` 和 `ios/` 里，线上协议见 `docs/critter-bridge-protocol.md`。
+Critter 可以让同一 Wi-Fi 下的安卓手机和 iPhone 看到所有会话，并在手机上回答权限请求、提问和计划；不开着 App 的 iPhone 由 Mac 通过 Apple 的推送服务提醒（见下面的"iPhone 推送"）。这一节只讲 Mac 这一侧；手机应用在 `android/` 和 `ios/` 里，线上协议见 `docs/critter-bridge-protocol.md`。
 
 ### 打开和配对
 

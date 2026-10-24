@@ -231,7 +231,7 @@ struct PhoneSettingsSection: View {
         Section("手机") {
             Toggle(isOn: $store.bridgeEnabled) {
                 Text("允许手机连接")
-                Text("让同一 Wi-Fi 下已配对的安卓手机查看会话，并在手机上回答权限、提问和计划")
+                Text("让同一 Wi-Fi 下已配对的安卓手机和 iPhone 查看会话，并在手机上回答权限、提问和计划")
             }
 
             LabeledContent("已配对的手机") {
