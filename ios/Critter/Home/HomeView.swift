@@ -169,16 +169,11 @@ struct HomeView: View {
     }
 
     private var macName: String {
-        guard let name = store.pairing?.macName, !name.isEmpty else { return "Mac" }
-        return name
+        Theme.macName(store.pairing?.macName)
     }
 
     private var connectionTint: Color {
-        switch store.conn {
-        case .connected: .green
-        case .needsRepair: .red
-        default: Color(.systemGray3)
-        }
+        Theme.conn(store.conn).dot
     }
 
     // MARK: - The connection card
@@ -234,7 +229,7 @@ struct HomeView: View {
             }
             switch outcome {
             case .sent: inline[requestId] = .sent(label)
-            case .handledElsewhere: inline[requestId] = .closed("已在电脑上处理")
+            case .handledElsewhere: inline[requestId] = .closed(Theme.handledElsewhere)
             case .expired(let message): inline[requestId] = .closed(message)
             case .failed(let message):
                 drafts.renew(requestId)

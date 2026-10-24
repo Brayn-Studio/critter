@@ -16,6 +16,10 @@ GENERATE_INFOPLIST_FILE = NO
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
 ENABLE_PREVIEWS = YES
 
+// Critter/Assets.xcassets: the app icon (light, dark and tinted, from scripts/dev/make-ios-icon.py) and the launch
+// screen's sky and icon.
+ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
+
 // iPhone only: no Mac or Vision Pro variants.
 SUPPORTS_MACCATALYST = NO
 SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO

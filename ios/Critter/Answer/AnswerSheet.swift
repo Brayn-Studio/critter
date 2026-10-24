@@ -125,11 +125,11 @@ struct AnswerSheet: View {
     @ViewBuilder
     private var content: some View {
         if let closing {
-            ClosingCard(text: closing, done: closing == Self.handledText)
+            ClosingCard(text: closing, done: closing == Theme.handledElsewhere)
         } else if let shown = shownRequest {
             form(shown, doneLabel: sent?.label)
         } else if case .handledElsewhere = cardState {
-            ClosingCard(text: Self.handledText, done: true)
+            ClosingCard(text: Theme.handledElsewhere, done: true)
         } else if waitingForLive {
             VStack(spacing: 12) {
                 ProgressView()
@@ -143,7 +143,6 @@ struct AnswerSheet: View {
         }
     }
 
-    private static let handledText = "已在电脑上处理"
 
     /// Remembers the request as the snapshot has it, if the snapshot is live.
     private func noteSeen() {
@@ -235,7 +234,7 @@ struct AnswerSheet: View {
             case .sent:
                 sent = Seen.Sent(seen: Seen(request: request, session: session), label: label)
             case .handledElsewhere:
-                closing = Self.handledText
+                closing = Theme.handledElsewhere
             case .expired(let message):
                 closing = message
             case .failed(let message):

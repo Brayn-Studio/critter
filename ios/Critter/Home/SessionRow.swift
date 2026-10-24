@@ -166,13 +166,8 @@ struct StateChip: View {
 }
 
 extension PetState {
+    /// The state's symbol colour (`Theme.state`).
     var tint: Color {
-        switch self {
-        case .idle: .gray
-        case .running: .blue
-        case .waiting: .orange
-        case .done: .green
-        case .error: .red
-        }
+        Theme.state(self).glyph
     }
 }

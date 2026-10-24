@@ -9,12 +9,22 @@
 /* Begin PBXBuildFile section */
 		C7A100000000000000000030 /* CritterKit in Frameworks */ = {isa = PBXBuildFile; productRef = C7A100000000000000000020 /* CritterKit */; };
 		C7A100000000000000000031 /* CritterClient in Frameworks */ = {isa = PBXBuildFile; productRef = C7A100000000000000000021 /* CritterClient */; };
+		C7A100000000000000000050 /* Skins in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000040 /* Skins */; };
+		C7A100000000000000000051 /* Sounds in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000041 /* Sounds */; };
+		C7A100000000000000000052 /* nunito.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000042 /* nunito.ttf */; };
+		C7A100000000000000000053 /* silkscreen_regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000043 /* silkscreen_regular.ttf */; };
+		C7A100000000000000000054 /* silkscreen_bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000044 /* silkscreen_bold.ttf */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXFileReference section */
 		C7A100000000000000000005 /* Critter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Critter.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		C7A100000000000000000012 /* Critter.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Critter.xcconfig; sourceTree = "<group>"; };
 		C7A100000000000000000013 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
+		C7A100000000000000000040 /* Skins */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Skins; path = ../Skins; sourceTree = SOURCE_ROOT; };
+		C7A100000000000000000041 /* Sounds */ = {isa = PBXFileReference; lastKnownFileType = folder; name = Sounds; path = ../Sounds; sourceTree = SOURCE_ROOT; };
+		C7A100000000000000000042 /* nunito.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = nunito.ttf; path = ../android/app/src/main/res/font/nunito.ttf; sourceTree = SOURCE_ROOT; };
+		C7A100000000000000000043 /* silkscreen_regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = silkscreen_regular.ttf; path = ../android/app/src/main/res/font/silkscreen_regular.ttf; sourceTree = SOURCE_ROOT; };
+		C7A100000000000000000044 /* silkscreen_bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = silkscreen_bold.ttf; path = ../android/app/src/main/res/font/silkscreen_bold.ttf; sourceTree = SOURCE_ROOT; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
@@ -42,6 +52,7 @@
 			isa = PBXGroup;
 			children = (
 				C7A100000000000000000006 /* Critter */,
+				C7A100000000000000000045 /* Shared */,
 				C7A100000000000000000011 /* Config */,
 				C7A100000000000000000003 /* Products */,
 			);
@@ -53,6 +64,18 @@
 				C7A100000000000000000005 /* Critter.app */,
 			);
 			name = Products;
+			sourceTree = "<group>";
+		};
+		C7A100000000000000000045 /* Shared */ = {
+			isa = PBXGroup;
+			children = (
+				C7A100000000000000000040 /* Skins */,
+				C7A100000000000000000041 /* Sounds */,
+				C7A100000000000000000042 /* nunito.ttf */,
+				C7A100000000000000000043 /* silkscreen_regular.ttf */,
+				C7A100000000000000000044 /* silkscreen_bold.ttf */,
+			);
+			name = Shared;
 			sourceTree = "<group>";
 		};
 		C7A100000000000000000011 /* Config */ = {
@@ -133,6 +156,11 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				C7A100000000000000000050 /* Skins in Resources */,
+				C7A100000000000000000051 /* Sounds in Resources */,
+				C7A100000000000000000052 /* nunito.ttf in Resources */,
+				C7A100000000000000000053 /* silkscreen_regular.ttf in Resources */,
+				C7A100000000000000000054 /* silkscreen_bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};

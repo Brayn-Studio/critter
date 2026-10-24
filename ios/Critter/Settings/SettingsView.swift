@@ -11,8 +11,7 @@ struct SettingsView: View {
     @State private var confirmingUnpair = false
 
     private var macName: String {
-        guard let name = store.pairing?.macName, !name.isEmpty else { return "Mac" }
-        return name
+        Theme.macName(store.pairing?.macName)
     }
 
     var body: some View {
@@ -46,10 +45,6 @@ struct SettingsView: View {
     }
 
     private var tint: Color {
-        switch store.conn {
-        case .connected: .green
-        case .needsRepair: .red
-        default: Color(.systemGray3)
-        }
+        Theme.conn(store.conn).dot
     }
 }

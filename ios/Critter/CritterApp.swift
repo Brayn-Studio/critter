@@ -5,6 +5,8 @@ import UIKit
 
 @main
 struct CritterApp: App {
+    /// Only for the orientations (`OrientationLock`).
+    @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var store: BridgeStore
     /// A `critter-pair://` link the app was opened with, until the pairing screen takes it.
@@ -29,6 +31,7 @@ struct CritterApp: App {
     var body: some Scene {
         WindowGroup {
             RootView(store: store, deviceName: deviceName, link: $link)
+                .environment(OrientationLock.shared)
                 .onOpenURL { url in
                     // Not a pairing link (or a broken one): ignored.
                     guard let uri = PairingURI(string: url.absoluteString) else { return }

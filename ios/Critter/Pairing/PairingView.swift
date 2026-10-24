@@ -178,7 +178,7 @@ struct PairingView: View {
                 onClose?()
             }
         ) {
-            Text(verbatim: "一个链接要让这台手机和「\(uri.name.isEmpty ? "Mac" : uri.name)」配对。只在你刚在 Mac 上点了「添加手机」时才继续。")
+            Text(verbatim: "一个链接要让这台手机和「\(Theme.macName(uri.name))」配对。只在你刚在 Mac 上点了「添加手机」时才继续。")
             Text(verbatim: "地址  \(hostAndPort(uri.host, uri.port))")
                 .font(.footnote)
             Text(verbatim: "证书指纹  \(PairingURI.fingerprintPrefix(uri.fingerprint))")
@@ -187,7 +187,7 @@ struct PairingView: View {
                 .font(.footnote)
                 .foregroundStyle(.secondary)
             if let existing = store.pairing {
-                Text(verbatim: "这会替换现在和「\(existing.macName.isEmpty ? "Mac" : existing.macName)」的配对。")
+                Text(verbatim: "这会替换现在和「\(Theme.macName(existing.macName))」的配对。")
                     .fontWeight(.bold)
                     .foregroundStyle(.red)
             }

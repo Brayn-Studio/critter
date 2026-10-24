@@ -43,16 +43,31 @@
 	<string>扫描 Mac 上显示的配对二维码。</string>
 	<key>NSLocalNetworkUsageDescription</key>
 	<string>Critter 要连接同一个 Wi‑Fi 里的 Mac，才能显示会话、在手机上作答。</string>
+	<key>UIAppFonts</key>
+	<array>
+		<string>nunito.ttf</string>
+		<string>silkscreen_regular.ttf</string>
+		<string>silkscreen_bold.ttf</string>
+	</array>
 	<key>UIApplicationSceneManifest</key>
 	<dict>
 		<key>UIApplicationSupportsMultipleScenes</key>
 		<false/>
 	</dict>
 	<key>UILaunchScreen</key>
-	<dict/>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchSky</string>
+		<key>UIImageName</key>
+		<string>LaunchIcon</string>
+		<key>UIImageRespectsSafeAreaInsets</key>
+		<false/>
+	</dict>
 	<key>UISupportedInterfaceOrientations</key>
 	<array>
 		<string>UIInterfaceOrientationPortrait</string>
+		<string>UIInterfaceOrientationLandscapeLeft</string>
+		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
 </dict>
 </plist>
