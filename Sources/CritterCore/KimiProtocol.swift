@@ -232,7 +232,7 @@ public enum KimiReducer {
     }
 
     /// Subagents run turns of their own; only the main agent's start and end the session's.
-    private static func isMainAgent(_ payload: JSONValue) -> Bool {
+    static func isMainAgent(_ payload: JSONValue) -> Bool {
         let agent = payload["agentId"]?.stringValue ?? payload["agent_id"]?.stringValue
         return agent == nil || agent == "main"
     }
@@ -286,7 +286,7 @@ public struct KimiPhoneRequest: Equatable, Sendable {
     public var questions: [JSONValue]
 
     /// Ids end up in REST paths: only plain ones are taken.
-    private static func isPlainId(_ id: String?) -> Bool {
+    static func isPlainId(_ id: String?) -> Bool {
         guard let id, (1...120).contains(id.count) else { return false }
         return id.unicodeScalars.allSatisfy { $0.isASCII && (CharacterSet.alphanumerics.contains($0) || $0 == "-" || $0 == "_") }
     }
