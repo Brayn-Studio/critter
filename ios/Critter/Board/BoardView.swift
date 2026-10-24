@@ -1,0 +1,176 @@
+import CritterClient
+import CritterKit
+import SwiftUI
+import UIKit
+
+/// The landscape board (spec §8.6, visual design §8.7, Android `BoardActivity`), over the home screen as a
+/// `fullScreenCover`: black, the status bar and the home indicator hidden, locked to landscape while it is up. Two
+/// modes, remembered (`PhoneSettings.boardCritterMode`): the Critters (`CritterBoard`) or the pro dashboard
+/// (`ProBoard`), switched by the button at the top right; under it, the button that closes the board.
+///
+/// While it is up the connection pings every 30 s (`BridgeStore.boardOpen`); the screen stays on at the board's
+/// brightness and dims once nothing has happened for 15 minutes (`BoardScreenKeeper`); the whole picture moves by a few
+/// points every 3 minutes so nothing burns in; and with 「看板提示音」 on, a session that just started waiting, finished
+/// or failed plays its sound (`BoardSounds`). Going to the background gives the screen back, coming back takes it
+/// again; every other way out is the closer's to report (`BoardScreenKeeper.leave`). A request is answered on the
+/// answer card, over the board and in landscape.
+///
+/// The content keeps clear of the sides' safe area (the Dynamic Island sits on one of them in landscape) and uses the
+/// whole height.
+struct BoardView: View {
+    let store: BridgeStore
+    let drafts: AnswerDrafts
+    /// What became of each card's 「拒绝」「允许」, by request id (the home list's).
+    let inline: [String: InlineAnswerState]
+    let screen: BoardScreenKeeper
+    /// 「拒绝」「允许」 on a pro card: the same path as the home list's.
+    let onAnswer: (RowRequest, Bool) -> Void
+    /// The close button.
+    let onClose: () -> Void
+
+    @Environment(PhoneSettings.self) private var settings
+    @Environment(SkinStore.self) private var skins
+    @Environment(\.scenePhase) private var scenePhase
+    @State private var sounds = BoardSounds()
+    /// The request whose answer card is open over the board.
+    @State private var presentedRequestId: String?
+    /// The burn-in shift, re-rolled every 3 minutes while the app is in front.
+    @State private var shift = CGSize.zero
+
+    private struct Target: Identifiable {
+        let id: String
+    }
+
+    var body: some View {
+        let data = BoardData(snapshot: store.snapshot, connected: store.conn.isConnected, updatedAt: store.snapshotAt)
+        ZStack(alignment: .topTrailing) {
+            Theme.Board.bg
+                .ignoresSafeArea()
+            content(data)
+                .offset(shift)
+                .ignoresSafeArea(.container, edges: .vertical)
+            buttons
+                .padding(.top, 18)
+                .padding(.trailing, 20)
+                .ignoresSafeArea(.container, edges: .vertical)
+        }
+        // The board is always dark (design §5), whatever the phone's appearance; the answer card is not.
+        .environment(\.colorScheme, .dark)
+        .background {
+            TouchWatch { screen.touched() }
+        }
+        .sheetShell(item: answerTarget) { target in
+            AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
+        }
+        .statusBarHidden()
+        .persistentSystemOverlays(.hidden)
+        .onAppear(perform: appeared)
+        .onDisappear(perform: disappeared)
+        .onChange(of: scenePhase) { _, phase in
+            switch phase {
+            case .background: screen.leave(.background)
+            case .active: screen.enter(base: settings.boardBrightness)
+            default: break
+            }
+        }
+        .onChange(of: settings.boardBrightness) { _, brightness in
+            screen.setBase(brightness)
+        }
+        .onChange(of: Self.signature(store.snapshot)) {
+            // A change on the Mac counts as activity: the board stays bright while something is happening.
+            screen.changed()
+        }
+        .onChange(of: store.snapshot) {
+            sounds.update(store.snapshot, live: store.isLive, enabled: settings.boardSounds)
+        }
+        .onChange(of: store.isLive) {
+            sounds.update(store.snapshot, live: store.isLive, enabled: settings.boardSounds)
+        }
+        .task(id: scenePhase == .active) {
+            await rollShift()
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willTerminateNotification)) { _ in
+            screen.leave(.terminated)
+        }
+        #if DEBUG
+        .task {
+            // `-critterBoard` with `-critterOpen answer:…`: the card opens over the board once the snapshot is in.
+            guard DebugLaunch.current.board != nil, case .answer(let requestId)? = DebugLaunch.current.open else { return }
+            for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+            try? await Task.sleep(for: .milliseconds(500))
+            presentedRequestId = requestId
+        }
+        #endif
+    }
+
+    @ViewBuilder
+    private func content(_ data: BoardData) -> some View {
+        if settings.boardCritterMode {
+            CritterBoard(data: data, skins: skins.library, dim: skins.idleDim, onTap: tap)
+        } else {
+            // The pro board comes with Task 16.
+            Text("专业模式")
+                .font(.nunito(size: 14, weight: .bold))
+                .foregroundStyle(Theme.Board.dim)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+    }
+
+    /// The mode switch (the icon is the mode it switches to) and, under it, the close button.
+    private var buttons: some View {
+        VStack(spacing: 4) {
+            BoardIconButton(
+                icon: settings.boardCritterMode ? .grid : .paw,
+                label: settings.boardCritterMode ? "切换到专业模式" : "切换到宠物模式"
+            ) {
+                settings.boardCritterMode.toggle()
+            }
+            BoardIconButton(icon: .close, label: "关闭看板", action: onClose)
+        }
+    }
+
+    private var answerTarget: Binding<Target?> {
+        Binding(get: { presentedRequestId.map(Target.init) }, set: { presentedRequestId = $0?.id })
+    }
+
+    /// A tap on a Critter: one with a request the phone can answer opens its card (the oldest request); any other was
+    /// only booped.
+    private func tap(_ sessionId: String) {
+        guard let request = RowRequest.all(in: store.snapshot)[sessionId] else { return }
+        presentedRequestId = request.request.requestId
+    }
+
+    private func appeared() {
+        OrientationLock.shared.lock(.landscape)
+        store.boardOpen = true
+        screen.enter(base: settings.boardBrightness)
+        // The snapshot already on screen is not news: no sound for it.
+        sounds.update(store.snapshot, live: store.isLive, enabled: settings.boardSounds)
+    }
+
+    private func disappeared() {
+        store.boardOpen = false
+        sounds.stop()
+        // Whoever closed the board said why; this only catches a way out that did not.
+        screen.leave(.closeButton)
+        OrientationLock.shared.lock(.portrait)
+    }
+
+    /// Every 3 minutes of the clock, the whole board moves to a new spot within 4 pt each way (no animation).
+    private func rollShift() async {
+        guard scenePhase == .active else { return }
+        while !Task.isCancelled {
+            let now = Date().timeIntervalSince1970
+            let next = ((now / BoardScreen.shiftEvery).rounded(.down) + 1) * BoardScreen.shiftEvery
+            try? await Task.sleep(for: .seconds(next - now))
+            guard !Task.isCancelled else { return }
+            shift = BoardScreen.shift(seed: BoardScreen.shiftSeed(at: Date()))
+        }
+    }
+
+    /// What the board shows that counts as something happening: each session's state and the open requests.
+    private static func signature(_ body: SnapshotBody?) -> [String] {
+        guard let body else { return [] }
+        return body.sessions.map { "\($0.id):\($0.state.rawValue)" } + body.pending.map(\.requestId)
+    }
+}

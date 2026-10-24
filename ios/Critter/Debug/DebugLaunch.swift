@@ -67,6 +67,16 @@ import Foundation
 ///   tile is tapped ("follow" is 「跟着电脑」), and 1.5 s later the settings go back to the home screen. The choice is
 ///   saved like a real tap: `-critterPickSkin follow` undoes it.
 /// - `-critterSettingsAt skins|board|motion`: with `-critterOpen settings`, the settings open scrolled to that group.
+/// - `-critterBoard critter|pro`: once launched, the board opens in that mode, as if 「打开看板」 had been tapped
+///   (the mode is saved like the board's own switch). With `-critterOpen answer:<requestId>` the answer card opens on
+///   the board (landscape) rather than on the home screen. Fixtures: `board` (six sessions, one waiting) and `many`.
+/// - `-critterBoardScript <action>@<seconds>,…`: with `-critterBoard`, closes and opens the board at those times
+///   after launch (`close@4,open@6,close@30`), through the same calls as its close button and 「打开看板」.
+/// - `-critterBoardLog`: standard output gets "board [t s] …" lines (`BoardLog`): the screen saved on the way in,
+///   every brightness set, every way out with what it restored, and the sounds.
+/// - `-critterBoardDimAfter <seconds>`: the board dims after this long without a touch or a change, not 15 minutes.
+/// - `-critterFixtureStep <sessionId>:<state>@<seconds>`: with `-critterFixture`, that long after connecting the
+///   fixture Mac puts that session in that state and sends the snapshot (a sound on the board, a state change).
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -82,6 +92,23 @@ struct DebugLaunch {
         case answer(requestId: String)
         case detail(sessionId: String)
         case settings
+    }
+
+    /// One step of `-critterBoardScript`.
+    struct BoardStep: Equatable {
+        enum Action: Equatable {
+            case open, close
+        }
+
+        var action: Action
+        var at: Double
+    }
+
+    /// `-critterFixtureStep`.
+    struct FixtureStep: Equatable {
+        var sessionId: String
+        var state: PetState
+        var at: Double
     }
 
     var fixture: String?
@@ -109,6 +136,14 @@ struct DebugLaunch {
     /// `-critterPickSkin`: a bundled skin's name, or nil for 「跟着电脑」 ("follow"); unset when not asked for.
     var pickSkin: String??
     var settingsAt: String?
+    /// `-critterBoard`: true for the Critter mode, false for the pro board; nil when not asked for.
+    var board: Bool?
+    var boardScript: [BoardStep] = []
+    var boardLog = false
+    var boardDimAfter: TimeInterval?
+    var fixtureStep: FixtureStep?
+    /// When the process started, on the system's uptime clock (the board log counts from here).
+    let launchUptime = ProcessInfo.processInfo.systemUptime
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -167,6 +202,30 @@ struct DebugLaunch {
         pairing = value("critterPairing").flatMap(PairingDemo.init(argument:))
         if let pick = value("critterPickSkin") { pickSkin = .some(pick == "follow" ? nil : pick) }
         settingsAt = value("critterSettingsAt")
+        switch value("critterBoard") {
+        case "critter": board = true
+        case "pro": board = false
+        default: break
+        }
+        boardScript = (value("critterBoardScript") ?? "").split(separator: ",").compactMap { step in
+            let parts = step.split(separator: "@")
+            guard parts.count == 2, let at = Double(parts[1]) else { return nil }
+            switch parts[0] {
+            case "open": return BoardStep(action: .open, at: at)
+            case "close": return BoardStep(action: .close, at: at)
+            default: return nil
+            }
+        }
+        boardLog = arguments.contains("-critterBoardLog")
+        boardDimAfter = value("critterBoardDimAfter").flatMap(Double.init)
+        if let step = value("critterFixtureStep") {
+            let parts = step.split(separator: "@")
+            let target = parts.first?.split(separator: ":") ?? []
+            if parts.count == 2, target.count == 2, let at = Double(parts[1]),
+               let state = PetState(rawValue: String(target[1])) {
+                fixtureStep = FixtureStep(sessionId: String(target[0]), state: state, at: at)
+            }
+        }
     }
 
     /// With `-critterPairing`: the fake Macs and certificates the pairing screen uses.
@@ -295,6 +354,19 @@ actor FixtureLink: BridgeLink {
             return
         }
         onEvent(.state(.connected(macName: DebugLaunch.fixtureMacName)))
+        sendSnapshot()
+        if let step = DebugLaunch.current.fixtureStep {
+            Task {
+                try? await Task.sleep(for: .seconds(step.at))
+                self.take(step)
+            }
+        }
+    }
+
+    /// `-critterFixtureStep`: the session goes into the step's state, as the Mac would tell.
+    private func take(_ step: DebugLaunch.FixtureStep) {
+        guard let i = snapshot.sessions.firstIndex(where: { $0.id == step.sessionId }) else { return }
+        snapshot.sessions[i].state = step.state
         sendSnapshot()
     }
 

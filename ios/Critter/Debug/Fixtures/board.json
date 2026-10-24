@@ -1,0 +1,153 @@
+{
+  "sessions": [
+    {
+      "id": "s-c4",
+      "name": "critter-4c",
+      "source": "terminal",
+      "state": "waiting",
+      "detail": "Bash: ./gradlew :app:assembleRelease",
+      "activity": "bash",
+      "cwd": "~/CODE/critter",
+      "branch": "main",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 41,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "sprig",
+      "eventTime": 1759999980000,
+      "startedAt": 1759996400000,
+      "tracked": true
+    },
+    {
+      "id": "s-b8",
+      "name": "robocup-b8",
+      "source": "vscode",
+      "state": "running",
+      "detail": "Bash: docker compose up -d",
+      "activity": "bash",
+      "cwd": "~/CODE/demo-avoid",
+      "branch": "feat/avoid-path",
+      "model": "Sonnet 5.5",
+      "context": {
+        "usedPercent": 32,
+        "windowSize": 200000,
+        "estimated": true
+      },
+      "skin": "mochi",
+      "eventTime": 1759999995000,
+      "startedAt": 1759992800000,
+      "tracked": true
+    },
+    {
+      "id": "s-e3",
+      "name": "infra-e3",
+      "source": "terminal",
+      "state": "running",
+      "detail": "思考中…",
+      "activity": "think",
+      "cwd": "~/CODE/infra",
+      "branch": "fix/dns-cache",
+      "model": "Opus 5.5",
+      "context": {
+        "usedPercent": 67,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "bristle",
+      "eventTime": 1759999990000,
+      "startedAt": 1759994600000,
+      "tracked": true
+    },
+    {
+      "id": "s-b21",
+      "name": "blog-21",
+      "source": "desktop",
+      "state": "done",
+      "detail": "改好了 3 篇文章的配图",
+      "cwd": "~/CODE/blog",
+      "branch": "draft/autumn",
+      "model": "Sonnet 5.5",
+      "context": {
+        "usedPercent": 18,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "peep",
+      "eventTime": 1759999700000,
+      "startedAt": 1759991000000,
+      "tracked": true
+    },
+    {
+      "id": "s-n07",
+      "name": "notes-07",
+      "source": "terminal",
+      "state": "idle",
+      "cwd": "~/Documents/notes",
+      "model": "Haiku 4.5",
+      "context": {
+        "usedPercent": 9,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "bristle",
+      "eventTime": 1759999100000,
+      "startedAt": 1759988000000,
+      "tracked": true
+    },
+    {
+      "id": "s-etl",
+      "name": "etl-jobs",
+      "source": "vscode",
+      "state": "error",
+      "detail": "Bash: npm test 失败了 3 个",
+      "activity": "bash",
+      "cwd": "~/CODE/etl",
+      "branch": "nightly",
+      "model": "Sonnet 5.5",
+      "context": {
+        "usedPercent": 76,
+        "windowSize": 200000,
+        "estimated": false
+      },
+      "skin": "spout",
+      "eventTime": 1759999880000,
+      "startedAt": 1759994000000,
+      "tracked": true
+    }
+  ],
+  "limits": {
+    "fiveHour": {
+      "usedPercentage": 11,
+      "resetsAt": 1760018000000
+    },
+    "sevenDay": {
+      "usedPercentage": 62,
+      "resetsAt": 1760345600000
+    },
+    "updatedAt": 1759999940000
+  },
+  "pending": [
+    {
+      "requestId": "req-c4",
+      "sessionId": "s-c4",
+      "kind": "permission",
+      "toolName": "Bash",
+      "summary": "./gradlew :app:assembleRelease",
+      "input": {
+        "command": "./gradlew :app:assembleRelease && adb install -r app/build/outputs/apk/release/app-release.apk",
+        "description": "Build and install the release APK"
+      },
+      "createdAt": 1759999980000,
+      "expiresAt": 1760000570000
+    }
+  ],
+  "prefs": {
+    "skin": "sprig",
+    "randomSkins": false,
+    "idleDim": 0.6,
+    "mergeThreshold": 5,
+    "soundTheme": "pixel"
+  }
+}

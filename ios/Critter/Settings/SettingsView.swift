@@ -117,7 +117,7 @@ struct SettingsView: View {
         .padding(.vertical, 8)
         .accessibilityElement(children: .contain)
         RowLine()
-        SwitchRow(title: "看板提示音", detail: "只在看板打开时响；勿扰模式下不响", isOn: $settings.boardSounds)
+        SwitchRow(title: "看板提示音", detail: "只在看板打开时响；静音模式下不响", isOn: $settings.boardSounds)
     }
 
     // MARK: - Unpairing

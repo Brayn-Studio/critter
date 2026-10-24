@@ -25,6 +25,8 @@ struct HomeView: View {
     @State private var presentedSessionId: String?
     @State private var showSettings = false
     @State private var showBoard = false
+    /// The screen as the board found it, given back on every way out.
+    @State private var boardScreen = BoardScreenKeeper()
     /// What became of each card's 「拒绝」「允许」, by request id.
     @State private var inline: [String: InlineAnswerState] = [:]
     /// Offline once an attempt has failed, until connected again: a retry's brief "connecting" stays offline.
@@ -88,7 +90,11 @@ struct HomeView: View {
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
         }
         .fullScreenCover(isPresented: $showBoard) {
-            BoardPlaceholder { showBoard = false }
+            BoardView(
+                store: store, drafts: drafts, inline: inline, screen: boardScreen,
+                onAnswer: { request, allow in answerInline(request, allow: allow) },
+                onClose: { closeBoard(.closeButton) }
+            )
         }
         .onChange(of: store.conn, initial: true) { _, conn in
             switch conn {
@@ -107,6 +113,12 @@ struct HomeView: View {
         .task {
             // The sheets look their subject up in the snapshot: let the fixture's arrive first.
             for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
+            if let critterMode = DebugLaunch.current.board {
+                settings.boardCritterMode = critterMode
+                openBoard()
+                await runBoardScript()
+                return
+            }
             switch DebugLaunch.current.open {
             case .answer(let requestId)?:
                 presentedRequestId = requestId
@@ -210,7 +222,7 @@ struct HomeView: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
             HStack(spacing: 8) {
-                PixelIconButton(icon: .board, label: "打开看板") { showBoard = true }
+                PixelIconButton(icon: .board, label: "打开看板") { openBoard() }
                 PixelIconButton(icon: .sliders, label: "设置") { showSettings = true }
             }
         }
@@ -329,6 +341,40 @@ struct HomeView: View {
             store.retry()
         }
     }
+
+    // MARK: - The board
+
+    /// Puts the board up: at once, then it turns the screen to landscape.
+    private func openBoard() {
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { showBoard = true }
+    }
+
+    /// Takes the board down, left by `exit`: the screen as it was before it, portrait again.
+    private func closeBoard(_ exit: BoardScreen.Exit) {
+        boardScreen.leave(exit)
+        OrientationLock.shared.lock(.portrait)
+        var transaction = Transaction()
+        transaction.disablesAnimations = true
+        withTransaction(transaction) { showBoard = false }
+    }
+
+    #if DEBUG
+    /// `-critterBoardScript`: the board closed and opened at those times after launch, as its close button and
+    /// 「打开看板」 do.
+    private func runBoardScript() async {
+        let launch = DebugLaunch.current
+        for step in launch.boardScript {
+            let wait = step.at - (ProcessInfo.processInfo.systemUptime - launch.launchUptime)
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            switch step.action {
+            case .open: openBoard()
+            case .close: closeBoard(.closeButton)
+            }
+        }
+    }
+    #endif
 
     // MARK: - Actions
 
@@ -489,22 +535,5 @@ private struct EmptyList: View {
         .padding(.horizontal, 22)
         .padding(.top, 40)
         .frame(maxWidth: .infinity)
-    }
-}
-
-/// Until the board arrives (Task 15): a black screen that says what will be here, and a way back.
-private struct BoardPlaceholder: View {
-    let onClose: () -> Void
-
-    var body: some View {
-        ZStack(alignment: .topTrailing) {
-            Theme.Board.bg.ignoresSafeArea()
-            Text("看板")
-                .font(.nunito(size: 17, weight: .heavy))
-                .foregroundStyle(Theme.Board.dim)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            PixelIconButton(icon: .close, label: "关闭", action: onClose)
-                .padding(16)
-        }
     }
 }
