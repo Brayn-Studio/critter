@@ -89,6 +89,14 @@ extension MotionActor {
         desiredTicks = 0
     }
 
+    /// Falls asleep at once, without the doze-off clip: for a Critter that is only shown dozing (the offline pile,
+    /// a meadow with nobody in it). Does nothing outside idle, or for a skin that cannot sleep (Android `sleepNow`).
+    public func sleepNow() {
+        guard state == .idle, !asleep, let sleep = skin.state(state).sleep else { return }
+        asleep = true
+        setLoop(sleep.loop)
+    }
+
     public func wake() {
         guard asleep else { return }
         asleep = false

@@ -30,19 +30,9 @@ extension Animation {
 }
 
 extension EnvironmentValues {
-    /// Reduce motion: the system's setting or the app's own switch, whichever is on. Set once at the root; the
-    /// widgets and the transitions read only this.
+    /// Reduce motion: the system's setting or the app's own switch, whichever is on (`PhoneSettings.motionReduced`).
+    /// Set once at the root; the widgets, the transitions and the Critter stages read only this.
     @Entry var reduceMotion = false
-}
-
-/// Sets `reduceMotion` for everything under it: the system's "减少动态效果", or `appSetting` (the app's own switch).
-struct ReduceMotionRoot: ViewModifier {
-    var appSetting = false
-    @Environment(\.accessibilityReduceMotion) private var system
-
-    func body(content: Content) -> some View {
-        content.environment(\.reduceMotion, system || appSetting)
-    }
 }
 
 /// The pet engine's beat.
@@ -149,7 +139,9 @@ private struct PixelButtonBody<Label: View>: View {
             .frame(maxWidth: wide ? .infinity : nil)
             .frame(minHeight: height - lip)
             .padding(.bottom, lip)
-            .modifier(ButtonFace(face: look.face, lip: look.lip, lipHeight: down ? min(lip, 1) : lip, shine: look.shine))
+            .modifier(
+                ButtonFace(face: look.face, lip: look.lip, lipHeight: down ? min(lip, 1) : lip, shine: look.shine)
+            )
             .offset(y: down ? 3 : 0)
             .animation(reduceMotion ? nil : .stepped(0.07, steps: 1), value: down)
             .frame(minWidth: minTouch, minHeight: minTouch)
@@ -430,7 +422,9 @@ struct SegmentMeter: View {
         let on = color ?? onColor
         SegmentCells(count: segments, gap: 2) { i in
             if board {
-                return SegmentCells.Cell(fill: i < lit ? on : Theme.Board.meterOff, lip: .clear, lipHeight: 0, lipOnTop: false)
+                return SegmentCells.Cell(
+                    fill: i < lit ? on : Theme.Board.meterOff, lip: .clear, lipHeight: 0, lipOnTop: false
+                )
             }
             return i < lit
                 ? SegmentCells.Cell(fill: on, lip: Color.black.opacity(0.14), lipHeight: 2, lipOnTop: false)
@@ -471,7 +465,9 @@ struct SegmentCells: View {
                 let left = (CGFloat(i) * span / CGFloat(count)).rounded()
                 let right = (CGFloat(i + 1) * span / CGFloat(count)).rounded() - gap
                 let look = cell(i)
-                context.fill(Path(CGRect(x: left, y: 0, width: right - left, height: size.height)), with: .color(look.fill))
+                context.fill(
+                    Path(CGRect(x: left, y: 0, width: right - left, height: size.height)), with: .color(look.fill)
+                )
                 if look.lipHeight > 0 {
                     let y = look.lipOnTop ? 0 : size.height - look.lipHeight
                     context.fill(
@@ -561,8 +557,9 @@ struct OptionCard: View {
                     .offset(x: 13, y: 11)
             }
             .pixelSurface(
-                fill: selected ? Theme.brandSoft : Theme.surface, lip: selected ? Theme.brand.opacity(0.3) : Theme.shade,
-                step: 3, lipHeight: 3, outline: selected ? Theme.brand : Theme.line, outlineWidth: 2
+                fill: selected ? Theme.brandSoft : Theme.surface,
+                lip: selected ? Theme.brand.opacity(0.3) : Theme.shade, step: 3, lipHeight: 3,
+                outline: selected ? Theme.brand : Theme.line, outlineWidth: 2
             )
             .opacity(isEnabled ? 1 : 0.5)
             .contentShape(Rectangle())

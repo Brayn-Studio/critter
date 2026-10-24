@@ -25,11 +25,12 @@ struct NotchedSquare: Shape {
         let n = notch
         let (x0, y0, x1, y1) = (rect.minX, rect.minY, rect.maxX, rect.maxY)
         var path = Path()
-        path.addLines([
-            CGPoint(x: x0 + n, y: y0), CGPoint(x: x1 - n, y: y0), CGPoint(x: x1 - n, y: y0 + n), CGPoint(x: x1, y: y0 + n),
-            CGPoint(x: x1, y: y1 - n), CGPoint(x: x1 - n, y: y1 - n), CGPoint(x: x1 - n, y: y1), CGPoint(x: x0 + n, y: y1),
-            CGPoint(x: x0 + n, y: y1 - n), CGPoint(x: x0, y: y1 - n), CGPoint(x: x0, y: y0 + n), CGPoint(x: x0 + n, y: y0 + n),
-        ])
+        let corners: [(CGFloat, CGFloat)] = [
+            (x0 + n, y0), (x1 - n, y0), (x1 - n, y0 + n), (x1, y0 + n),
+            (x1, y1 - n), (x1 - n, y1 - n), (x1 - n, y1), (x0 + n, y1),
+            (x0 + n, y1 - n), (x0, y1 - n), (x0, y0 + n), (x0 + n, y0 + n),
+        ]
+        path.addLines(corners.map { CGPoint(x: $0.0, y: $0.1) })
         path.closeSubpath()
         return path
     }

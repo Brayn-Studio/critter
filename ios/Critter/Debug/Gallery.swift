@@ -3,9 +3,14 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// `-critterGallery`: every pixel widget in its states, in the order of the mockups' "部件" section, then the fonts,
-/// every pixel icon and the wordmark. For screenshots next to the mockups (`scripts/dev/render-mockups.sh`).
+/// `-critterGallery`: the seven bundled skins on a strip of meadow and their still portraits, then every pixel widget
+/// in its states, in the order of the mockups' "部件" section, then the fonts, every pixel icon and the wordmark. For
+/// screenshots next to the mockups (`scripts/dev/render-mockups.sh`).
 struct Gallery: View {
+    @Environment(SkinStore.self) private var skins
+    @Environment(\.colorScheme) private var colorScheme
+    @State private var touched = "点一下、按住拎起来左右拖、来回蹭"
+    @State private var stage = CritterStageControl()
     @State private var switchOn = true
     @State private var switchOff = false
     @State private var size = 1
@@ -19,6 +24,7 @@ struct Gallery: View {
         ScrollViewReader { reader in
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
+                    section("critters", "宠物") { critters }
                     section("parts", "部件") { parts }
                     section("more", "更多部件") { moreParts }
                     section("fonts", "字体") { fonts }
@@ -45,6 +51,75 @@ struct Gallery: View {
             content()
         }
         .id(id)
+    }
+
+    /// The meadow strip's size and ground line, in points; the Critters are 2 pt a cell.
+    private static let stripHeight: CGFloat = 100
+    private static let stripGround: CGFloat = 72
+    private static let stripCell: CGFloat = 2
+
+    /// The seven bundled skins in a row, each in a state that wears a mark over its head (all asleep with
+    /// `-critterAllAsleep`), and under them their still portraits in the same state, and the five states of sprig.
+    private var critters: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            GeometryReader { proxy in
+                let slots = Self.slots(width: proxy.size.width, library: skins.previewLibrary, dim: skins.idleDim)
+                ZStack(alignment: .topLeading) {
+                    MeadowStrip(time: colorScheme == .dark ? .night : .day, ground: Self.stripGround)
+                    CritterStage(
+                        slots: slots, carryOnDrag: true, control: stage,
+                        onTap: { touched = "点了 \($0)" },
+                        onLongDragEnd: { touched = "放下了 \($0)" },
+                        onCarry: { id, away in touched = away ? "拎走了 \(id)" : "\(id) 走回来了" }
+                    )
+                    ForEach(slots, id: \.sessionId) { slot in
+                        CritterPortrait(
+                            manifest: slot.manifest, state: slot.state, cell: Self.stripCell, asleep: slot.sleeping,
+                            dim: slot.manifest.state(slot.state).tint == .dim, dimStrength: slot.dimStrength
+                        )
+                        .offset(x: slot.origin.x - Self.stripCell, y: Self.stripHeight + 8)
+                    }
+                }
+            }
+            .frame(height: Self.stripHeight + 8 + CGFloat(Portraits.cells) * Self.stripCell)
+            .task {
+                guard DebugLaunch.current.galleryHold else { return }
+                try? await Task.sleep(for: .seconds(1))
+                stage.view?.debugHold(PhoneSkinLibrary.fallback)
+            }
+            Text(verbatim: touched)
+                .font(.nunito(size: 13, weight: .bold))
+                .foregroundStyle(Theme.ink2)
+            HStack(spacing: 8) {
+                ForEach([PetState.idle, .running, .waiting, .done, .error], id: \.self) { state in
+                    VStack(spacing: 6) {
+                        CritterPortrait(
+                            manifest: skins.previewLibrary.manifest(PhoneSkinLibrary.fallback), state: state, cell: 3
+                        )
+                        .background(state == .waiting ? Theme.waitBg : Theme.state(state).bg)
+                        .clipShape(PixelShape(step: 3))
+                        StateTag(state: state)
+                    }
+                }
+            }
+        }
+    }
+
+    private static let stripStates: [PetState] = [.waiting, .running, .done, .error, .idle, .running, .idle]
+
+    private static func slots(width: CGFloat, library: PhoneSkinLibrary, dim: Double) -> [CritterSlot] {
+        let names = SkinStore.bundledNames
+        let box = 18 * stripCell
+        let gap = max(0, (width - CGFloat(names.count) * box) / CGFloat(names.count))
+        let asleep = DebugLaunch.current.allAsleep
+        return names.enumerated().map { i, name in
+            CritterSlot(
+                sessionId: name, manifest: library.manifest(name),
+                state: asleep ? .idle : stripStates[i % stripStates.count], activity: nil, dimStrength: dim,
+                origin: CGPoint(x: (gap / 2 + CGFloat(i) * (box + gap)).rounded(), y: stripGround),
+                scale: stripCell, sleeping: asleep
+            )
+        }
     }
 
     /// The mockups' "部件" panel, row by row.
@@ -206,6 +281,27 @@ struct Gallery: View {
         case .sprout: "发芽"
         default: icon.rawValue
         }
+    }
+}
+
+/// A strip of meadow (`meadowCells`) the gallery's Critters stand on, 2 pt a cell.
+private struct MeadowStrip: View {
+    let time: SkyTime
+    let ground: CGFloat
+
+    var body: some View {
+        Canvas { context, size in
+            for c in meadowCells(
+                width: Int(size.width), height: Int(size.height), ground: Int(ground), cell: 2, time: time
+            ) {
+                context.fill(
+                    Path(CGRect(x: c.x, y: c.y, width: c.w, height: c.h)),
+                    with: .color(Color(rgb: c.color, opacity: c.opacity))
+                )
+            }
+        }
+        .frame(height: 100)
+        .clipShape(PixelShape(step: 4))
     }
 }
 

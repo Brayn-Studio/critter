@@ -25,7 +25,14 @@ import Foundation
 ///   system like a link opened from outside (`xcrun simctl openurl` stops at the system's "在“Critter”中打开?").
 /// - `-critterGallery`: instead of the app, a page of every pixel widget in its states, the fonts, every pixel icon
 ///   and the wordmark (`Gallery.swift`), to put next to the mockups.
-/// - `-critterGalleryAt parts|more|fonts|icons|logo`: with `-critterGallery`, opens the page scrolled to that part.
+/// - `-critterGalleryAt critters|parts|more|fonts|icons|logo`: with `-critterGallery`, opens the page scrolled to
+///   that part. The gallery starts with the seven bundled skins on a strip of meadow (touch them: press, lift and
+///   carry, rub) and still portraits of each state.
+/// - `-critterAllAsleep`: the gallery's Critters are all idle and asleep (`sleepNow`), for the frame count.
+/// - `-critterGalleryHold`: a second after the gallery opens, its sprig is held up as if lifted by a finger (its
+///   shadow shows on the ground under it).
+/// - `-critterFrameLog`: every 10 seconds, "frames <n>" on standard output: how many ticks changed the picture on any
+///   Critter stage (`FrameLog`). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -54,6 +61,9 @@ struct DebugLaunch {
     var openURL: URL?
     var gallery = false
     var galleryAt: String?
+    var allAsleep = false
+    var galleryHold = false
+    var frameLog = false
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -99,6 +109,9 @@ struct DebugLaunch {
         openURL = value("critterOpenURL").flatMap(URL.init(string:))
         gallery = arguments.contains("-critterGallery")
         galleryAt = value("critterGalleryAt")
+        allAsleep = arguments.contains("-critterAllAsleep")
+        galleryHold = arguments.contains("-critterGalleryHold")
+        frameLog = arguments.contains("-critterFrameLog")
     }
 
     /// With `-critterFixture`: a store on the fake storage and link, already paired; nil without it.

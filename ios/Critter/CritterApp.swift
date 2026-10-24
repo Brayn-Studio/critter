@@ -9,6 +9,8 @@ struct CritterApp: App {
     @UIApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
     @Environment(\.scenePhase) private var scenePhase
     @State private var store: BridgeStore
+    @State private var settings = PhoneSettings()
+    @State private var skins = SkinStore()
     /// A `critter-pair://` link the app was opened with, until the pairing screen takes it.
     @State private var link: IncomingPairLink?
     /// `pair.deviceName`.
@@ -31,8 +33,14 @@ struct CritterApp: App {
     var body: some Scene {
         WindowGroup {
             content
-                .modifier(ReduceMotionRoot())
+                .environment(\.reduceMotion, settings.motionReduced)
+                .environment(settings)
+                .environment(skins)
                 .environment(OrientationLock.shared)
+                .onChange(of: settings.forcedSkin, initial: true) { _, name in skins.setForced(name) }
+                .onChange(of: store.snapshot, initial: true) { _, snapshot in
+                    if let snapshot { skins.update(from: snapshot, store: store) }
+                }
                 .onOpenURL { url in
                     // Not a pairing link (or a broken one): ignored.
                     guard let uri = PairingURI(string: url.absoluteString) else { return }
@@ -40,6 +48,7 @@ struct CritterApp: App {
                 }
                 #if DEBUG
                 .task {
+                    if DebugLaunch.current.frameLog { FrameLog.start() }
                     guard let url = DebugLaunch.current.openURL else { return }
                     // Once the scene is up: the system hands the URL back through `onOpenURL`.
                     try? await Task.sleep(for: .seconds(1))

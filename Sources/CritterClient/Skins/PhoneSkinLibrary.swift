@@ -113,8 +113,9 @@ public final class PhoneSkinLibrary {
         find(Self.fallback) ?? Self.builtinSprig
     }
 
-    /// The name becomes part of a path, so it must not climb out of the skins folder.
-    private static func isPlain(_ name: String) -> Bool {
+    /// Whether skin `name` can be looked up at all: the name becomes part of a path (a bundled skin's folder, a
+    /// pushed one's saved file), so it must not climb out of the skins folder.
+    public static func isPlain(_ name: String) -> Bool {
         !name.isEmpty && !name.contains { $0 == "/" || $0 == "\\" || $0 == "." }
     }
 }
