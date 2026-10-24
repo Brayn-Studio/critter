@@ -89,9 +89,12 @@ extension BridgeController: BridgeServices {
         return true
     }
 
-    /// A device registered for push, or took its registration back. The push coordinator
-    /// (plan 3, Task 7) hears about it here.
-    func pushRegistrationChanged(deviceId: String) {}
+    /// A device registered for push, or took its registration back. `refreshDevices()` has
+    /// handed `PushCoordinator` the new list; a snapshot now lets a new registration record
+    /// what is there, so the next change is judged against it.
+    func pushRegistrationChanged(deviceId: String) {
+        changed()
+    }
 
     /// `seq` is a placeholder: `BridgeServer` numbers snapshots per connection.
     func snapshotMessage() -> ServerMessage {

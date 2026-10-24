@@ -29,3 +29,15 @@ public struct APNsConfig: Equatable, Sendable {
         return id.allSatisfy { $0.isASCII && ($0.isLetter || $0.isNumber) } ? id : nil
     }
 }
+
+/// What the settings' "iPhone 推送" amounts to: nothing set up yet, a setup ready to sign with, or a setup that
+/// cannot work and why (for the status line).
+public enum APNsSetup: Equatable, Sendable {
+    /// The reason shown when the `.p8` is missing or is not a P-256 key.
+    public static let unreadableKey = "读不了 .p8 文件"
+
+    case notConfigured
+    /// `pem` is the `.p8`'s contents; it is never logged.
+    case ready(APNsConfig, pem: String)
+    case problem(String)
+}

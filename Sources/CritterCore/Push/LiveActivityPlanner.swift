@@ -41,6 +41,9 @@ public final class LiveActivityPlanner {
     private var endedToken: String?
     /// Since when there have been no sessions.
     private var emptySince: Int64?
+    /// The activity is 7.5 hours old but could not be replaced (no start token): that deadline is not reported
+    /// again, or the caller's timer would fire on it over and over. It is still replaced once a start token comes.
+    private var ageWaitsForStartToken = false
 
     public init() {}
 
@@ -95,6 +98,8 @@ public final class LiveActivityPlanner {
                     actions.append(.end(dismissAt: now))
                     endedToken = token
                     forget()
+                } else {
+                    ageWaitsForStartToken = true
                 }
             } else {
                 forget()  // a start the phone never reported on
@@ -120,6 +125,7 @@ public final class LiveActivityPlanner {
             lastUpdateAt = now
             lastStartAt = now
             activitySince = now
+            ageWaitsForStartToken = false
             changeWaiting = false
             actions.append(.start(started))
             return actions
@@ -152,7 +158,7 @@ public final class LiveActivityPlanner {
         var deadlines: [Int64] = []
         if changeWaiting, let last = lastUpdateAt { deadlines.append(last + Self.throttle) }
         if activitySince != nil, let emptySince { deadlines.append(emptySince + Self.endAfterEmpty) }
-        if let since = activitySince { deadlines.append(since + Self.maxAge) }
+        if let since = activitySince, !ageWaitsForStartToken { deadlines.append(since + Self.maxAge) }
         return deadlines.min()
     }
 
@@ -166,15 +172,20 @@ public final class LiveActivityPlanner {
             break
         case (nil, _?):
             // An activity's token arrives: the one the Mac started, or one it has not seen.
-            if activitySince == nil { activitySince = now }
+            if activitySince == nil {
+                activitySince = now
+                ageWaitsForStartToken = false
+            }
         case (_?, nil):
             // It was running and is gone (swiped away, or ended by the system). A start soon after the last is held off.
             activitySince = nil
+            ageWaitsForStartToken = false
             lastSent = nil
             changeWaiting = false
         case (_?, _?):
             // Another activity in its place: what it shows is unknown.
             activitySince = now
+            ageWaitsForStartToken = false
             lastSent = nil
             changeWaiting = false
         }
@@ -199,6 +210,7 @@ public final class LiveActivityPlanner {
         lastUpdateAt = nil
         changeWaiting = false
         activitySince = nil
+        ageWaitsForStartToken = false
         lastStartAt = nil
         trackedToken = nil
         emptySince = nil

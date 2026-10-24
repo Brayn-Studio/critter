@@ -362,6 +362,25 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(next(planner, shown, at: restart, noStart).isEmpty)
 }
 
+@Test func aRestartThatCannotHappenIsNotDueOverAndOver() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    var noStart = phone
+    noStart.startToken = false
+    #expect(next(planner, shown, at: restart, noStart).isEmpty)
+    // Nothing more can be done about its age without a start token: the caller's timer must not fire again and
+    // again on a deadline that has passed.
+    #expect(planner.nextDeadline() == nil)
+    // The old activity still gets its updates.
+    let waiting = content(.waiting)
+    #expect(next(planner, waiting, at: restart + second, noStart) == [.update(stamped(waiting, restart + second), priority: 10)])
+    #expect(planner.nextDeadline() == nil)
+    // A start token comes with the next registration: it is replaced on the next snapshot.
+    let at = restart + 2 * second
+    #expect(next(planner, waiting, at: at, phone) == [.end(dismissAt: at), .start(stamped(waiting, at))])
+    #expect(planner.nextDeadline() == at + 7 * hour + 30 * minute)
+}
+
 @Test func anActivityTheAppStartedIsTimedFromWhenTheMacFirstSawIt() {
     let planner = LiveActivityPlanner()
     let c = content(.running)

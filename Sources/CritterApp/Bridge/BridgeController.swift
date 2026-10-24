@@ -4,13 +4,14 @@ import Foundation
 /// The phone bridge's brain (spec §6.5): switches the `BridgeServer` on and off, pushes the
 /// snapshots `SnapshotAssembler` makes (sessions from `SessionMonitor` plus branch, context,
 /// status-line data, skins and pending requests), carries out what phones ask for
-/// (`BridgeServices`, in `BridgeController+Services.swift`), and runs pairing.
+/// (`BridgeServices`, in `BridgeController+Services.swift`), and runs pairing. The same
+/// snapshots go to `PushCoordinator` for the iPhones that registered for push.
 ///
 /// All of it runs on its own serial queue, `local.critter.pet.bridge`, so nothing it does --
 /// or fails to do -- touches the pet's UI or the hooks. The main thread only hands it
 /// sessions and settings, and reads the few values below that sit behind `lock`. Switched off,
 /// nothing listens and nothing runs (no timers, no watchers); switched on with no phone
-/// connected, it only notes that something changed.
+/// connected and push not active, it only notes that something changed.
 final class BridgeController: @unchecked Sendable {
     /// Changes are pushed together, at most this long after the first one.
     static let pushDelay: TimeInterval = 0.25
@@ -25,7 +26,7 @@ final class BridgeController: @unchecked Sendable {
     @MainActor var onPairRequest: (@MainActor (String, @escaping (Bool) -> Void) -> Void)?
 
     // Not private where `BridgeController+Services.swift` uses them too.
-    private let queue = DispatchQueue(label: "local.critter.pet.bridge", qos: .utility)
+    private let queue: DispatchQueue
     private let paths: CritterPaths
     let skinSearchDirs: [URL]
     weak var monitor: SessionMonitor?
@@ -33,6 +34,8 @@ final class BridgeController: @unchecked Sendable {
     let pendingStore: PendingStore
     private let statusStore: StatusLineStore
     let inboxStore: InboxStore
+    /// Pushes to registered iPhones; bridge queue only, but for `status()`.
+    let push: PushCoordinator
     lazy var codexControl: CodexIPCClient = CodexIPCClient(socketPath: paths.codexHome.appendingPathComponent("ipc/ipc.sock").path) { [weak self] in
         self?.queue.async { [weak self] in
             guard let self else { return }
@@ -57,6 +60,9 @@ final class BridgeController: @unchecked Sendable {
     private var server: BridgeServer?
     private var watchers: [DirectoryWatcher] = []
     private var sessions: [PetSession] = []
+    /// `sessions` comes from the monitor's first scan or a later one. Until then a snapshot would show
+    /// nothing, and push would take every request and session after it for new: push waits for it.
+    private var sessionsScanned = false
     private var skins: [String: String] = [:]
     private var prefs = BridgePrefs(
         skin: SkinLoader.builtin().name, randomSkins: false, idleDim: 1, mergeThreshold: 4, soundTheme: SoundTheme.voice.rawValue
@@ -88,15 +94,22 @@ final class BridgeController: @unchecked Sendable {
 
     let version: String
 
-    init(paths: CritterPaths, skinSearchDirs: [URL], monitor: SessionMonitor) {
+    /// - Parameter loadPushSetup: reads the settings' APNs setup; called on the bridge queue, and only once
+    ///   an iPhone has registered for push.
+    init(paths: CritterPaths, skinSearchDirs: [URL], monitor: SessionMonitor, loadPushSetup: @escaping () -> APNsSetup) {
+        let queue = DispatchQueue(label: "local.critter.pet.bridge", qos: .utility)
+        self.queue = queue
         self.paths = paths
         self.skinSearchDirs = skinSearchDirs
         self.monitor = monitor
-        registry = DeviceRegistry(file: paths.bridgeDir.appendingPathComponent("devices.json"), log: { DiagnosticLog.shared.log($0) })
+        let registry = DeviceRegistry(file: paths.bridgeDir.appendingPathComponent("devices.json"), log: { DiagnosticLog.shared.log($0) })
+        self.registry = registry
         pendingStore = PendingStore(paths: paths)
         statusStore = StatusLineStore(paths: paths)
         inboxStore = InboxStore(paths: paths)
+        push = PushCoordinator(queue: queue, registry: registry, loadSetup: loadPushSetup, log: { DiagnosticLog.shared.log($0) })
         version = AppVersion.current
+        push.onRegistryChanged = { [weak self] in self?.refreshDevices() }
         queue.async { [self] in
             // The settings list the paired phones even while the bridge is off.
             refreshDevices()
@@ -120,16 +133,44 @@ final class BridgeController: @unchecked Sendable {
         lock.withLock { deviceList }
     }
 
+    /// Whether the Mac can push to an iPhone now (`app.json`'s `pushReachable`, spec 6.7).
+    var pushReachable: Bool { push.status().active }
+
+    func pushStatus() -> PushCoordinator.Status { push.status() }
+
     func setEnabled(_ on: Bool) {
         queue.async { [self] in
-            if on { start() } else { stop() }
+            if on {
+                start()
+                push.bridgeSwitched(on: true)
+                // The first snapshot for push only records what is there.
+                changed()
+            } else {
+                push.bridgeSwitched(on: false)
+                stop()
+            }
         }
     }
 
-    /// The latest sessions, each one's skin id, and the settings the phone mirrors.
-    func update(sessions: [PetSession], skins: [String: String], prefs: BridgePrefs) {
+    /// The settings' APNs setup was saved: push reads it again, and every device starts over.
+    func pushSetupChanged() {
+        queue.async { [self] in
+            push.configChanged()
+            changed()
+        }
+    }
+
+    /// The settings' "发送测试通知".
+    func sendTestPush() {
+        queue.async { [self] in push.sendTest() }
+    }
+
+    /// The latest sessions, each one's skin id, and the settings the phone mirrors. `scanned`: the
+    /// session monitor has done its first scan.
+    func update(sessions: [PetSession], skins: [String: String], prefs: BridgePrefs, scanned: Bool) {
         queue.async { [self] in
             self.sessions = sessions
+            sessionsScanned = scanned
             self.skins = skins
             self.prefs = prefs
             if enabled { codexControl.update(sessionIDs: sessions.filter { $0.source.isCodex }.map(\.id)) }
@@ -168,6 +209,8 @@ final class BridgeController: @unchecked Sendable {
 
     func revoke(deviceId: String) {
         queue.async { [self] in
+            // Its Live Activity is ended while its push registration is still known.
+            push.deviceRevoked(deviceId)
             registry.revoke(deviceId: deviceId)
             server?.disconnect(deviceId: deviceId)
             refreshDevices()
@@ -191,6 +234,7 @@ final class BridgeController: @unchecked Sendable {
     /// connect any more.
     func resetPairing() {
         queue.async { [self] in
+            push.allDevicesRevoked()
             registry.removeAll()
             refreshDevices()
             lock.withLock { pairing = nil }
@@ -317,17 +361,32 @@ final class BridgeController: @unchecked Sendable {
     // MARK: - Snapshots
 
     /// Something the snapshot is made from changed: push within `pushDelay` -- but only if
-    /// a phone is there to see it.
-    private func changed() {
-        guard enabled, server?.hasReadyClients == true, !pushScheduled else { return }
+    /// a phone is there to see it, or push is active. Neither: nothing is assembled.
+    func changed() {
+        guard enabled, !pushScheduled,
+              Self.shouldAssemble(hasReadyClients: server?.hasReadyClients == true, pushActive: pushActive)
+        else { return }
         pushScheduled = true
         queue.asyncAfter(deadline: .now() + Self.pushDelay) { [weak self] in
             guard let self else { return }
             pushScheduled = false
-            guard enabled, let server, server.hasReadyClients else { return }
+            guard enabled else { return }
+            let ready = server?.hasReadyClients == true
+            let pushActive = self.pushActive
+            guard Self.shouldAssemble(hasReadyClients: ready, pushActive: pushActive) else { return }
+            let body = buildSnapshot()
             // The server skips connections whose last snapshot is the same.
-            server.broadcast(snapshotMessage())
+            if ready, let server { server.broadcast(.snapshot(seq: 0, sentAt: Self.nowMs(), body: body)) }
+            if pushActive { push.snapshotChanged(body) }
         }
+    }
+
+    /// Snapshots go to push: it is active, and they show what is there (the sessions are in).
+    private var pushActive: Bool { sessionsScanned && push.isActive }
+
+    /// `PushCoordinatorRules.shouldAssemble`: a snapshot is made for a connected phone or for push.
+    static func shouldAssemble(hasReadyClients: Bool, pushActive: Bool) -> Bool {
+        PushCoordinatorRules.shouldAssemble(hasReadyClients: hasReadyClients, pushActive: pushActive)
     }
 
     func buildSnapshot() -> SnapshotBody {
@@ -409,6 +468,7 @@ final class BridgeController: @unchecked Sendable {
     func refreshDevices() {
         let list = registry.list()
         lock.withLock { deviceList = list }
+        push.devicesChanged(list)
     }
 
     // MARK: - Helpers

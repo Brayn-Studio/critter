@@ -14,6 +14,8 @@ final class SessionMonitor {
     var onSnapshot: (([PetSession]) -> Void)?
 
     private(set) var sessions: [PetSession] = []
+    /// The first scan has come in: `sessions` is what is there, not just nothing yet.
+    private(set) var hasScanned = false
     /// Every session id seen in the last scan, including dismissed ones -- used to prune
     /// `dismissed` entries for sessions that no longer exist at all.
     private var knownIds: Set<String> = []
@@ -54,6 +56,7 @@ final class SessionMonitor {
     private func receive(_ snapshot: MonitorSnapshot) {
         sessions = snapshot.sessions
         knownIds = snapshot.knownIds
+        hasScanned = true
         onSnapshot?(snapshot.sessions)
     }
 }

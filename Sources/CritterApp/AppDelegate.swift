@@ -58,7 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = SettingsStore()
         petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: soundPlayer)
         jumpBackService = JumpBackService(paths: paths)
-        bridge = BridgeController(paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor)
+        // Nothing sets push up yet: no APNs setup, so the bridge never pushes.
+        bridge = BridgeController(
+            paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor, loadPushSetup: { .notConfigured }
+        )
         super.init()
 
         // Visibility lives in `PetController`; the menu title follows it immediately, even
@@ -327,7 +330,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             skin: settings.skin, randomSkins: settings.randomSkins, idleDim: settings.idleDim,
             mergeThreshold: settings.mergeThreshold, soundTheme: settings.soundTheme.rawValue
         )
-        bridge.update(sessions: sessions, skins: skins, prefs: prefs)
+        bridge.update(sessions: sessions, skins: skins, prefs: prefs, scanned: sessionMonitor.hasScanned)
     }
 
     /// (Re-)registers the global hot key from the settings -- or keeps it unregistered
@@ -522,6 +525,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // bridge is switched on and actually reachable.
         let bridgeEnabled = settings.bridgeEnabled && bridge.isServing
         let lastClientSeen = bridge.lastClientSeen
+        // ... or an iPhone the Mac can push to (spec 6.7).
+        let pushReachable = bridge.pushReachable
         let heartbeat = Int64(Date().timeIntervalSince1970 * 1000)
         let version = AppVersion.current
         let store = appStatusStore
@@ -530,7 +535,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             // pid (see `ToggleDecision.isCritter`).
             let status = AppStatus(
                 pid: OwnProcess.pid, visible: visible, heartbeat: heartbeat, version: version,
-                startTime: OwnProcess.startTime, bridgeEnabled: bridgeEnabled, lastClientSeen: lastClientSeen
+                startTime: OwnProcess.startTime, bridgeEnabled: bridgeEnabled, lastClientSeen: lastClientSeen,
+                pushReachable: pushReachable
             )
             try? store.write(status)
         }

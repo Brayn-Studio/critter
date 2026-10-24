@@ -20,10 +20,13 @@ public struct AppStatus: Codable, Sendable, Equatable {
     public var bridgeEnabled: Bool?
     /// Epoch milliseconds of the last time a paired phone talked to the bridge.
     public var lastClientSeen: Int64?
+    /// Whether the Mac can push to an iPhone right now: the bridge is on, the APNs setup works and at least
+    /// one iPhone registered (spec 6.7). Absent in files from older apps.
+    public var pushReachable: Bool?
 
     public init(
         pid: Int32, visible: Bool, heartbeat: Int64, version: String, startTime: Int64? = nil,
-        bridgeEnabled: Bool? = nil, lastClientSeen: Int64? = nil
+        bridgeEnabled: Bool? = nil, lastClientSeen: Int64? = nil, pushReachable: Bool? = nil
     ) {
         self.pid = pid
         self.visible = visible
@@ -32,6 +35,7 @@ public struct AppStatus: Codable, Sendable, Equatable {
         self.startTime = startTime
         self.bridgeEnabled = bridgeEnabled
         self.lastClientSeen = lastClientSeen
+        self.pushReachable = pushReachable
     }
 }
 

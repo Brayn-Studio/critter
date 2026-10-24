@@ -1,0 +1,356 @@
+import Foundation
+import Testing
+@testable import CritterCore
+
+// The parts of the Mac's `PushCoordinator` that need no queue, clock or network: when push is on at all
+// (`PushCoordinatorRules`), and what each registered iPhone is sent for a snapshot (`PushFanout`).
+
+private let t0: Int64 = 1_760_000_000_000
+private let bundle = APNsConfig.defaultBundleId
+private let keyA = PushCrypto.makeKey()
+private let keyB = PushCrypto.makeKey()
+
+private func session(_ id: String, _ state: PetState = .idle) -> BridgeSession {
+    BridgeSession(
+        id: id, name: id, source: .terminal, state: state, cwd: "/Users/me/proj", skin: "sprig",
+        eventTime: 1, startedAt: 1, tracked: true
+    )
+}
+
+private func pending(_ requestId: String, _ sessionId: String) -> BridgePending {
+    BridgePending(
+        requestId: requestId, sessionId: sessionId, kind: .permission, toolName: "Bash", summary: "ls",
+        input: .null, createdAt: 1, expiresAt: nil
+    )
+}
+
+private func body(_ sessions: [BridgeSession], _ pending: [BridgePending] = []) -> SnapshotBody {
+    SnapshotBody(
+        sessions: sessions, pending: pending,
+        prefs: BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 1.0, mergeThreshold: 4, soundTheme: "pixel")
+    )
+}
+
+private func registration(
+    _ token: String, key: String = keyA, environment: PushEnvironment = .sandbox, done: Bool = false,
+    activity: ActivityRegistration? = nil, bundleId: String = bundle
+) -> PushRegistration {
+    PushRegistration(
+        token: token, environment: environment, bundleId: bundleId, key: key, notifyDone: done, notifyError: false,
+        activity: activity
+    )
+}
+
+private func record(_ id: String, _ push: PushRegistration?) -> DeviceRecord {
+    DeviceRecord(id: id, name: "phone \(id)", tokenHash: "hash", pairedAt: 1, push: push)
+}
+
+private func fanout(_ records: [DeviceRecord]) -> PushFanout {
+    let fanout = PushFanout()
+    fanout.bundleId = bundle
+    fanout.sync(records)
+    return fanout
+}
+
+private func json(_ push: OutgoingPush) -> [String: Any] {
+    (try? JSONSerialization.jsonObject(with: push.message.payload) as? [String: Any]) ?? [:]
+}
+
+/// What the alert pushes to `deviceId` are about: a request's id, or "<category>:<session id>".
+private func alerts(_ pushes: [OutgoingPush], to deviceId: String) -> [String] {
+    pushes.filter { $0.target.deviceId == deviceId && $0.message.pushType == .alert }.map { push in
+        let object = json(push)
+        return object["r"] as? String ?? "\(object["k"] as? String ?? "?"):\(object["s"] as? String ?? "?")"
+    }
+}
+
+/// The notification ids withdrawn from `deviceId`, one list per background push.
+private func withdrawals(_ pushes: [OutgoingPush], to deviceId: String) -> [[String]] {
+    pushes.filter { $0.target.deviceId == deviceId && $0.message.pushType == .background }.map { json($0)["w"] as? [String] ?? [] }
+}
+
+private func liveEvents(_ pushes: [OutgoingPush]) -> [String] {
+    pushes.filter { $0.message.pushType == .liveActivity }.map { push in
+        let aps = json(push)["aps"] as? [String: Any]
+        return "\(aps?["event"] as? String ?? "?")>\(push.target.kind.rawValue):\(push.target.token)"
+    }
+}
+
+private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String) -> PushTarget {
+    PushTarget(deviceId: deviceId, kind: kind, token: token, environment: .sandbox)
+}
+
+// MARK: - When push runs at all
+
+@Test func nothingRunsWithoutPushConfigured() {
+    // No phone connected and push not on: `changed()` assembles nothing (no snapshot, so no timer and no request).
+    #expect(!PushCoordinatorRules.shouldAssemble(hasReadyClients: false, pushActive: false))
+    // A connected phone gets its snapshots as before; push alone is enough too.
+    #expect(PushCoordinatorRules.shouldAssemble(hasReadyClients: true, pushActive: false))
+    #expect(PushCoordinatorRules.shouldAssemble(hasReadyClients: false, pushActive: true))
+
+    // Push is not on without a working setup, or without a device that registered.
+    #expect(!PushCoordinatorRules.isActive(bridgeOn: true, configReady: false, blocked: false, reachableDevices: 2))
+    #expect(!PushCoordinatorRules.isActive(bridgeOn: true, configReady: true, blocked: false, reachableDevices: 0))
+
+    // Paired phones that never registered for push give the fan-out nothing to do, now or later.
+    let idle = fanout([record("android", nil), record("iphone", nil)])
+    #expect(idle.reachableDevices == 0)
+    #expect(idle.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0).isEmpty)
+    #expect(idle.snapshot(body([session("s1", .done)]), now: t0 + 1000).isEmpty)
+    #expect(idle.deadline(now: t0 + 60_000).isEmpty)
+    #expect(idle.nextDeadline() == nil)
+    #expect(idle.endAll(now: t0).isEmpty)
+    #expect(idle.test().isEmpty)
+}
+
+@Test func pushIsActiveOnlyWithTheBridgeOnAWorkingSetupAndARegisteredDevice() {
+    for bridgeOn in [false, true] {
+        for configReady in [false, true] {
+            for blocked in [false, true] {
+                for devices in [0, 1, 3] {
+                    let active = PushCoordinatorRules.isActive(
+                        bridgeOn: bridgeOn, configReady: configReady, blocked: blocked, reachableDevices: devices
+                    )
+                    #expect(active == (bridgeOn && configReady && !blocked && devices > 0))
+                }
+            }
+        }
+    }
+}
+
+@Test func onlyDevicesOfTheConfiguredAppCount() {
+    let other = registration("cc", bundleId: "com.example.other")
+    let mixed = fanout([record("a", registration("aa")), record("b", other), record("c", nil)])
+    #expect(mixed.reachableDevices == 1)
+    let pushes = mixed.snapshot(body([session("s1")]), now: t0) + mixed.snapshot(
+        body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1
+    )
+    #expect(alerts(pushes, to: "a") == ["r1"])
+    #expect(pushes.allSatisfy { $0.target.deviceId == "a" })
+
+    // Without a setup there is no app to push to.
+    mixed.bundleId = nil
+    #expect(mixed.reachableDevices == 0)
+    #expect(mixed.snapshot(body([session("s1", .waiting)], [pending("r2", "s1")]), now: t0 + 2).isEmpty)
+}
+
+@Test func theDestinationDecidesWhetherARegistrationStartsOver() {
+    let base = registration("aa", done: false, activity: ActivityRegistration(enabled: true, startToken: "51"))
+    #expect(PushCoordinatorRules.startsOver(from: nil, to: base))
+    #expect(!PushCoordinatorRules.startsOver(from: base, to: base))
+    var prefs = base
+    prefs.notifyDone = true
+    prefs.notifyError = true
+    #expect(!PushCoordinatorRules.startsOver(from: base, to: prefs))
+    var activity = base
+    activity.activity = ActivityRegistration(enabled: true, startToken: "52", activityId: "A", activityToken: "a1")
+    #expect(!PushCoordinatorRules.startsOver(from: base, to: activity))
+    for change in [
+        registration("bb", activity: base.activity), registration("aa", key: keyB, activity: base.activity),
+        registration("aa", environment: .production, activity: base.activity),
+        registration("aa", activity: base.activity, bundleId: "com.example.other"),
+    ] {
+        #expect(PushCoordinatorRules.startsOver(from: base, to: change))
+    }
+}
+
+// MARK: - New and changed registrations
+
+@Test func aNewlyRegisteredDeviceStartsOver() {
+    let pushes = fanout([record("a", registration("aa"))])
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+
+    pushes.sync([record("a", registration("aa")), record("b", registration("bb", key: keyB))])
+    let first = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
+    #expect(alerts(first, to: "a") == ["r1"])
+    // b's first snapshot is the past: it only records.
+    #expect(first.allSatisfy { $0.target.deviceId == "a" })
+
+    let second = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1"), pending("r2", "s1")]), now: t0 + 2)
+    #expect(alerts(second, to: "a") == ["r2"])
+    #expect(alerts(second, to: "b") == ["r2"])
+}
+
+@Test func aChangedDestinationStartsOverButNewPrefsAndActivityTokensDoNot() {
+    let pushes = fanout([record("a", registration("aa"))])
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+
+    // Done notifications switched on: the tracker carries on, with the new prefs.
+    pushes.sync([record("a", registration("aa", done: true))])
+    #expect(alerts(pushes.snapshot(body([session("s1", .done)]), now: t0 + 1), to: "a") == ["done:s1"])
+
+    // The Live Activity part changed: still the same tracker.
+    let withActivity = registration("aa", done: true, activity: ActivityRegistration(enabled: false))
+    pushes.sync([record("a", withActivity)])
+    let next = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 2)
+    #expect(alerts(next, to: "a") == ["r1"])
+    #expect(withdrawals(next, to: "a") == [["done:s1"]])
+
+    // A new token (the app was reinstalled): it starts over, and the next snapshot only records.
+    pushes.sync([record("a", registration("cc", done: true))])
+    #expect(pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1"), pending("r2", "s1")]), now: t0 + 3).isEmpty)
+    let after = pushes.snapshot(
+        body([session("s1", .waiting)], [pending("r1", "s1"), pending("r2", "s1"), pending("r3", "s1")]), now: t0 + 4
+    )
+    #expect(alerts(after, to: "a") == ["r3"])
+    #expect(after.allSatisfy { $0.target.token == "cc" })
+}
+
+@Test func startingOverForgetsWhatEveryDeviceSaw() {
+    let pushes = fanout([record("a", registration("aa")), record("b", registration("bb", key: keyB))])
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+    // The setup changed (or the bridge was switched on again).
+    pushes.startOver()
+    #expect(pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1).isEmpty)
+    let next = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1"), pending("r2", "s1")]), now: t0 + 2)
+    #expect(alerts(next, to: "a") == ["r2"])
+    #expect(alerts(next, to: "b") == ["r2"])
+}
+
+@Test func aDeviceThatGoesAwayIsForgotten() {
+    let pushes = fanout([record("a", registration("aa")), record("b", registration("bb", key: keyB))])
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+    // b took its registration back.
+    pushes.sync([record("a", registration("aa")), record("b", nil)])
+    #expect(pushes.reachableDevices == 1)
+    #expect(pushes.registration("b") == nil)
+    let next = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
+    #expect(next.allSatisfy { $0.target.deviceId == "a" })
+    // Registering again is a new registration.
+    pushes.sync([record("a", registration("aa")), record("b", registration("bb", key: keyB))])
+    let again = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1"), pending("r2", "s1")]), now: t0 + 2)
+    #expect(alerts(again, to: "b").isEmpty)
+}
+
+// MARK: - What goes where
+
+@Test func eachDeviceGetsItsOwnSealedPushesAtItsOwnToken() throws {
+    let pushes = fanout([
+        record("a", registration("aa", key: keyA)),
+        record("b", registration("bb", key: keyB, environment: .production)),
+    ])
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+    let sent = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
+    #expect(sent.map(\.target) == [target("a", .device, "aa"), PushTarget(deviceId: "b", kind: .device, token: "bb", environment: .production)])
+    for (push, key, otherKey) in [(sent[0], keyA, keyB), (sent[1], keyB, keyA)] {
+        let sealed = try #require(json(push)["c"] as? String)
+        #expect(try PushCrypto.open(sealed, key: key).title.contains("s1"))
+        #expect(throws: (any Error).self) { try PushCrypto.open(sealed, key: otherKey) }
+    }
+}
+
+@Test func withdrawalsGoOutTogetherBeforeNewNotifications() {
+    let pushes = fanout([record("a", registration("aa", done: true))])
+    _ = pushes.snapshot(body([session("s1"), session("s2")]), now: t0)
+    _ = pushes.snapshot(body([session("s1", .waiting), session("s2", .waiting)], [pending("r1", "s1"), pending("r2", "s2")]), now: t0 + 1)
+    // Both answered at once, and s1 finished.
+    let next = pushes.snapshot(body([session("s1", .done), session("s2", .running)]), now: t0 + 2)
+    #expect(withdrawals(next, to: "a") == [["r1", "r2"]])
+    #expect(alerts(next, to: "a") == ["done:s1"])
+    #expect(next.first?.message.pushType == .background)
+}
+
+@Test func liveActivityPushesGoToTheStartAndActivityTokens() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    // Push-to-start, with the start token.
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
+
+    // The phone reports the new activity's token; more waiting is sent at once, to that token.
+    let running = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    pushes.sync([record("a", registration("aa", activity: running))])
+    let waiting = pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 1000)
+    #expect(liveEvents(waiting) == ["update>activity:a1a1"])
+    #expect(waiting.first { $0.message.pushType == .liveActivity }?.message.priority == 10)
+    // The waiting notice still goes to the device token.
+    #expect(alerts(waiting, to: "a") == ["waitingElsewhere:s1"])
+    #expect(waiting.filter { $0.message.pushType == .alert }.allSatisfy { $0.target == target("a", .device, "aa") })
+
+    // Live Activity switched off on the phone: it is ended.
+    pushes.sync([record("a", registration("aa", activity: ActivityRegistration(enabled: false, activityToken: "a1a1")))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 2000)) == ["end>activity:a1a1"])
+}
+
+@Test func aThrottledUpdateIsSentWhenItsDeadlineComes() {
+    let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: app))])
+    // An activity the app started: the Mac says what is true now.
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["update>activity:a1a1"])
+    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.maxAge)
+
+    // A change within 10 s waits for the end of the throttle period.
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .done)]), now: t0 + 2000)).isEmpty)
+    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.throttle)
+    #expect(pushes.deadline(now: t0 + 5000).isEmpty)
+    let due = pushes.deadline(now: t0 + LiveActivityPlanner.throttle)
+    #expect(liveEvents(due) == ["update>activity:a1a1"])
+    let state = (json(due[0])["aps"] as? [String: Any])?["content-state"] as? [String: Any]
+    #expect((state?["lead"] as? [String: Any])?["state"] as? String == "done")
+    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.maxAge)
+}
+
+// MARK: - Taking things back
+
+@Test func aRevokedDeviceHasItsActivityEndedThenItIsForgotten() {
+    let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: app)), record("b", registration("bb", key: keyB))])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    #expect(liveEvents(pushes.remove("a", now: t0 + 1000)) == ["end>activity:a1a1"])
+    #expect(pushes.remove("a", now: t0 + 2000).isEmpty)
+    #expect(pushes.registration("a") == nil)
+    // A device without an activity has nothing to end.
+    #expect(pushes.remove("b", now: t0 + 3000).isEmpty)
+    #expect(pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 4000).isEmpty)
+}
+
+@Test func switchingTheBridgeOffEndsEveryActivity() {
+    let app = ActivityRegistration(enabled: true, activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([
+        record("a", registration("aa", activity: app)), record("b", registration("bb", key: keyB)),
+        record("c", registration("cc", activity: ActivityRegistration(enabled: true, activityToken: "c1c1"), bundleId: "com.example.other")),
+    ])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    #expect(liveEvents(pushes.endAll(now: t0 + 1000)) == ["end>activity:a1a1"])
+    #expect(pushes.endAll(now: t0 + 2000).isEmpty)
+}
+
+@Test func aGoneTokenIsDroppedOnlyWhileItIsStillTheCurrentOne() {
+    let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: app))])
+    #expect(pushes.tokenGone(target("a", .device, "aa")) == .dropRegistration)
+    #expect(pushes.tokenGone(target("a", .device, "0ld")) == .ignore)
+    #expect(pushes.tokenGone(target("a", .activity, "a1a1")) == .clearActivity)
+    #expect(pushes.tokenGone(target("a", .activity, "0ld")) == .ignore)
+    #expect(pushes.tokenGone(target("nobody", .device, "aa")) == .ignore)
+    #expect(pushes.tokenGone(target("a", .activityStart, "5151")) == .ignore)
+}
+
+@Test func aGoneStartTokenIsNotUsedAgainUntilANewOneComes() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
+    _ = pushes.tokenGone(target("a", .activityStart, "5151"))
+
+    // The sessions go and the 5 minutes pass: the Mac no longer believes in that activity.
+    _ = pushes.snapshot(body([]), now: t0 + 1000)
+    _ = pushes.deadline(now: t0 + 1000 + LiveActivityPlanner.endAfterEmpty)
+    // A session again: no start with the token APNs refused.
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0 + 20 * 60_000)).isEmpty)
+
+    // The phone registers a new start token.
+    pushes.sync([record("a", registration("aa", activity: ActivityRegistration(enabled: true, startToken: "6161")))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0 + 21 * 60_000)) == ["start>activityStart:6161"])
+}
+
+@Test func aTestPushGoesToEveryRegisteredDevice() throws {
+    let pushes = fanout([
+        record("a", registration("aa", key: keyA)), record("b", registration("bb", key: keyB)), record("c", nil),
+        record("d", registration("dd", bundleId: "com.example.other")),
+    ])
+    let tests = pushes.test()
+    #expect(tests.map(\.target) == [target("a", .device, "aa"), target("b", .device, "bb")])
+    #expect(tests.allSatisfy { json($0)["k"] as? String == PushCategory.test.rawValue })
+    let sealed = try #require(json(tests[1])["c"] as? String)
+    #expect(try PushCrypto.open(sealed, key: keyB) == PushText(title: "Critter 推送测试", subtitle: "", body: "能看到这条，说明推送通了"))
+}
