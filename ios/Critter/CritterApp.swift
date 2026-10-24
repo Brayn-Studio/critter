@@ -68,6 +68,9 @@ struct CritterApp: App {
                     await fakeDock?.run(settings: settings)
                 }
                 .task {
+                    if DebugLaunch.current.sharedCheck { await SharedCheck.run() }
+                }
+                .task {
                     if DebugLaunch.current.frameLog { FrameLog.start() }
                     guard let url = DebugLaunch.current.openURL else { return }
                     // Once the scene is up: the system hands the URL back through `onOpenURL`.
@@ -101,9 +104,9 @@ struct CritterApp: App {
         #endif
     }
 
-    /// The store over the real pieces: the keychain, `wss://` to the Mac, Bonjour.
+    /// The store over the real pieces: the App Group and the shared keychain, `wss://` to the Mac, Bonjour.
     private static func makeStore() -> BridgeStore {
-        let storage = KeychainPairingStorage()
+        let storage = DiskPairingStorage.inAppGroup()
         let transport = URLSessionTransport()
         let version = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0"
         let app = "critter-ios/\(version)"
@@ -129,7 +132,8 @@ struct CritterApp: App {
                 )
             },
             pairer: Pairer(transport: transport),
-            background: UIKitBackgroundRunner()
+            background: UIKitBackgroundRunner(),
+            pushAcks: SecretPushAckStorage.inKeychain()
         )
     }
 }

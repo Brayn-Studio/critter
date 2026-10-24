@@ -1,4 +1,5 @@
 import CritterKit
+import os
 
 /// What the phone keeps of its push registration with the paired Mac, across launches (`PushAckStorage`). It
 /// belongs to the pairing: a new one, or unpairing, starts it over.
@@ -25,14 +26,14 @@ public protocol PushAckStorage: Sendable {
     func savePushAck(_ ack: PushAck?)
 }
 
-/// Keeps `PushAck` for as long as the app runs: until a store that outlasts it is given.
-public final class MemoryPushAckStorage: PushAckStorage, @unchecked Sendable {
-    private var ack: PushAck?
+/// Keeps `PushAck` for as long as the app runs (the app keeps it in the keychain: `SecretPushAckStorage`).
+public final class MemoryPushAckStorage: PushAckStorage {
+    private let ack = OSAllocatedUnfairLock<PushAck?>(initialState: nil)
 
     public init() {}
 
-    public func loadPushAck() -> PushAck? { ack }
-    public func savePushAck(_ ack: PushAck?) { self.ack = ack }
+    public func loadPushAck() -> PushAck? { ack.withLock { $0 } }
+    public func savePushAck(_ ack: PushAck?) { self.ack.withLock { $0 = ack } }
 }
 
 /// What the phone tells the Mac so that it can push to it (spec §6.2), when it does (§8.3), and what the settings say

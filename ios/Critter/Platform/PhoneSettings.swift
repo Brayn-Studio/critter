@@ -3,7 +3,9 @@ import Observation
 import UIKit
 
 /// The phone's own settings (Android `SettingsStore`), kept in `UserDefaults` under `critter.settings.*`; the
-/// defaults are Android's. The push plan moves them into the App Group; for now it is the standard defaults.
+/// defaults are Android's (the Live Activity, which Android does not have, is on). The ones the extensions read too
+/// (the Live Activity, the done and error alerts) are in the App Group's defaults (`SharedContainer.defaults`), the
+/// rest in the app's own.
 ///
 /// One for the app's life (`CritterApp` makes it), handed down through the environment.
 @MainActor @Observable
@@ -39,6 +41,20 @@ final class PhoneSettings {
         didSet { save(boardSounds, Key.boardSounds) }
     }
 
+    /// The Live Activity on the lock screen and in the Dynamic Island (spec §8.5). On by default.
+    var liveActivity: Bool {
+        didSet { shared.set(liveActivity, forKey: Key.liveActivity) }
+    }
+
+    /// Alert when a session is done, or has failed (spec §8.7). Off by default, as on Android.
+    var notifyDone: Bool {
+        didSet { shared.set(notifyDone, forKey: Key.notifyDone) }
+    }
+
+    var notifyError: Bool {
+        didSet { shared.set(notifyError, forKey: Key.notifyError) }
+    }
+
     /// The day the opening (Critters popping up on the home screen) last played, "yyyy-MM-dd" in the phone's time
     /// zone: it plays once a day.
     var openingShownOn: String? {
@@ -52,6 +68,8 @@ final class PhoneSettings {
     var motionReduced: Bool { reduceMotion || systemReduceMotion }
 
     @ObservationIgnored private let defaults: UserDefaults
+    /// The App Group's: what the extensions read too.
+    @ObservationIgnored private let shared: UserDefaults
 
     private enum Key {
         static let forcedSkin = "critter.settings.forcedSkin"
@@ -61,10 +79,14 @@ final class PhoneSettings {
         static let boardBrightness = "critter.settings.boardBrightness"
         static let boardSounds = "critter.settings.boardSounds"
         static let openingShownOn = "critter.settings.openingShownOn"
+        static let liveActivity = "critter.settings.liveActivity"
+        static let notifyDone = "critter.settings.notifyDone"
+        static let notifyError = "critter.settings.notifyError"
     }
 
-    init(defaults: UserDefaults = .standard) {
+    init(defaults: UserDefaults = .standard, shared: UserDefaults = SharedContainer.defaults) {
         self.defaults = defaults
+        self.shared = shared
         forcedSkin = defaults.string(forKey: Key.forcedSkin).flatMap { $0.isEmpty ? nil : $0 }
         reduceMotion = defaults.object(forKey: Key.reduceMotion) as? Bool ?? false
         boardAutoOpen = defaults.object(forKey: Key.boardAutoOpen) as? Bool ?? true
@@ -72,6 +94,9 @@ final class PhoneSettings {
         boardBrightness = Self.clampBrightness(defaults.object(forKey: Key.boardBrightness) as? Double ?? 0.3)
         boardSounds = defaults.object(forKey: Key.boardSounds) as? Bool ?? false
         openingShownOn = defaults.string(forKey: Key.openingShownOn)
+        liveActivity = shared.object(forKey: Key.liveActivity) as? Bool ?? true
+        notifyDone = shared.object(forKey: Key.notifyDone) as? Bool ?? false
+        notifyError = shared.object(forKey: Key.notifyError) as? Bool ?? false
         // The settings live as long as the app: the observer is never removed.
         NotificationCenter.default.addObserver(
             forName: UIAccessibility.reduceMotionStatusDidChangeNotification, object: nil, queue: .main

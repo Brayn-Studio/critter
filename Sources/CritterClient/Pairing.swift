@@ -37,6 +37,10 @@ public enum PairFailure: Equatable, Sendable {
     case noAnswer
     /// No connection: refused, cut off, wrong network, or the Mac is not accepting phones.
     case unreachable
+    /// Another attempt is under way; this one was not started.
+    case busy
+    /// The Mac said yes, but the phone could not keep the pairing (its token did not go into the keychain).
+    case notSaved
 
     /// What the pairing screen says (Android `pairFailureText`).
     public var text: String {
@@ -47,6 +51,8 @@ public enum PairFailure: Equatable, Sendable {
         case .certMismatch: "这台 Mac 的证书和二维码里的不一样，已经停下。确认扫的是你自己的 Mac。"
         case .noAnswer: "Mac 上一直没人点「允许」。回到 Mac 前，重新扫一次码。"
         case .unreachable: "连不上这台 Mac。确认手机和电脑在同一个 Wi‑Fi，并且 Mac 上开着「允许手机连接」。"
+        case .busy: "正在配对"
+        case .notSaved: "手机没能保存这次配对，再配对一次。"
         }
     }
 }

@@ -1,4 +1,5 @@
 import ActivityKit
+import CritterKit
 import SwiftUI
 import WidgetKit
 
@@ -14,6 +15,9 @@ struct CritterWidgets: WidgetBundle {
 struct CritterActivityWidget: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: CritterActivity.self) { context in
+            #if DEBUG
+            let _ = SharedCheck.answerIfAsked(context.state)
+            #endif
             Text("\(context.state.total)")
         } dynamicIsland: { context in
             DynamicIsland {

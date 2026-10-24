@@ -17,6 +17,10 @@ import os
 ///   cutting a backoff wait short; in the background it is ignored.
 /// - Push: once the app has said what to register (`setPush`), each connection hands it to the Mac after `welcome`
 ///   when `PushRegistrar` says so; `pushStatus` is what the settings show.
+/// - The last snapshot is kept for the next launch at most every 30 seconds (`snapshotWriteInterval`), the newest one;
+///   one held back is kept when the app leaves the foreground or the connection ends (Android does the same). It
+///   belongs to its pairing: unpaired or paired again, it is dropped.
+/// - One pairing attempt at a time: `pair` while one is under way returns `.busy` at once.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -65,6 +69,9 @@ public final class BridgeStore {
     /// How long an unpairing waits for the Mac to take the push registration back.
     public static let unregisterWait: Duration = .seconds(3)
 
+    /// At most how often the last snapshot is written for the next launch, in seconds.
+    public static let snapshotWriteInterval: TimeInterval = 30
+
     /// How often the Mac is pinged while the board is shut and while it is open, in seconds (spec §8.3).
     public static let restPingInterval: TimeInterval = 60
     public static let boardPingInterval: TimeInterval = 30
@@ -102,6 +109,10 @@ public final class BridgeStore {
     @ObservationIgnored private var pushSending = false
     /// What went to the Mac on the current connection: the same registration goes once per connection.
     @ObservationIgnored private var pushSentOnConnection: PushRegistration?
+    /// When the snapshot written last arrived; nil until one is written for this pairing.
+    @ObservationIgnored private var lastSnapshotWrite: Date?
+    /// The newest snapshot not written yet, held back by `snapshotWriteInterval`.
+    @ObservationIgnored private var heldBackSnapshot: CachedSnapshot?
 
     /// - Parameters:
     ///   - makeLink: makes the connection for a pairing; it reports its events to the closure it is given.
@@ -163,6 +174,7 @@ public final class BridgeStore {
     public func sceneEnteredBackground() {
         sceneActive = false
         sceneChanges += 1
+        writeHeldBackSnapshot()
         guard connection != nil else { return }
         let change = sceneChanges
         background.run { [weak self] in
@@ -305,8 +317,11 @@ public final class BridgeStore {
 
     /// Pairs with the Mac in `target`. On success the old pairing (if any) and its connection are replaced
     /// by the new, and the new connection is started (unless the app is in the background); on failure
-    /// nothing changes.
+    /// nothing changes. While an attempt is under way another is turned away at once (`.busy`), and the one under way
+    /// goes on. A pairing the phone cannot keep (`.notSaved`: the keychain refused its token) leaves the old one in
+    /// place, and the old one's connection comes back.
     public func pair(_ target: PairingTarget, deviceName: String) async -> PairResult {
+        guard pairingPhase == nil else { return .failed(.busy) }
         pairAttempt += 1
         let attempt = pairAttempt
         pairingPhase = .connecting
@@ -324,17 +339,26 @@ public final class BridgeStore {
             await callLink { await old.stop() }.value
         }
         let new = StoredPairing(endpoint: target.endpoint, fingerprint: target.fingerprint, macName: macName, deviceId: deviceId)
-        storage.save(new, token: token)
+        guard storage.save(new, token: token) else {
+            // Unpaired meanwhile: nothing to bring back.
+            if let pairing, connection == nil { connect(to: pairing) }
+            return .failed(.notSaved)
+        }
         pairing = new
         clearLiveState()
         forgetPushAck()
-        let connection = makeConnection(for: new)
+        connect(to: new)
+        return result
+    }
+
+    /// Makes `pairing`'s connection the store's, and starts it unless the app is in the background.
+    private func connect(to pairing: StoredPairing) {
+        let connection = makeConnection(for: pairing)
         self.connection = connection
         if boardOpen { applyPingInterval() }
         if sceneActive != false {
             callLink { await connection.link.start() }
         }
-        return result
     }
 
     /// Hears from the pairer, off the main actor, that the Mac is being waited for.
@@ -401,13 +425,40 @@ public final class BridgeStore {
         }
     }
 
-    /// Nothing is known of any Mac: no snapshot, no connection.
+    /// Nothing is known of any Mac: no snapshot (and none held back to write), no connection.
     private func clearLiveState() {
         macVersion = nil
         snapshot = nil
         snapshotAt = nil
         isLive = false
         conn = .idle
+        heldBackSnapshot = nil
+        lastSnapshotWrite = nil
+    }
+
+    // MARK: - The snapshot cache
+
+    /// Writes `snapshot` for the next launch now, or holds it back if one was written less than
+    /// `snapshotWriteInterval` before it (a clock set back writes at once).
+    private func keep(_ snapshot: CachedSnapshot) {
+        if let last = lastSnapshotWrite {
+            let since = snapshot.receivedAt.timeIntervalSince(last)
+            if since >= 0, since < Self.snapshotWriteInterval {
+                heldBackSnapshot = snapshot
+                return
+            }
+        }
+        write(snapshot)
+    }
+
+    private func writeHeldBackSnapshot() {
+        if let heldBackSnapshot { write(heldBackSnapshot) }
+    }
+
+    private func write(_ snapshot: CachedSnapshot) {
+        storage.saveSnapshot(snapshot)
+        lastSnapshotWrite = snapshot.receivedAt
+        heldBackSnapshot = nil
     }
 
     // MARK: - The link
@@ -458,13 +509,15 @@ public final class BridgeStore {
                 registerPushIfNeeded()
             } else {
                 isLive = false
+                // The connection ended: what was held back is the latest there is for a while.
+                writeHeldBackSnapshot()
             }
         case .snapshot(_, _, let body):
             let receivedAt = now()
             snapshot = body
             snapshotAt = receivedAt
             isLive = true
-            storage.saveSnapshot(CachedSnapshot(body: body, receivedAt: receivedAt))
+            keep(CachedSnapshot(body: body, receivedAt: receivedAt))
         case .macVersion(let version):
             macVersion = version
         case .connectedTo(let endpoint):

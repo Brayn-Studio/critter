@@ -69,12 +69,21 @@ private final class Gate: Sendable {
 
 private final class FakeClock: Sendable {
     private let current: OSAllocatedUnfairLock<Date>
+    /// How far each reading moves the clock on.
+    private let step: TimeInterval
 
-    init(_ start: Date) {
+    init(_ start: Date, step: TimeInterval = 0) {
         current = OSAllocatedUnfairLock(initialState: start)
+        self.step = step
     }
 
-    var now: Date { current.withLock { $0 } }
+    var now: Date {
+        current.withLock { now in
+            defer { now += step }
+            return now
+        }
+    }
+
     func set(_ date: Date) { current.withLock { $0 = date } }
 }
 
@@ -92,6 +101,7 @@ private final class FakeStorage: PairingStorage {
         var endpointUpdates: [Endpoint] = []
         var clears = 0
         var snapshotSaves: [CachedSnapshot] = []
+        var failSaves = false
     }
 
     private let state: OSAllocatedUnfairLock<State>
@@ -106,6 +116,9 @@ private final class FakeStorage: PairingStorage {
     var endpointUpdates: [Endpoint] { state.withLock { $0.endpointUpdates } }
     var clears: Int { state.withLock { $0.clears } }
     var snapshotSaves: [CachedSnapshot] { state.withLock { $0.snapshotSaves } }
+    var storedPairing: StoredPairing? { state.withLock { $0.pairing } }
+    /// `save` keeps nothing from now on, as when the keychain refuses the token.
+    func failSaves() { state.withLock { $0.failSaves = true } }
 
     func load() -> (StoredPairing, Credentials)? {
         state.withLock { s in
@@ -114,12 +127,14 @@ private final class FakeStorage: PairingStorage {
         }
     }
 
-    func save(_ pairing: StoredPairing, token: String) {
+    func save(_ pairing: StoredPairing, token: String) -> Bool {
         journal.add("save")
-        state.withLock { s in
+        return state.withLock { s in
+            guard !s.failSaves else { return false }
             s.pairing = pairing
             s.token = token
             s.saves.append(Saved(pairing: pairing, token: token))
+            return true
         }
     }
 
@@ -329,7 +344,7 @@ private final class FakePushAcks: PushAckStorage {
 /// A store over fakes; every link it makes is kept.
 @MainActor private final class Rig {
     let journal = Journal()
-    let clock = FakeClock(Date(timeIntervalSince1970: 1_800_000_000))
+    let clock: FakeClock
     let storage: FakeStorage
     let pairer: FakePairer
     let runner = ImmediateRunner()
@@ -339,7 +354,11 @@ private final class FakePushAcks: PushAckStorage {
     let timer = ManualClock()
     private(set) var links: [FakeLink] = []
 
-    init(paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false, pushAck: PushAck? = nil) {
+    init(
+        paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false, pushAck: PushAck? = nil,
+        clockStep: TimeInterval = 0
+    ) {
+        clock = FakeClock(Date(timeIntervalSince1970: 1_800_000_000), step: clockStep)
         pushAcks = FakePushAcks(pushAck)
         storage = FakeStorage(journal: journal, pairing: paired ? stored : nil, snapshot: cached)
         pairer = FakePairer(journal: journal, outcome: .paired(deviceId: "d2", token: "t2", macName: "New Mac"), slow: slowPairing)
@@ -450,7 +469,8 @@ struct BridgeStoreTests {
     }
 
     @Test func eventsAreAppliedInOrder() async {
-        let rig = Rig()
+        // Every snapshot 30 s after the one before, so that each is written.
+        let rig = Rig(clockStep: 30)
         let store = rig.makeStore()
         let bodies = (0..<100).map { body("s\($0)") }
         let link = rig.link
@@ -467,6 +487,85 @@ struct BridgeStoreTests {
         #expect(rig.storage.snapshotSaves.map(\.body) == bodies)
         #expect(store.snapshot == bodies.last)
         #expect(store.isLive)
+    }
+
+    /// Ledger: every snapshot was written, and one can be over a megabyte. As on Android: at most one write every 30
+    /// seconds, the newest snapshot; the one held back goes when the app leaves the foreground or the connection ends.
+    @Test func snapshotWritesAreThrottledTo30Seconds() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        let start = rig.clock.now
+        func at(_ seconds: TimeInterval) -> Date { start.addingTimeInterval(seconds) }
+        rig.link.emit(.state(connected))
+        for (i, seconds) in [0.0, 10, 29, 30, 45].enumerated() {
+            rig.clock.set(at(seconds))
+            rig.link.emit(snapshot(body("s\(i)"), seq: i))
+            #expect(await becomes { store.snapshot == body("s\(i)") })
+        }
+        // Shown as they come; written: the first, then the newest once 30 s have passed since.
+        #expect(rig.storage.snapshotSaves == [
+            CachedSnapshot(body: body("s0"), receivedAt: at(0)),
+            CachedSnapshot(body: body("s3"), receivedAt: at(30)),
+        ])
+        rig.clock.set(at(61))
+        rig.link.emit(snapshot(body("s5"), seq: 5))
+        #expect(await becomes { rig.storage.snapshotSaves.count == 3 })
+        #expect(rig.storage.snapshotSaves.last == CachedSnapshot(body: body("s5"), receivedAt: at(61)))
+    }
+
+    @Test func backgroundFlushesThePendingSnapshot() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.sceneBecameActive()
+        rig.link.emit(.state(connected))
+        rig.link.emit(snapshot(body("a")))
+        #expect(await becomes { store.snapshot == body("a") })
+        let later = rig.clock.now.addingTimeInterval(5)
+        rig.clock.set(later)
+        rig.link.emit(snapshot(body("b"), seq: 2))
+        #expect(await becomes { store.snapshot == body("b") })
+        #expect(rig.storage.snapshotSaves.count == 1)
+
+        store.sceneEnteredBackground()
+        #expect(rig.storage.snapshotSaves.last == CachedSnapshot(body: body("b"), receivedAt: later))
+        #expect(rig.storage.snapshotSaves.count == 2)
+        // Nothing more to write.
+        store.sceneBecameActive()
+        store.sceneEnteredBackground()
+        #expect(rig.storage.snapshotSaves.count == 2)
+    }
+
+    @Test func aConnectionThatEndsFlushesThePendingSnapshot() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        rig.link.emit(.state(connected))
+        rig.link.emit(snapshot(body("a")))
+        rig.link.emit(snapshot(body("b"), seq: 2))
+        #expect(await becomes { store.snapshot == body("b") })
+        #expect(rig.storage.snapshotSaves.map(\.body) == [body("a")])
+        rig.link.emit(.state(offline))
+        #expect(await becomes { rig.storage.snapshotSaves.map(\.body) == [body("a"), body("b")] })
+    }
+
+    /// A snapshot held back belongs to its pairing: unpaired or paired with another Mac, it is never written.
+    @Test func aHeldBackSnapshotDiesWithItsPairing() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.sceneBecameActive()
+        rig.link.emit(.state(connected))
+        rig.link.emit(snapshot(body("a")))
+        rig.link.emit(snapshot(body("old"), seq: 2))
+        #expect(await becomes { store.snapshot == body("old") })
+        _ = await store.pair(target, deviceName: "iPhone")
+        store.sceneEnteredBackground()
+        rig.links[1].emit(.state(connected))
+        rig.links[1].emit(.state(offline))
+        await settle()
+        #expect(rig.storage.snapshotSaves.map(\.body) == [body("a")])
+        // The new Mac's first snapshot is written at once.
+        rig.links[1].emit(.state(connected))
+        rig.links[1].emit(snapshot(body("new")))
+        #expect(await becomes { rig.storage.snapshotSaves.map(\.body) == [body("a"), body("new")] })
     }
 
     @Test func reconnectingIsNotLiveUntilANewSnapshot() async {
@@ -862,6 +961,62 @@ struct BridgeStoreTests {
         #expect(rig.storage.saves.isEmpty)
     }
 
+    /// Ledger: only the pairing screen kept a second attempt from starting; with notifications there are other ways in.
+    @Test func pairIsNotReentrant() async {
+        let rig = Rig(slowPairing: true)
+        let store = rig.makeStore()
+        let first = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { store.pairingPhase == .connecting })
+
+        let other = PairingTarget(endpoint: moved, fingerprint: pin, code: "AAAA2222", macName: "Other Mac")
+        #expect(await store.pair(other, deviceName: "iPhone") == .failed(.busy))
+        #expect(PairFailure.busy.text == "正在配对")
+        // The attempt under way goes on as it was; the second never reached a Mac.
+        #expect(store.pairingPhase == .connecting)
+        #expect(rig.journal.all.filter { $0.hasPrefix("pair") } == ["pair K7M2QX9P iPhone"])
+        rig.pairer.reachMac.open()
+        rig.pairer.approval.open()
+        #expect(await first.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(store.pairing?.deviceId == "d2")
+        #expect(rig.storage.saves.count == 1)
+    }
+
+    /// The Mac said yes but the phone could not keep the pairing (the keychain refused the token): the old pairing
+    /// stays, on disk and on screen, and its connection comes back (Android does the same).
+    @Test func aPairingThatCannotBeSavedKeepsTheOldOne() async {
+        var ack = PushAck()
+        ack.message = "已登记"
+        let rig = Rig(pushAck: ack)
+        let store = rig.makeStore()
+        store.sceneBecameActive()
+        rig.link.emit(.state(connected))
+        rig.link.emit(snapshot(body("old")))
+        #expect(await becomes { store.canAct })
+        rig.storage.failSaves()
+
+        #expect(await store.pair(target, deviceName: "iPhone") == .failed(.notSaved))
+        #expect(store.pairing == stored)
+        #expect(rig.storage.storedPairing == stored)
+        #expect(store.snapshot == body("old"))
+        #expect(store.pairingPhase == nil)
+        #expect(store.pushAck == ack)
+        // A connection for the old pairing again, started.
+        #expect(rig.links.count == 2)
+        #expect(await becomes { rig.links[1].starts == 1 })
+        rig.links[1].emit(.state(connected))
+        rig.links[1].emit(snapshot(body("old", "again")))
+        #expect(await becomes { store.snapshot == body("old", "again") && store.canAct })
+    }
+
+    @Test func aFirstPairingThatCannotBeSavedLeavesThePhoneUnpaired() async {
+        let rig = Rig(paired: false)
+        let store = rig.makeStore()
+        rig.storage.failSaves()
+        #expect(await store.pair(target, deviceName: "iPhone") == .failed(.notSaved))
+        #expect(store.pairing == nil)
+        #expect(rig.links.isEmpty)
+    }
+
     @Test func pairingPhasesAreReported() async {
         let rig = Rig(paired: false, slowPairing: true)
         let store = rig.makeStore()
@@ -1150,6 +1305,59 @@ struct BridgeStoreWithTheClientTests {
         #expect(mac.connects.count == 2)
         store.unpair()
         #expect(await becomes { mac.openSockets == 0 })
+    }
+
+    /// Pairing as the app does it, over the storage the app uses (`DiskPairingStorage`, with the keychain faked): the
+    /// next launch is paired with the same Mac, shows the snapshot kept, and says hello with the new credentials.
+    @Test func aPairingOnDiskOutlivesARestart() async throws {
+        let mac = FakeMac()
+        mac.autoWelcome = "Pair Mac"
+        let folder = StorageFolder()
+        defer { folder.remove() }
+        let secrets = FakeSecrets()
+        func launch(_ storage: DiskPairingStorage) -> BridgeStore {
+            BridgeStore(
+                storage: storage,
+                makeLink: { pairing, onEvent in
+                    BridgeClient(
+                        transport: mac, endpoint: StaticResolver(pairing.endpoint), fingerprint: pairing.fingerprint,
+                        credentials: { storage.load()?.1 }, app: "critter-ios/test", onEvent: onEvent
+                    )
+                },
+                pairer: Pairer(transport: mac), background: ImmediateRunner(), network: FakeNetwork()
+            )
+        }
+
+        let storage = folder.storage(secrets)
+        let first = launch(storage)
+        #expect(first.pairing == nil)
+        first.sceneBecameActive()
+        let pairing = Task { await first.pair(target, deviceName: "iPhone") }
+        #expect(try #require(await mac.nextFrame()) == .pair(code: target.code, deviceName: "iPhone"))
+        mac.send(.paired(deviceId: "d9", token: "t9", macName: "Pair Mac"))
+        mac.send(.welcome(macName: "Pair Mac", version: "1.4.0"))
+        #expect(await pairing.value == .paired(deviceId: "d9", token: "t9", macName: "Pair Mac"))
+        let hello = ClientMessage.hello(protocolVersion: 1, deviceId: "d9", token: "t9", app: "critter-ios/test")
+        #expect(try #require(await mac.nextFrame()) == hello)
+        #expect(await becomes { first.conn == .connected(macName: "Pair Mac") })
+        mac.send(snapshot(body("a")).serverMessage)
+        #expect(await becomes { first.snapshot == body("a") })
+        first.sceneEnteredBackground()
+        #expect(await becomes { mac.openSockets == 0 })
+        storage.waitForSnapshotWrites()
+
+        // The next launch.
+        let second = launch(folder.storage(secrets))
+        let paired = StoredPairing(endpoint: target.endpoint, fingerprint: target.fingerprint, macName: "Pair Mac", deviceId: "d9")
+        #expect(second.pairing == paired)
+        #expect(second.snapshot == body("a"))
+        #expect(!second.isLive)
+        second.sceneBecameActive()
+        #expect(try #require(await mac.nextFrame()) == hello)
+        #expect(await becomes { second.conn == .connected(macName: "Pair Mac") })
+        second.unpair()
+        #expect(await becomes { mac.openSockets == 0 })
+        #expect(folder.storage(secrets).load() == nil)
     }
 
     /// The Mac moved (another Wi-Fi, a new DHCP lease) and was found again with Bonjour: from then on, in the same

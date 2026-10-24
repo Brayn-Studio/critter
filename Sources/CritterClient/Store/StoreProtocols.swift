@@ -1,7 +1,8 @@
 import CritterKit
 import Foundation
 
-/// What is kept of a pairing besides its token (which only `PairingStorage` holds, in the keychain).
+/// What is kept of a pairing besides its token (which only `PairingStorage` holds, in the keychain). Nothing in it is
+/// secret: it may go into a file the extensions can read.
 public struct StoredPairing: Codable, Equatable, Sendable {
     /// The Mac's last good address.
     public var endpoint: Endpoint
@@ -34,8 +35,9 @@ public struct CachedSnapshot: Codable, Equatable, Sendable {
 public protocol PairingStorage: Sendable {
     func load() -> (StoredPairing, Credentials)?
     /// Replaces the pairing and token. The cached snapshot goes too: it is from the pairing replaced, which may
-    /// be another Mac.
-    func save(_ pairing: StoredPairing, token: String)
+    /// be another Mac. Whether it was saved: if not, the old pairing, token and snapshot are as they were.
+    @discardableResult
+    func save(_ pairing: StoredPairing, token: String) -> Bool
     func updateEndpoint(_ endpoint: Endpoint)
     /// Forgets the pairing and the cached snapshot together.
     func clear()

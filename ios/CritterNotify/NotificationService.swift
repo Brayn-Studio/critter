@@ -12,6 +12,9 @@ final class NotificationService: UNNotificationServiceExtension {
     ) {
         self.contentHandler = contentHandler
         let content = (request.content.mutableCopy() as? UNMutableNotificationContent) ?? UNMutableNotificationContent()
+        #if DEBUG
+        if request.content.userInfo["critterSharedCheck"] != nil { SharedCheck.answer(content) }
+        #endif
         best = content
         finish(content)
     }

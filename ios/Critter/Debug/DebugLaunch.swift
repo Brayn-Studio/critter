@@ -106,6 +106,13 @@ import Foundation
 ///   plugged in again in landscape at 22 s, the card closes at 24 s (the board stays), opens again at 26 s, unplugged at
 ///   28 s (held), and the card closes at 41 s, the board with it (`FakeDock.swift`). With `-critterOpen answer:<id>`
 ///   too, that card is open on the home screen when the board opens by itself, and goes first.
+/// - `-critterSharedCheck`: whether the App Group and the shared keychain group work as the entitlements have them, with
+///   nothing registered. Once launched, the app writes markers to both, reads back what the extensions wrote there, and
+///   starts a Live Activity for 5 s whose drawing makes the widget extension read the app's markers and write its own;
+///   a push with `"critterSharedCheck": 1` and `mutable-content` makes the notification service extension do the same
+///   (`SharedCheck.swift` in each target; `xcrun simctl push` does not wake that extension in the simulator). The log
+///   says what each side found: `xcrun simctl spawn <device> log show --last 2m --predicate 'subsystem ==
+///   "com.braynlabs.critter" AND category == "sharedcheck"'`.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -176,6 +183,7 @@ struct DebugLaunch {
     var fixtureStep: FixtureStep?
     /// `-critterFakeDock`: which day on the desk the fake charger and sensor play; nil without it.
     var fakeDock: FakeDock.Script?
+    var sharedCheck = false
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -266,6 +274,7 @@ struct DebugLaunch {
                 fixtureStep = FixtureStep(sessionId: String(target[0]), state: state, at: at)
             }
         }
+        sharedCheck = arguments.contains("-critterSharedCheck")
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug
@@ -370,7 +379,7 @@ private struct FixtureStorage: PairingStorage {
         return (pairing, Credentials(deviceId: "fixture", token: "fixture"))
     }
 
-    func save(_ pairing: StoredPairing, token: String) {}
+    func save(_ pairing: StoredPairing, token: String) -> Bool { true }
     func updateEndpoint(_ endpoint: Endpoint) {}
     func clear() {}
     func loadSnapshot() -> CachedSnapshot? { cached }

@@ -161,7 +161,7 @@ struct DemoPairer: PairingLink {
 /// only (the store keeps the pairing in memory).
 struct UnpairedStorage: PairingStorage {
     func load() -> (StoredPairing, Credentials)? { nil }
-    func save(_ pairing: StoredPairing, token: String) {}
+    func save(_ pairing: StoredPairing, token: String) -> Bool { true }
     func updateEndpoint(_ endpoint: Endpoint) {}
     func clear() {}
     func loadSnapshot() -> CachedSnapshot? { nil }

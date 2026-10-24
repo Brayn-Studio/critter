@@ -4,11 +4,11 @@ import Foundation
 import Observation
 
 /// Where the phone gets skins (Android `SkinStore`): the bundled ones from the app (`Skins/<name>/manifest.json`, the
-/// repository's own folder), and the custom ones the Mac sends when asked (`skin` request), kept in memory and in
-/// Application Support's `Skins/<name>.json`, which the next launch starts from. `library` is built again whenever a
-/// manifest arrives or the clock or forced skin changes, so screens that read it redraw with the real skin instead
-/// of the sprig they showed meanwhile; it takes over the old library's manifests, so only Critters wearing the new
-/// skin change.
+/// repository's own folder), and the custom ones the Mac sends when asked (`skin` request), kept in memory and in the
+/// App Group's `Skins/<name>.json` (`SharedContainer`), which the next launch starts from and the Live Activity draws
+/// from. `library` is built again whenever a manifest arrives or the clock or forced skin changes, so screens that read
+/// it redraw with the real skin instead of the sprig they showed meanwhile; it takes over the old library's manifests,
+/// so only Critters wearing the new skin change.
 @MainActor @Observable
 final class SkinStore {
     /// Finds a skin by name for every screen.
@@ -41,8 +41,8 @@ final class SkinStore {
         return PhoneSkinLibrary.ordered(entries.map(\.lastPathComponent).filter { bundled($0) != nil })
     }()
 
-    /// - Parameter directory: where pushed skins are saved; nil keeps them in memory only. The default is
-    ///   Application Support's `Skins`.
+    /// - Parameter directory: where pushed skins are saved; nil keeps them in memory only. The default is the App
+    ///   Group's `Skins`.
     init(directory: URL? = SkinStore.defaultDirectory) {
         self.directory = directory
         if let directory, let files = try? FileManager.default.contentsOfDirectory(
@@ -60,8 +60,7 @@ final class SkinStore {
     }
 
     nonisolated static var defaultDirectory: URL? {
-        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first?
-            .appendingPathComponent("Skins", isDirectory: true)
+        SharedContainer.skinsFolder
     }
 
     /// The bundled manifest of skin `name` (`Skins/<name>/manifest.json` in the app), nil if the app has none or it
