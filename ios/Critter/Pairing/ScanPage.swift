@@ -17,6 +17,10 @@ struct ScanPage: View {
     let onClose: (() -> Void)?
     /// Sprig's stage (`LonePet.petId`), for the hop.
     let control: CritterStageControl
+    /// In the first-run guide: the seeds on top, 「跳过」 beside 「返回」, and what skipping costs under them.
+    var position: StepPosition?
+    var onSkip: (() -> Void)?
+    var skipNote: String?
 
     /// Where the viewfinder is on screen (global), for the dimming around it.
     @State private var window: CGRect?
@@ -27,6 +31,10 @@ struct ScanPage: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            if let position {
+                SeedRow(position: position)
+                    .padding(.top, 8)
+            }
             ScrollView {
                 VStack(spacing: 0) {
                     StepTitle(text: "扫 Mac 上的二维码")
@@ -57,11 +65,14 @@ struct ScanPage: View {
             .scrollBounceBehavior(.basedOnSize)
             VStack(spacing: 8) {
                 PixelButton(title: "手动输入", style: .secondary, icon: .keys, wide: true, action: onManual)
-                if let onClose {
-                    Button(action: onClose) {
-                        Text(verbatim: "返回").foregroundStyle(Self.mutedInk)
+                if onClose != nil || onSkip != nil {
+                    HStack(spacing: 0) {
+                        if let onClose { ghost("返回", action: onClose) }
+                        if let onSkip { ghost("跳过", action: onSkip) }
                     }
-                    .buttonStyle(PixelButtonStyle(style: .text))
+                }
+                if onSkip != nil, let skipNote {
+                    SkipNote(text: skipNote, color: Self.mutedInk)
                 }
             }
             .padding(.bottom, 16)
@@ -71,6 +82,17 @@ struct ScanPage: View {
         .environment(\.colorScheme, .dark)
         // Light status bar icons over the dark page; the other pages follow the system again.
         .preferredColorScheme(.dark)
+    }
+}
+
+extension ScanPage {
+    /// A text button in the page's muted ink (the mockup's 「返回」), sharing the row with the other evenly.
+    private func ghost(_ title: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(verbatim: title).foregroundStyle(Self.mutedInk)
+        }
+        .buttonStyle(PixelButtonStyle(style: .text))
+        .frame(maxWidth: .infinity)
     }
 }
 

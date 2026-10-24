@@ -6,6 +6,8 @@ import SwiftUI
 /// meadow, over a drawing of the row the Mac's "添加手机" window shows now with 「允许」 circled. Reaching the Mac and
 /// waiting for 「允许」 are the same page; only the row's status line changes.
 struct WaitingPage: View {
+    /// The seeds over it, in the first-run guide.
+    var position: StepPosition?
     /// The request is with the Mac (rather than still reaching it).
     let awaiting: Bool
     /// This phone's name, as the Mac shows it.
@@ -14,7 +16,7 @@ struct WaitingPage: View {
     let onCancel: () -> Void
 
     var body: some View {
-        StepColumn {
+        StepColumn(position: position) {
             StepStage(state: .waiting)
             StepTitle(text: "在 Mac 上点「允许」")
                 .padding(.top, 14)
@@ -31,12 +33,14 @@ struct WaitingPage: View {
 /// one per reason), and under that why a link that came meanwhile was not used (`note`). 「重新扫码」 goes back to
 /// the scanner.
 struct FailurePage: View {
+    /// The seeds over it, in the first-run guide.
+    var position: StepPosition?
     let failure: PairFailure
     let note: String?
     let onRescan: () -> Void
 
     var body: some View {
-        StepColumn {
+        StepColumn(position: position) {
             StepStage(state: .error)
             ErrorNote(text: failure.text, pet: false, size: 14.5)
                 .padding(.top, 14)
@@ -49,14 +53,19 @@ struct FailurePage: View {
     }
 }
 
-/// A pairing page's frame (Android `StepPage`): `content` from the top, scrolling when the type is large, and the
-/// `bottom` buttons held at the bottom; 24 pt side margins.
+/// A pairing page's frame (Android `StepPage`): the seeds on top in the first-run guide (`position`), `content` from
+/// the top, scrolling when the type is large, and the `bottom` buttons held at the bottom; 24 pt side margins.
 struct StepColumn<Content: View, Bottom: View>: View {
+    var position: StepPosition?
     @ViewBuilder let content: Content
     @ViewBuilder let bottom: Bottom
 
     var body: some View {
         VStack(spacing: 0) {
+            if let position {
+                SeedRow(position: position)
+                    .padding(.top, 8)
+            }
             ScrollView {
                 VStack(alignment: .leading, spacing: 10) { content }
                     .padding(.top, 12)

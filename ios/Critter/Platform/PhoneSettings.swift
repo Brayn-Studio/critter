@@ -55,6 +55,12 @@ final class PhoneSettings {
         didSet { shared.set(notifyError, forKey: Key.notifyError) }
     }
 
+    /// The first-run guide has been gone through (or skipped to its end): it does not come up by itself again (spec
+    /// §8.8). The settings' 「重新走一遍引导」 opens it by hand.
+    var onboardingDone: Bool {
+        didSet { save(onboardingDone, Key.onboardingDone) }
+    }
+
     /// The day the opening (Critters popping up on the home screen) last played, "yyyy-MM-dd" in the phone's time
     /// zone: it plays once a day.
     var openingShownOn: String? {
@@ -79,6 +85,7 @@ final class PhoneSettings {
         static let boardBrightness = "critter.settings.boardBrightness"
         static let boardSounds = "critter.settings.boardSounds"
         static let openingShownOn = "critter.settings.openingShownOn"
+        static let onboardingDone = "critter.settings.onboardingDone"
         // The ones the extensions read too: their keys are shared (`SharedSettings`).
         static let liveActivity = SharedSettings.liveActivity
         static let notifyDone = SharedSettings.notifyDone
@@ -95,6 +102,7 @@ final class PhoneSettings {
         boardBrightness = Self.clampBrightness(defaults.object(forKey: Key.boardBrightness) as? Double ?? 0.3)
         boardSounds = defaults.object(forKey: Key.boardSounds) as? Bool ?? false
         openingShownOn = defaults.string(forKey: Key.openingShownOn)
+        onboardingDone = defaults.object(forKey: Key.onboardingDone) as? Bool ?? false
         liveActivity = shared.object(forKey: Key.liveActivity) as? Bool ?? true
         notifyDone = shared.object(forKey: Key.notifyDone) as? Bool ?? false
         notifyError = shared.object(forKey: Key.notifyError) as? Bool ?? false

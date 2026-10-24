@@ -6,6 +6,10 @@ import SwiftUI
 /// confirmation first, with the Mac's name, address and fingerprint), or pick the Mac from the network and type the
 /// code. Only Macs on the local network are paired with (`PrivateNetwork`, the ranges the Mac itself serves).
 ///
+/// In the first-run guide (`position` set) it is the pairing step: the seeds over the scanner and the pages of an attempt,
+/// 「跳过」 with what skipping costs (`onSkip`, `skipNote`), 「返回」 going back a step (`onClose`), and a pairing made
+/// going on to the next step (`onPaired`).
+///
 /// One attempt at a time: while one is under way (`store.pairingPhase` set), nothing starts another. The screen then
 /// shows where it is, and how it failed if it did; when it succeeds the root view shows the home screen. A link that
 /// comes in meanwhile waits (`queuedLink`, the latest one wins): it is taken once the attempt has failed or been
@@ -16,8 +20,15 @@ struct PairingView: View {
     let deviceName: String
     /// A link the app was opened with; the pairing screen takes it (sets it back to nil).
     @Binding var link: IncomingPairLink?
-    /// Back to the home screen; nil when there is nothing to go back to (not paired).
+    /// Back to the home screen; nil when there is nothing to go back to (not paired). In the guide: back a step.
     let onClose: (() -> Void)?
+    /// The step's place in the first-run guide; nil outside it.
+    var position: StepPosition?
+    /// 「跳过」 in the guide, and what skipping costs.
+    var onSkip: (() -> Void)?
+    var skipNote: String?
+    /// A pairing was made: the guide's next step. Without it, `onClose` (the home screen).
+    var onPaired: (() -> Void)?
 
     private enum Page {
         case scan, manual
@@ -72,9 +83,9 @@ struct PairingView: View {
     @ViewBuilder
     private var content: some View {
         if let failure {
-            FailurePage(failure: failure, note: note, onRescan: rescan)
+            FailurePage(position: position, failure: failure, note: note, onRescan: rescan)
         } else if attempt != nil {
-            WaitingPage(awaiting: awaiting, deviceName: shownDeviceName, onCancel: cancel)
+            WaitingPage(position: position, awaiting: awaiting, deviceName: shownDeviceName, onCancel: cancel)
         } else if page == .manual {
             ManualPairView(
                 network: network, note: note, onPair: { pair($0) },
@@ -84,7 +95,8 @@ struct PairingView: View {
         } else {
             ScanPage(
                 note: note, flash: flashing, onCode: read, onManual: { switchTo(.manual) },
-                onClose: onClose.map { _ in close }, control: stage
+                onClose: onClose.map { _ in close }, control: stage, position: position,
+                onSkip: onSkip.map { skip in { stopFlash(); skip() } }, skipNote: skipNote
             )
         }
     }
@@ -125,7 +137,7 @@ struct PairingView: View {
             case .paired:
                 // Whatever link came meanwhile was for the pairing just made.
                 queuedLink = nil
-                onClose?()
+                if let onPaired { onPaired() } else { onClose?() }
             case .failed(let why):
                 failure = why
                 takeQueuedIfIdle()
@@ -245,7 +257,8 @@ struct PairingView: View {
             },
             onDismiss: {
                 linkToConfirm = nil
-                close()
+                // In the guide the step stays: there is no home screen to go back to.
+                if position == nil { close() }
             }
         ) {
             Text(verbatim: "一个链接要让这台手机和「\(Theme.macName(uri.name))」配对。只在你刚在 Mac 上点了「添加手机」时才继续。")

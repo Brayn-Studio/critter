@@ -39,20 +39,23 @@ struct StepBody: View {
     }
 }
 
-/// A page's picture (Android `StepStage`): Sprig in `state` on a patch of meadow `height` tall with 6 pt steps, 5 pt a
-/// cell, standing 30 pt above the bottom; the sky follows the clock. Always the bundled Sprig, whatever skin the phone
-/// wears.
+/// A page's picture (Android `StepStage`): a bundled Critter (Sprig unless `skin` says another) in `state` on a patch of
+/// meadow `height` tall with 6 pt steps, 5 pt a cell, standing 30 pt above the bottom; the sky follows the clock unless
+/// `time` fixes it. Always the bundled skin, whatever skin the phone wears.
 struct StepStage: View {
+    var skin = PhoneSkinLibrary.fallback
     let state: PetState
     var height: CGFloat = 210
+    var time: SkyTime?
+    var sleeping = false
     var control: CritterStageControl?
 
     @Environment(SkinStore.self) private var skins
 
     var body: some View {
         LonePet(
-            skin: skins.previewLibrary.manifest(PhoneSkinLibrary.fallback), state: state, cell: 5, groundInset: 30,
-            control: control
+            skin: skins.previewLibrary.manifest(skin), state: state, sleeping: sleeping, cell: 5, groundInset: 30,
+            time: time, control: control
         )
         .frame(height: height)
         .frame(maxWidth: .infinity)

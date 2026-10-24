@@ -3,6 +3,7 @@ import CritterClient
 import CritterKit
 import Foundation
 import os
+import UserNotifications
 
 /// The launch arguments of DEBUG builds, for screenshots and scripts (`xcrun simctl launch booted
 /// com.braynlabs.critter -critterFixture home-mixed`). None of this is in a release build.
@@ -158,6 +159,13 @@ import os
 ///   in front once connected, updated with each new snapshot, ended at once when switched off. The log (category
 ///   `activity`) says what it did and which tokens the system gave; the registration's line (category `notifications`)
 ///   which of them go to the Mac.
+/// - `-critterOnboarding <step>[:<state>]`: the app starts in the first-run guide at that step (`welcome`, `pair`,
+///   `notifications`, `liveActivity`, `board`), paired or not, whatever `critter.settings.onboardingDone` says. Finishing
+///   it saves `onboardingDone` like a real run. The pairing step is the real pairing screen: unpaired with
+///   `-critterPairing <demo>` (its fakes, e.g. `scan`, `awaiting`, `failed:badCode`) it shows that page with the seeds;
+///   paired (`-critterFixture`) it says "已配对". A state shows a step as it would be otherwise:
+///   `notifications:ask|denied|granted` (the permission the step shows, whatever the system says), `liveActivity:off`
+///   (as with the switch off, without changing it), `board:back` (back from Shortcuts: 「完成引导」).
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -243,6 +251,8 @@ struct DebugLaunch {
     var activityDemo: ActivityDemo.Kind?
     /// `-critterLiveActivitySwitch`: the switch's value and when, in seconds after launch.
     var liveActivitySwitch: [(on: Bool, at: Double)] = []
+    /// `-critterOnboarding`.
+    var onboarding: OnboardingDemo?
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -346,12 +356,37 @@ struct DebugLaunch {
             guard parts.count == 2, let at = Double(parts[1]), parts[0] == "on" || parts[0] == "off" else { return nil }
             return (on: parts[0] == "on", at: at)
         }
+        onboarding = value("critterOnboarding").flatMap(OnboardingDemo.init(argument:))
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug
             case "hold-off": fakeDock = .holdOff
             case "card": fakeDock = .card
             default: fakeDock = .standard
+            }
+        }
+    }
+
+    /// `-critterOnboarding <step>[:<state>]`.
+    struct OnboardingDemo: Equatable {
+        var step: OnboardingStep
+        var state: String?
+
+        init?(argument: String) {
+            let parts = argument.split(separator: ":", maxSplits: 1).map(String.init)
+            guard let first = parts.first, let step = OnboardingStep(rawValue: first) else { return nil }
+            self.step = step
+            state = parts.count > 1 ? parts[1] : nil
+        }
+
+        /// `notifications:ask|denied|granted`: the permission the notification step shows.
+        var notificationStatus: UNAuthorizationStatus? {
+            guard step == .notifications else { return nil }
+            switch state {
+            case "ask": return .notDetermined
+            case "denied": return .denied
+            case "granted": return .authorized
+            default: return nil
             }
         }
     }

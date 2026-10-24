@@ -12,6 +12,8 @@ struct HomeView: View {
     let store: BridgeStore
     /// 「重新配对」 in the settings: back to the pairing screen, keeping the pairing until the new one succeeds.
     let onPairAgain: () -> Void
+    /// 「重新走一遍引导」 in the settings.
+    let onGuide: () -> Void
 
     @Environment(PhoneSettings.self) private var settings
     @Environment(SkinStore.self) private var skins
@@ -77,7 +79,7 @@ struct HomeView: View {
             .background(Theme.bg)
             .toolbar(.hidden, for: .navigationBar)
             .navigationDestination(isPresented: $showSettings) {
-                SettingsView(store: store, onPairAgain: onPairAgain)
+                SettingsView(store: store, onPairAgain: onPairAgain, onGuide: onGuide)
             }
         }
         .sheetShell(item: $presentedSessionId.sheetTarget, handle: 160) { target in

@@ -145,11 +145,18 @@ struct CritterApp: App {
         } else if let kind = DebugLaunch.current.activityDemo {
             ActivityDemoPage(kind: kind)
         } else {
-            RootView(store: store, deviceName: deviceName, link: $link)
+            root
         }
         #else
-        RootView(store: store, deviceName: deviceName, link: $link)
+        root
         #endif
+    }
+
+    private var root: some View {
+        RootView(
+            store: store, deviceName: deviceName, link: $link,
+            guideAtLaunch: RootView.guideAtLaunch(paired: store.pairing != nil, settings: settings)
+        )
     }
 
     /// The app's own Live Activity as things are now (spec §8.5): started and updated only in front while connected, ended

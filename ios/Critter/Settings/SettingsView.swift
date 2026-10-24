@@ -9,6 +9,8 @@ struct SettingsView: View {
     let store: BridgeStore
     /// 「重新配对」: the pairing screen over the home screen; the pairing stays until the new one has succeeded.
     let onPairAgain: () -> Void
+    /// 「重新走一遍引导」: the first-run guide from its welcome page.
+    let onGuide: () -> Void
 
     @Environment(PhoneSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
@@ -51,6 +53,8 @@ struct SettingsView: View {
                                 title: "减少动态效果", detail: "宠物停在代表姿势上；系统的「减少动态效果」打开时也会生效",
                                 isOn: $settings.reduceMotion
                             )
+                            RowLine()
+                            NavRow(title: "重新走一遍引导", action: onGuide)
                         }
                         .id(Group.motion)
                     }
@@ -264,6 +268,38 @@ private struct SwitchRow: View {
         .padding(.horizontal, rowPadding)
         .padding(.vertical, 10)
         .frame(minHeight: 52)
+    }
+}
+
+/// A row that opens another screen (Android `NavRow`): its title, a line under it, and a chevron.
+private struct NavRow: View {
+    let title: String
+    var detail: String?
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    RowTitle(text: title)
+                    if let detail {
+                        Text(verbatim: detail)
+                            .font(.nunito(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.ink2)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PixelIconView(.chevR)
+                    .foregroundStyle(Theme.ink3)
+            }
+            .padding(.horizontal, rowPadding)
+            .padding(.vertical, 10)
+            .frame(minHeight: 52)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isButton)
     }
 }
 
