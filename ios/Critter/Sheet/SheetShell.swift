@@ -7,6 +7,10 @@ import SwiftUI
 // 300 ms with a slight overshoot at the end, then the content is told it has settled (its Critter looks up at you);
 // down in 200 ms; a 150 ms fade both ways under reduce motion. A tap on the scrim, a drag down on the top of the
 // sheet, or VoiceOver's escape closes it. It rises with the keyboard and keeps clear of the home indicator.
+//
+// Every sheet's content sits in one scroll view that is always there: as tall as the content while it fits, and
+// scrolling once the room shrinks (a long question, a revised plan, the keyboard up). The content is never swapped
+// for a scrolling copy, so a focused field stays the same field and keeps the keyboard.
 
 extension View {
     /// Shows `content` for `item` in a sheet over this view while `item` is set; setting it to nil closes the sheet
@@ -49,6 +53,31 @@ extension EnvironmentValues {
     @Entry var sheetSettled = false
 }
 
+extension View {
+    /// Once the sheet this view is in has settled, the Critter `LonePet.petId` on `control` looks up at you (visual
+    /// design §7). Also when this view only comes after the sheet settled (a card that replaced "正在连接电脑…").
+    func lookAtYouOnceSettled(_ control: CritterStageControl) -> some View {
+        modifier(LookAtYouOnceSettled(control: control))
+    }
+}
+
+private struct LookAtYouOnceSettled: ViewModifier {
+    let control: CritterStageControl
+
+    @Environment(\.sheetSettled) private var settled
+
+    func body(content: Content) -> some View {
+        content.onChange(of: settled, initial: true) { _, settled in
+            guard settled else { return }
+            // The stage may only just be in place (its view comes with this one): look once it has had its update.
+            Task { @MainActor in
+                await Task.yield()
+                control.lookAtYou(LonePet.petId)
+            }
+        }
+    }
+}
+
 private struct SheetHost<Item: Identifiable, Content: View>: View {
     @Binding var item: Item?
     let handle: CGFloat
@@ -87,7 +116,7 @@ private struct SheetHost<Item: Identifiable, Content: View>: View {
                         .transition(.opacity)
                 }
                 if let shown {
-                    sheet(content(shown), maxHeight: max(proxy.size.height - Self.topRoom, 0))
+                    sheet(content(shown), maxHeight: Self.maxHeight(room: proxy.size.height))
                         .id(shown.id)
                         .transition(reduceMotion ? AnyTransition.opacity : AnyTransition(SheetSlide()))
                 }
@@ -97,14 +126,28 @@ private struct SheetHost<Item: Identifiable, Content: View>: View {
         .onChange(of: item?.id, initial: true) { _, _ in present() }
     }
 
+    /// The tallest the sheet gets in `room` (what the screen leaves it, the keyboard's top when it is up).
+    /// `-critterSheetMaxHeight` (DEBUG) holds it lower, to show how a sheet behaves when the room shrinks.
+    private static func maxHeight(room: CGFloat) -> CGFloat {
+        var height = max(room - topRoom, 0)
+        #if DEBUG
+        if let cap = DebugLaunch.current.sheetMaxHeight { height = min(height, cap) }
+        #endif
+        return height
+    }
+
     private func sheet(_ content: Content, maxHeight: CGFloat) -> some View {
         SheetFit(maxHeight: maxHeight) {
-            content
-                .environment(\.sheetSettled, settled)
-                .environment(\.closeSheet, SheetCloseAction { item = nil })
-                .foregroundStyle(Theme.ink)
-                .padding(.top, meadowTop ? 0 : Self.contentTop)
-                .frame(maxWidth: .infinity)
+            ScrollView {
+                content
+                    .environment(\.sheetSettled, settled)
+                    .environment(\.closeSheet, SheetCloseAction { item = nil })
+                    .foregroundStyle(Theme.ink)
+                    .padding(.top, meadowTop ? 0 : Self.contentTop)
+                    .frame(maxWidth: .infinity)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            .scrollDismissesKeyboard(.interactively)
         }
         .onPreferenceChange(SheetMeadowTopKey.self) { meadowTop = $0 }
         .background(alignment: .top) {
@@ -162,13 +205,14 @@ private struct SheetHost<Item: Identifiable, Content: View>: View {
     }
 }
 
-/// The content at its own height, offered `maxHeight` at most: short content keeps its height, long content is
-/// held to `maxHeight` and scrolls inside (a `frame(maxHeight:)` would take all of it).
+/// The sheet's scroll view as tall as its content, `maxHeight` at most: short content keeps its height, long
+/// content is held to `maxHeight` and scrolls (a `frame(maxHeight:)` would take all of it). Asked with no height, a
+/// scroll view answers its content's height.
 private struct SheetFit: Layout {
     let maxHeight: CGFloat
 
     func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let size = subviews.first?.sizeThatFits(ProposedViewSize(width: proposal.width, height: maxHeight)) ?? .zero
+        let size = subviews.first?.sizeThatFits(ProposedViewSize(width: proposal.width, height: nil)) ?? .zero
         return CGSize(width: proposal.width ?? size.width, height: min(size.height, maxHeight))
     }
 
@@ -258,14 +302,13 @@ struct SheetHeader: View {
 }
 
 /// The 72 × 64 tile: the waiting colour, an 8 pt strip of grass, the live Critter standing on it at 3 pt a cell,
-/// never dimmed. Once the sheet has settled, it looks up at you.
+/// never dimmed. Once the sheet has settled, it looks up at you (`lookAtYouOnceSettled`).
 struct PetTile: View {
     let manifest: SkinManifest
     let state: PetState
     let activity: String?
     let control: CritterStageControl
 
-    @Environment(\.sheetSettled) private var settled
     @Environment(\.colorScheme) private var colorScheme
 
     private static let size = CGSize(width: 72, height: 64)
@@ -290,13 +333,6 @@ struct PetTile: View {
         .frame(width: Self.size.width, height: Self.size.height)
         .clipShape(PixelShape(step: 4))
         .accessibilityHidden(true)
-        .onChange(of: settled, initial: true) { _, settled in
-            guard settled else { return }
-            // The stage may only just be in place (the card came after the sheet settled).
-            Task { @MainActor in
-                await Task.yield()
-                control.lookAtYou(LonePet.petId)
-            }
-        }
+        .lookAtYouOnceSettled(control)
     }
 }

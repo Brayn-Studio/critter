@@ -27,12 +27,8 @@ struct QuestionForm: View {
     var body: some View {
         let ready = choices.revision >= 0 && draft.payload() != nil
         VStack(alignment: .leading, spacing: 12) {
-            // As tall as the questions while they fit; past that they scroll.
-            ViewThatFits(in: .vertical) {
-                questionList
-                ScrollView { questionList }
-                    .scrollDismissesKeyboard(.interactively)
-            }
+            // The sheet's own scroll view takes them when they do not fit: the own answer's field stays one field.
+            questionList
             FailureLine(text: failure)
             if let doneLabel {
                 DoneButton(label: doneLabel)

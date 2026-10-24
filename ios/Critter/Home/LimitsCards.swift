@@ -3,10 +3,9 @@ import CritterKit
 import SwiftUI
 
 /// Claude Code's two quota windows side by side (Android `Limits`, the mockups' `.limits`), and how old they are
-/// once the Mac has not refreshed them for a while.
+/// once the Mac has not refreshed them for a while. The times read the clock once a minute, on their own.
 struct LimitsCards: View {
     let limits: BridgeLimits?
-    let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -16,15 +15,19 @@ struct LimitsCards: View {
                 .padding(.leading, 4)
                 .padding(.bottom, 6)
             HStack(alignment: .top, spacing: 10) {
-                LimitCard(title: "5 小时额度", window: limits?.fiveHour, now: now)
-                LimitCard(title: "7 天额度", window: limits?.sevenDay, now: now)
+                LimitCard(title: "5 小时额度", window: limits?.fiveHour)
+                LimitCard(title: "7 天额度", window: limits?.sevenDay)
             }
-            if let limits, let age = LimitsText.staleness(updatedAt: limits.updatedAt, now: now) {
-                Text(verbatim: "额度更新于 \(age)")
-                    .font(.nunito(size: 11.5, weight: .semibold))
-                    .foregroundStyle(Theme.ink2)
-                    .padding(.leading, 4)
-                    .padding(.top, 6)
+            if let limits {
+                TimelineView(.everyMinute) { context in
+                    if let age = LimitsText.staleness(updatedAt: limits.updatedAt, now: context.date) {
+                        Text(verbatim: "额度更新于 \(age)")
+                            .font(.nunito(size: 11.5, weight: .semibold))
+                            .foregroundStyle(Theme.ink2)
+                            .padding(.leading, 4)
+                            .padding(.top, 6)
+                    }
+                }
             }
         }
     }
@@ -34,7 +37,6 @@ struct LimitsCards: View {
 private struct LimitCard: View {
     let title: String
     let window: RateWindow?
-    let now: Date
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -51,11 +53,13 @@ private struct LimitCard: View {
             }
             SegmentMeter(fraction: window.map { $0.usedPercentage / 100 }, segments: 10)
                 .padding(.top, 8)
-            Text(verbatim: LimitsText.resets(window, now: now, calendar: .autoupdatingCurrent))
-                .font(.nunito(size: 11.5, weight: .semibold))
-                .foregroundStyle(Theme.ink2)
-                .lineLimit(1)
-                .padding(.top, 6)
+            TimelineView(.everyMinute) { context in
+                Text(verbatim: LimitsText.resets(window, now: context.date, calendar: .autoupdatingCurrent))
+                    .font(.nunito(size: 11.5, weight: .semibold))
+                    .foregroundStyle(Theme.ink2)
+                    .lineLimit(1)
+            }
+            .padding(.top, 6)
         }
         .padding(.horizontal, 13)
         .padding(.top, 11)

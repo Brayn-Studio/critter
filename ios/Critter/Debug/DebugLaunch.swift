@@ -43,6 +43,9 @@ import Foundation
 /// - `-critterSayDraft <text>`: the details sheet's 「发一句」 field starts with this text, through the same limit as
 ///   typing (past 4000 it is cut and the sheet says so). With `-critterAutoSay`, it is sent a second later, as if
 ///   the send button was tapped (the letter flies; `-critterFixtureResult` decides the receipt).
+/// - `-critterSheetMaxHeight <pt>`: every sheet is at most this tall, as if the keyboard had taken the rest of the
+///   screen: what does not fit scrolls in the sheet (the command line cannot raise the keyboard).
+/// - `-critterPlanRevise`: a plan's card opens with the field for what to change, as after 「让它改…」.
 /// - `-critterSkyHour <0-23>`: every meadow's sky is drawn as at this hour of the day (`SkyClock`), whatever the
 ///   clock says (the dark appearance is still night).
 /// - `-critterPairing <demo>`: the pairing screen in one of its states, on fakes (`PairingDemo.swift`): the pairer
@@ -100,6 +103,8 @@ struct DebugLaunch {
     var skyHour: Int?
     var sayDraft: String?
     var autoSay = false
+    var sheetMaxHeight: CGFloat?
+    var planRevise = false
     var pairing: PairingDemo?
     /// `-critterPickSkin`: a bundled skin's name, or nil for 「跟着电脑」 ("follow"); unset when not asked for.
     var pickSkin: String??
@@ -156,6 +161,8 @@ struct DebugLaunch {
         frameLog = arguments.contains("-critterFrameLog")
         sayDraft = value("critterSayDraft")
         autoSay = arguments.contains("-critterAutoSay")
+        sheetMaxHeight = value("critterSheetMaxHeight").flatMap(Double.init).map { CGFloat($0) }
+        planRevise = arguments.contains("-critterPlanRevise")
         skyHour = value("critterSkyHour").flatMap(Int.init).flatMap { (0...23).contains($0) ? $0 : nil }
         pairing = value("critterPairing").flatMap(PairingDemo.init(argument:))
         if let pick = value("critterPickSkin") { pickSkin = .some(pick == "follow" ? nil : pick) }

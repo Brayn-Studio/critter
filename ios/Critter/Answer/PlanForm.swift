@@ -13,8 +13,17 @@ struct PlanForm: View {
     let onRevise: (String) -> Void
     let onApprove: () -> Void
 
-    @State private var revising = false
+    @State private var revising = Self.startsRevising
     @State private var note = ""
+
+    /// `-critterPlanRevise` (DEBUG): the card opens with the field for what to change, as after 「让它改…」.
+    private static var startsRevising: Bool {
+        #if DEBUG
+        DebugLaunch.current.planRevise
+        #else
+        false
+        #endif
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {

@@ -32,7 +32,6 @@ struct DetailSheet: View {
     @State private var feedback: Feedback?
     /// Missing from a cached snapshot proves nothing: the live one gets a while to arrive.
     @State private var waitedOut = false
-    @State private var now = Date()
     @State private var typing = false
     @State private var stage = CritterStageControl()
     /// Where the letter is while it flies, in the sheet's space.
@@ -81,12 +80,6 @@ struct DetailSheet: View {
             try? await Task.sleep(for: .seconds(1.5))
             if !Task.isCancelled { closeSheet() }
         }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(20))
-                now = Date()
-            }
-        }
         .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
             typing = true
         }
@@ -114,11 +107,8 @@ struct DetailSheet: View {
                 height: typing ? Self.stageHeightTyping : Self.stageHeight, control: stage
             )
             .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { stageFrame = $0 }
-            ViewThatFits(in: .vertical) {
-                column(session)
-                ScrollView { column(session) }
-                    .scrollDismissesKeyboard(.interactively)
-            }
+            // The sheet's own scroll view takes it when it does not fit: the field stays one field.
+            column(session)
         }
         .coordinateSpace(.named(Self.space))
         .overlay(alignment: .topLeading) {
@@ -146,7 +136,7 @@ struct DetailSheet: View {
             .accessibilityElement(children: .combine)
             .accessibilityAddTraits(.isHeader)
             if !typing {
-                Facts(session: session, now: now)
+                Facts(session: session)
             }
             if canMessage {
                 VStack(alignment: .leading, spacing: 8) {
@@ -309,8 +299,6 @@ private struct DetailStage: View {
     let height: CGFloat
     let control: CritterStageControl
 
-    @Environment(\.sheetSettled) private var settled
-
     /// The Critter's feet above the bottom of the meadow, its cell, and where it stands: a quarter of the way in.
     static let ground: CGFloat = 22
     static let cell: CGFloat = 4
@@ -339,13 +327,7 @@ private struct DetailStage: View {
             }
         }
         .frame(height: height)
-        .onChange(of: settled, initial: true) { _, settled in
-            guard settled else { return }
-            Task { @MainActor in
-                await Task.yield()
-                control.lookAtYou(LonePet.petId)
-            }
-        }
+        .lookAtYouOnceSettled(control)
     }
 }
 
@@ -394,7 +376,6 @@ private struct SideBubble: View {
 /// another.
 private struct Facts: View {
     let session: BridgeSession
-    let now: Date
 
     private struct Item {
         let icon: PixelIcon
@@ -415,7 +396,7 @@ private struct Facts: View {
             items.append(Item(icon: .spark, label: "模型", value: model))
         }
         let rows = stride(from: 0, to: items.count, by: 2).map { Array(items[$0..<min($0 + 2, items.count)]) }
-        let updated = SessionText.ago(Date(timeIntervalSince1970: Double(session.eventTime) / 1000), now: now)
+        let updated = Date(timeIntervalSince1970: Double(session.eventTime) / 1000)
         return VStack(alignment: .leading, spacing: 10) {
             ForEach(rows.indices, id: \.self) { i in
                 factRow(rows[i])
@@ -425,9 +406,12 @@ private struct Facts: View {
                 ContextFact(context: context)
             }
             if SessionText.isCodex(session), let limits = session.limits {
-                LimitsFact(limits: limits, now: now)
+                LimitsFact(limits: limits)
             }
-            factRow([Item(icon: .dot, label: "最后更新", value: updated)])
+            // The age reads the clock once a minute, on its own.
+            TimelineView(.everyMinute) { context in
+                factRow([Item(icon: .dot, label: "最后更新", value: SessionText.ago(updated, now: context.date))])
+            }
         }
     }
 
@@ -486,17 +470,22 @@ private struct ContextFact: View {
     }
 }
 
-/// A Codex session's own quota windows (Android `LimitsFact`).
+/// A Codex session's own quota windows (Android `LimitsFact`), their resets and age read off the clock once a minute.
 private struct LimitsFact: View {
     let limits: BridgeLimits
-    let now: Date
 
     var body: some View {
+        TimelineView(.everyMinute) { context in
+            content(now: context.date)
+        }
+    }
+
+    private func content(now: Date) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             FactLabel(icon: .battery, label: "Codex 额度")
             HStack(alignment: .top, spacing: 14) {
-                window("5 小时", limits.fiveHour)
-                window("7 天", limits.sevenDay)
+                window("5 小时", limits.fiveHour, now: now)
+                window("7 天", limits.sevenDay, now: now)
             }
             if let age = LimitsText.staleness(updatedAt: limits.updatedAt, now: now) {
                 Text(verbatim: "额度更新于 \(age)")
@@ -507,7 +496,7 @@ private struct LimitsFact: View {
         .accessibilityElement(children: .combine)
     }
 
-    private func window(_ name: String, _ window: RateWindow?) -> some View {
+    private func window(_ name: String, _ window: RateWindow?, now: Date) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(verbatim: "\(name) · \(LimitsText.percent(window))")
                 .font(.nunito(size: 13, weight: .heavy))

@@ -97,25 +97,35 @@ enum MeadowImages {
     }
 }
 
-/// The sky for now (visual design §8.3, Android `currentSkyTime`): from the hour on the phone's clock, read once a
-/// minute (`TimelineView(.everyMinute)`, not an animation) so it changes on the hour, and always night in the dark
-/// appearance. The views under it only change when the sky does. `-critterSkyHour <0-23>` (DEBUG) fixes the hour.
+/// The sky for now (visual design §8.3, Android `currentSkyTime`): from the hour on the phone's clock, which is
+/// read once a minute (`TimelineView(.everyMinute)`, not an animation) out of sight of the content, so it changes on
+/// the hour, and always night in the dark appearance. The content is only built again when the sky changes, not
+/// every minute. `-critterSkyHour <0-23>` (DEBUG) fixes the hour.
 struct SkyClock<Content: View>: View {
     @ViewBuilder let content: (SkyTime) -> Content
 
     @Environment(\.colorScheme) private var colorScheme
+    @State private var hour = SkyHour.at(Date())
 
     var body: some View {
-        TimelineView(.everyMinute) { context in
-            content(Self.sky(at: context.date, dark: colorScheme == .dark))
-        }
+        content(SkyTime.at(hour: hour, dark: colorScheme == .dark))
+            .background {
+                TimelineView(.everyMinute) { context in
+                    Color.clear
+                        .onChange(of: SkyHour.at(context.date)) { _, now in hour = now }
+                }
+                .accessibilityHidden(true)
+            }
     }
 
-    static func sky(at date: Date, dark: Bool) -> SkyTime {
-        var hour = Calendar.autoupdatingCurrent.component(.hour, from: date)
+}
+
+/// The hour the sky follows.
+private enum SkyHour {
+    static func at(_ date: Date) -> Int {
         #if DEBUG
-        if let forced = DebugLaunch.current.skyHour { hour = forced }
+        if let forced = DebugLaunch.current.skyHour { return forced }
         #endif
-        return SkyTime.at(hour: hour, dark: dark)
+        return Calendar.autoupdatingCurrent.component(.hour, from: date)
     }
 }

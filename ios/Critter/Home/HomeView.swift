@@ -29,8 +29,6 @@ struct HomeView: View {
     @State private var inline: [String: InlineAnswerState] = [:]
     /// Offline once an attempt has failed, until connected again: a retry's brief "connecting" stays offline.
     @State private var lost = false
-    /// For the ages on screen.
-    @State private var now = Date()
 
     /// The mockups' status bar: the meadow is 236 pt tall with its ground at 200 pt under a 30 pt status bar. A
     /// taller status bar (62 pt on iPhone 17 Pro) makes the meadow taller by the difference, so the sky under it
@@ -104,13 +102,6 @@ struct HomeView: View {
             // The open card keeps its request's: it says "已提交" rather than that the Mac handled it.
             inline = inline.filter { pending.contains($0.key) || $0.key == presentedRequestId }
             drafts.prune(keeping: pending.union(presentedRequestId.map { [$0] } ?? []))
-            now = Date()
-        }
-        .task {
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .seconds(20))
-                now = Date()
-            }
         }
         #if DEBUG
         .task {
@@ -211,7 +202,10 @@ struct HomeView: View {
                     .tracking(Self.nameSize * 0.01)
                     .foregroundStyle(Color(rgb: sky.onSky))
                     .lineLimit(1)
-                ConnectionTag(text: connectionText(offline: offline), connected: store.conn.isConnected, sky: sky)
+                ConnectionTag(
+                    text: { now in connectionText(offline: offline, now: now) }, connected: store.conn.isConnected,
+                    sky: sky
+                )
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             .accessibilityElement(children: .combine)
@@ -224,8 +218,8 @@ struct HomeView: View {
         .padding(.trailing, 14)
     }
 
-    /// "已连接", or offline "离线 · 5 分钟前" (how old the numbers below are).
-    private func connectionText(offline: Bool) -> String {
+    /// "已连接", or offline "离线 · 5 分钟前" (how old the numbers below are, as of `now`).
+    private func connectionText(offline: Bool, now: Date) -> String {
         guard offline else { return SessionText.conn(store.conn) }
         return "离线" + (store.snapshotAt.map { " · \(SessionText.ago($0, now: now))" } ?? "")
     }
@@ -261,7 +255,7 @@ struct HomeView: View {
                 if let card = statusCard(offline: offline) {
                     card.padding(.bottom, 12)
                 }
-                LimitsCards(limits: store.snapshot?.limits, now: now)
+                LimitsCards(limits: store.snapshot?.limits)
                     .compositingGroup()
                     .opacity(offline ? Self.staleOpacity : 1)
                 if sessions.isEmpty {
@@ -278,8 +272,8 @@ struct HomeView: View {
         .scrollIndicators(.hidden)
     }
 
-    /// The cards glide to their new places (one that starts needing you, to the top); under reduce motion the list
-    /// fades from the old order to the new instead.
+    /// The cards glide to their new places (one that starts needing you, to the top); under reduce motion they are
+    /// in their new places at once and the list fades in there over 150 ms. The cards keep who they are either way.
     @ViewBuilder
     private func cards(sessions: [BridgeSession], requests: [String: RowRequest], offline: Bool) -> some View {
         let order = sessions.map(\.id)
@@ -305,9 +299,12 @@ struct HomeView: View {
         }
         if reduceMotion {
             stack
-                .id(order)
-                .transition(.opacity)
-                .animation(.easeInOut(duration: 0.15), value: order)
+                .keyframeAnimator(initialValue: 1.0, trigger: order) { content, opacity in
+                    content.opacity(opacity)
+                } keyframes: { _ in
+                    MoveKeyframe(0.0)
+                    LinearKeyframe(1.0, duration: 0.15)
+                }
         } else {
             stack.animation(.spring(response: 0.4, dampingFraction: 0.85), value: order)
         }
@@ -317,17 +314,16 @@ struct HomeView: View {
     private func statusCard(offline: Bool) -> StatusCard? {
         if case .needsRepair(let reason) = store.conn {
             // Retrying cannot help (wrong certificate, revoked on the Mac): the way out is right here.
-            return StatusCard(title: "连不上 \(macName)", text: reason, action: "重新配对", prominent: true) {
+            return StatusCard(title: "连不上 \(macName)", text: { _ in reason }, action: "重新配对", prominent: true) {
                 store.unpair()
             }
         }
         guard offline else { return nil }
-        let text: String
-        if let at = store.snapshotAt {
+        let at = store.snapshotAt
+        let text = { (now: Date) -> String in
+            guard let at else { return "正在重试。" }
             let ago = SessionText.ago(at, now: now)
-            text = "正在重试。下面是\(ago.first?.isNumber == true ? " " : "")\(ago)的样子。"
-        } else {
-            text = "正在重试。"
+            return "正在重试。下面是\(ago.first?.isNumber == true ? " " : "")\(ago)的样子。"
         }
         return StatusCard(title: "连不上 \(macName)", text: text, action: "重试", prominent: false) {
             store.retry()
@@ -385,7 +381,8 @@ extension ConnState {
 /// A pixel dot (green with a faint ring while connected, grey otherwise) and the connection's words, on a tag over
 /// the sky.
 private struct ConnectionTag: View {
-    let text: String
+    /// The words as of a moment: an age in them reads the clock once a minute.
+    let text: (Date) -> String
     let connected: Bool
     let sky: SkyColors
 
@@ -399,10 +396,12 @@ private struct ConnectionTag: View {
                         Rectangle().fill(Theme.doneGlyph.opacity(0.3)).padding(-2)
                     }
                 }
-            Text(verbatim: text)
-                .font(.nunito(size: 13, weight: .heavy))
-                .foregroundStyle(Color(rgb: sky.tagInk))
-                .lineLimit(1)
+            TimelineView(.everyMinute) { context in
+                Text(verbatim: text(context.date))
+                    .font(.nunito(size: 13, weight: .heavy))
+                    .foregroundStyle(Color(rgb: sky.tagInk))
+                    .lineLimit(1)
+            }
         }
         .padding(.leading, 7)
         .padding(.trailing, 9)
@@ -415,7 +414,8 @@ private struct ConnectionTag: View {
 /// "连不上 xxx": what is going on, and the one thing to do about it.
 private struct StatusCard: View {
     let title: String
-    let text: String
+    /// What is going on as of a moment: an age in it reads the clock once a minute.
+    let text: (Date) -> String
     let action: String
     let prominent: Bool
     let onAction: () -> Void
@@ -429,10 +429,12 @@ private struct StatusCard: View {
                     .font(.nunito(size: 14.5, weight: .bold))
                     .foregroundStyle(Theme.ink)
                     .lineLimit(1)
-                Text(verbatim: text)
-                    .font(.nunito(size: 12.5, weight: .semibold))
-                    .foregroundStyle(Theme.ink2)
-                    .fixedSize(horizontal: false, vertical: true)
+                TimelineView(.everyMinute) { context in
+                    Text(verbatim: text(context.date))
+                        .font(.nunito(size: 12.5, weight: .semibold))
+                        .foregroundStyle(Theme.ink2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
             PixelButton(title: action, style: prominent ? .primary : .secondary, size: .small, action: onAction)
