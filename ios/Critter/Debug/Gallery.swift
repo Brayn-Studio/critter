@@ -39,6 +39,9 @@ struct Gallery: View {
             .onAppear {
                 if let at = DebugLaunch.current.galleryAt { reader.scrollTo(at, anchor: .top) }
             }
+            .background {
+                if DebugLaunch.current.pressCheck { PressCheck() }
+            }
         }
         .background(Theme.bg)
         .foregroundStyle(Theme.ink)
@@ -77,7 +80,7 @@ struct Gallery: View {
                     ForEach(slots, id: \.sessionId) { slot in
                         CritterPortrait(
                             manifest: slot.manifest, state: slot.state, cell: Self.stripCell, asleep: slot.sleeping,
-                            dim: slot.manifest.state(slot.state).tint == .dim, dimStrength: slot.dimStrength
+                            dimStrength: slot.dimStrength
                         )
                         .offset(x: slot.origin.x - Self.stripCell, y: Self.stripHeight + 8)
                     }
@@ -96,7 +99,8 @@ struct Gallery: View {
                 ForEach([PetState.idle, .running, .waiting, .done, .error], id: \.self) { state in
                     VStack(spacing: 6) {
                         CritterPortrait(
-                            manifest: skins.previewLibrary.manifest(PhoneSkinLibrary.fallback), state: state, cell: 3
+                            manifest: skins.previewLibrary.manifest(PhoneSkinLibrary.fallback), state: state, cell: 3,
+                            dimStrength: skins.idleDim
                         )
                         .background(state == .waiting ? Theme.waitBg : Theme.state(state).bg)
                         .clipShape(PixelShape(step: 3))

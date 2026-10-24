@@ -162,6 +162,8 @@ struct GrassTile: View {
     let offline: Bool
 
     @Environment(\.colorScheme) private var colorScheme
+    /// For the Mac's dimming strength: the tile's Critter is dimmed as the same Critter on the meadow is.
+    @Environment(SkinStore.self) private var skins
 
     var body: some View {
         let grass = SkyColors.of(colorScheme == .dark ? .night : .day)
@@ -173,7 +175,7 @@ struct GrassTile: View {
             }
             CritterPortrait(
                 manifest: manifest, state: offline ? .idle : session.state, cell: 2,
-                activity: offline ? nil : session.activity, asleep: offline
+                activity: offline ? nil : session.activity, asleep: offline, dimStrength: skins.idleDim
             )
             .padding(.bottom, 6)
         }

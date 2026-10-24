@@ -4,8 +4,11 @@ import UIKit
 
 /// Still pictures of a Critter in its state's representative pose (what reduce motion shows; Android `Portraits`),
 /// for the places where pets don't move: list tiles, the pro board, notifications. 20 × 20 cells: the base box starts
-/// at column 1 and stands on the bottom row. Drawn once per look, at the screen's pixels (`scale` points a cell), and
-/// kept in a small cache, most recently used last.
+/// at column 1 and stands on the bottom row. Drawn once per look by `SpriteDrawing` (laid out like the live sprite
+/// layers), at the screen's pixels (`scale` points a cell), and kept in a small cache, most recently used last.
+///
+/// Dimming follows the live stage's rule, as the mockups' still pictures do: the engine tints a state that is dimmed
+/// (`idle` and `error` in the bundled skins) and `dimStrength` (the Mac's `idleDim`, every slot's) says how much.
 @MainActor
 enum Portraits {
     /// The picture is this many cells wide and tall.
@@ -19,23 +22,25 @@ enum Portraits {
         var cellPixels: Int
         var displayScale: CGFloat
         var asleep: Bool
-        var dimStrength: Double?
+        var dim: Bool?
+        var dimStrength: Double
     }
 
     private static var cache: [Key: (manifest: SkinManifest, image: UIImage)] = [:]
     private static var recent: [Key] = []
 
-    /// `skin` in `state`'s still pose, `scale` points a cell at `displayScale` pixels a point; dimmed like an idle
-    /// Critter on the Mac (`dimStrength`, quantized like the atlases) with `dim`. Nil if the pose cannot be drawn.
+    /// `skin` in `state`'s still pose, `scale` points a cell at `displayScale` pixels a point. Dimmed as the stage
+    /// dims it (the state's tint, at `dimStrength`, quantized like the atlases); `dim` overrides the state's tint:
+    /// true dims every state (the pro board dims all but waiting), false none. Nil if the pose cannot be drawn.
     static func image(
-        skin: SkinManifest, state: PetState, dim: Bool = false, scale: CGFloat, activity: String? = nil,
-        asleep: Bool = false, dimStrength: Double = 0.5, displayScale: CGFloat = 3
+        skin: SkinManifest, state: PetState, dim: Bool? = nil, scale: CGFloat, activity: String? = nil,
+        asleep: Bool = false, dimStrength: Double = 1, displayScale: CGFloat = 3
     ) -> UIImage? {
         let u = max(1, Int((scale * displayScale).rounded()))
-        let strength = dim ? AtlasPool.quantize(dimStrength) : nil
+        let strength = AtlasPool.quantize(dimStrength)
         let key = Key(
             skin: skin.name, state: state, activity: activity, cellPixels: u, displayScale: displayScale,
-            asleep: asleep, dimStrength: strength
+            asleep: asleep, dim: dim, dimStrength: strength
         )
         if let hit = cache[key], hit.manifest == skin {
             touch(key)
@@ -45,7 +50,7 @@ enum Portraits {
         actor.setActivity(activity)
         actor.enterState(state, quiet: true)
         if asleep { actor.sleepNow() }
-        actor.tint = dim ? .dim : nil
+        if let dim { actor.tint = dim ? .dim : nil }
 
         let side = cells * u
         guard let space = CGColorSpace(name: CGColorSpace.sRGB),
@@ -54,9 +59,11 @@ enum Portraits {
                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
               )
         else { return nil }
-        let atlas = AtlasPool.atlas(skin, dimStrength: strength ?? 0)
+        let atlas = AtlasPool.atlas(skin, dimStrength: strength)
         // A bitmap context is y-up like the sprite layers: the ground is the bottom edge.
-        CritterDrawing.draw(actor.snapshot(), atlas: atlas, in: context, ground: CGPoint(x: u, y: 0), unit: CGFloat(u))
+        SpriteDrawing.draw(
+            actor.snapshot(), atlas: atlas, unit: CGFloat(u), ground: CGPoint(x: u, y: 0), in: context
+        )
         guard let picture = context.makeImage() else { return nil }
         let image = UIImage(cgImage: picture, scale: displayScale, orientation: .up)
         cache[key] = (skin, image)
@@ -73,15 +80,16 @@ enum Portraits {
     }
 }
 
-/// `Portraits.image` as a view, `cell` points a cell (20 cells square), scaled without smoothing.
+/// `Portraits.image` as a view, `cell` points a cell (20 cells square), scaled without smoothing. Pass the stage's
+/// `dimStrength` (`SkinStore.idleDim`) so the picture is dimmed as the live Critter would be.
 struct CritterPortrait: View {
     let manifest: SkinManifest
     let state: PetState
     let cell: CGFloat
     var activity: String?
     var asleep = false
-    var dim = false
-    var dimStrength = 0.5
+    var dim: Bool?
+    var dimStrength = 1.0
 
     @Environment(\.displayScale) private var displayScale
 
@@ -101,68 +109,6 @@ struct CritterPortrait: View {
         }
         .frame(width: side, height: side)
         .accessibilityHidden(true)
-    }
-}
-
-/// One `ActorSnapshot` drawn into a Core Graphics context, exactly as `CritterSpriteLayer` lays it out (y up, `ground`
-/// where the base box's column 0 meets the ground, `unit` a cell): the shadow, the body clipped at the ground, then
-/// props, particles, the head marker and the badge.
-enum CritterDrawing {
-    private static let clipHeightCells: CGFloat = 40
-    private static let clipMarginCells: CGFloat = 12
-    private static let baseColumns: CGFloat = 18
-    private static let groundRow: CGFloat = 10
-    private static let shadowOpacity: CGFloat = 0.28
-
-    static func draw(
-        _ s: ActorSnapshot, atlas: SpriteAtlas, in context: CGContext, ground: CGPoint, unit u: CGFloat
-    ) {
-        guard !s.hidden else { return }
-        context.saveGState()
-        defer { context.restoreGState() }
-        context.interpolationQuality = .none
-        context.setShouldAntialias(false)
-        let bx = ground.x + CGFloat(s.offsetX) * u
-        let by = ground.y + CGFloat(s.offsetY) * u
-        let bodyX = CGFloat(s.bodyX)
-
-        if s.shadowWidth > 0 {
-            let width = CGFloat(s.shadowWidth)
-            let height = max(2, u / 2)
-            context.setFillColor(CGColor(gray: 0, alpha: shadowOpacity))
-            context.fill(CGRect(x: bx + (bodyX + 9 - width / 2) * u, y: by - height, width: width * u, height: height))
-        }
-
-        if let pose = atlas.pose(s.pose, dim: s.tint == .dim) {
-            let grid = pose.grid
-            context.saveGState()
-            context.clip(to: CGRect(
-                x: bx + (bodyX - clipMarginCells) * u, y: by,
-                width: (baseColumns + 2 * clipMarginCells) * u, height: clipHeightCells * u
-            ))
-            context.setAlpha(CGFloat(s.alpha))
-            context.draw(pose.image, in: CGRect(
-                x: bx + (bodyX + CGFloat(grid.minX)) * u,
-                y: by + (groundRow - CGFloat(grid.minY) - CGFloat(grid.height) + CGFloat(s.bodyY)) * u,
-                width: CGFloat(grid.width) * u, height: CGFloat(grid.height) * u
-            ))
-            context.restoreGState()
-        }
-
-        var draws = s.props + s.particles
-        if let accessory = s.accessory { draws.append(accessory) }
-        if let badge = s.badge { draws.append(badge) }
-        for d in draws {
-            guard let image = atlas.glyph(d.glyph, color: d.color) else { continue }
-            let size = atlas.glyphSize(d.glyph)
-            context.saveGState()
-            context.setAlpha(CGFloat(d.alpha))
-            context.draw(image, in: CGRect(
-                x: bx + CGFloat(d.x) * u, y: by + (groundRow - CGFloat(d.y) - CGFloat(size.height)) * u,
-                width: CGFloat(size.width) * u, height: CGFloat(size.height) * u
-            ))
-            context.restoreGState()
-        }
     }
 }
 

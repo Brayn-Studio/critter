@@ -34,6 +34,8 @@ import Foundation
 ///   meadow with a Critter, as the mockups' "天空跟着时间走" draws them, and the home meadow with seven sessions on
 ///   the clock's sky (`meadow`).
 /// - `-critterAllAsleep`: the gallery's Critters are all idle and asleep (`sleepNow`), for the frame count.
+/// - `-critterPressCheck`: with `-critterGallery`, a second after it opens a `PressedLook` is pressed for 20 ms and
+///   then for 200 ms, and standard output says when it showed down and up (`PressCheck.swift`).
 /// - `-critterGalleryHold`: a second after the gallery opens, its sprig is held up as if lifted by a finger (its
 ///   shadow shows on the ground under it).
 /// - `-critterFrameLog`: every 10 seconds, "frames <n>" on standard output: how many ticks changed the picture on any
@@ -74,6 +76,7 @@ struct DebugLaunch {
     var galleryAt: String?
     var allAsleep = false
     var galleryHold = false
+    var pressCheck = false
     var frameLog = false
     var skyHour: Int?
     var sayDraft: String?
@@ -126,6 +129,7 @@ struct DebugLaunch {
         galleryAt = value("critterGalleryAt")
         allAsleep = arguments.contains("-critterAllAsleep")
         galleryHold = arguments.contains("-critterGalleryHold")
+        pressCheck = arguments.contains("-critterPressCheck")
         frameLog = arguments.contains("-critterFrameLog")
         sayDraft = value("critterSayDraft")
         autoSay = arguments.contains("-critterAutoSay")

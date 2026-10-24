@@ -5,8 +5,9 @@ import UIKit
 
 // The pixel widgets (the mockups' "部件" section, Android `Components.kt`). Small widgets move on the pet engine's
 // 60 ms beat in whole jumps (visual design §7): a switch's knob crosses in three (180 ms), a state tag hops one beat
-// when its state changes, a button goes down and up in one step after 70 ms. Every motion has an end; with reduce
-// motion on they go straight to where they end.
+// when its state changes. A button goes down at touch-down and up again in one step, and stays down at least 70 ms
+// so a quick tap still shows (`PressedLook`). Every motion has an end; with reduce motion on they go straight to
+// where they end.
 
 // MARK: - Motion
 
@@ -44,8 +45,8 @@ let minTouch: CGFloat = 44
 // MARK: - Buttons
 
 /// A pixel button (Android `PixelButton`, the mockups' `.btn`): pressed, it sinks 3 pt and its lip shrinks to 1 pt,
-/// in one step after 70 ms. A `.destructive` role on a secondary button writes its title in the error red
-/// (「取消配对」). Disabled (`.disabled`), it is grey.
+/// at once, and comes back up in one step when let go, after at least 70 ms (`PressedLook`). A `.destructive` role
+/// on a secondary button writes its title in the error red (「取消配对」). Disabled (`.disabled`), it is grey.
 struct PixelButton: View {
     enum Style {
         case primary
@@ -118,20 +119,24 @@ private struct PixelButtonBody<Label: View>: View {
     let wide: Bool
 
     @Environment(\.isEnabled) private var isEnabled
-    @Environment(\.reduceMotion) private var reduceMotion
 
     /// White at 45 % on a button, in both themes (the mockups' `.btn.pri.hl`).
     private static var shine: Color { Color.white.opacity(0.45) }
 
     var body: some View {
-        let down = pressed && isEnabled
+        PressedLook(pressed: pressed && isEnabled) { down in face(down: down) }
+            .frame(minWidth: minTouch, minHeight: minTouch)
+            .contentShape(Rectangle())
+    }
+
+    private func face(down: Bool) -> some View {
         let text = style == .text
         let height: CGFloat = text ? 36 : size == .small ? 34 : size == .large ? 52 : 44
         let lip: CGFloat = text ? 0 : size == .small ? 3 : 4
         let fontSize: CGFloat = text ? 14 : size == .small ? 13.5 : size == .large ? 16 : 15
         let padding: CGFloat = text ? 4 : size == .small ? 12 : 16
         let look = colors
-        label
+        return label
             .font(.nunito(size: fontSize, weight: .black))
             .tracking(fontSize * 0.02)
             .foregroundStyle(look.fg)
@@ -143,9 +148,6 @@ private struct PixelButtonBody<Label: View>: View {
                 ButtonFace(face: look.face, lip: look.lip, lipHeight: down ? min(lip, 1) : lip, shine: look.shine)
             )
             .offset(y: down ? 3 : 0)
-            .animation(reduceMotion ? nil : .stepped(0.07, steps: 1), value: down)
-            .frame(minWidth: minTouch, minHeight: minTouch)
-            .contentShape(Rectangle())
     }
 
     private var colors: (fg: Color, face: Color?, lip: Color, shine: Color?) {
@@ -200,16 +202,58 @@ private struct PixelIconButtonStyle: ButtonStyle {
 private struct PixelIconButtonBody<Label: View>: View {
     let label: Label
     let pressed: Bool
-    @Environment(\.reduceMotion) private var reduceMotion
 
     var body: some View {
-        label
-            .foregroundStyle(Theme.ink)
-            .padding(.bottom, 4)
-            .pixelSurface(fill: Theme.surface, lip: Theme.shade, step: 3, lipHeight: pressed ? 1 : 4)
-            .offset(y: pressed ? 3 : 0)
-            .animation(reduceMotion ? nil : .stepped(0.07, steps: 1), value: pressed)
-            .contentShape(Rectangle())
+        PressedLook(pressed: pressed) { down in
+            label
+                .foregroundStyle(Theme.ink)
+                .padding(.bottom, 4)
+                .pixelSurface(fill: Theme.surface, lip: Theme.shade, step: 3, lipHeight: down ? 1 : 4)
+                .offset(y: down ? 3 : 0)
+        }
+        .contentShape(Rectangle())
+    }
+}
+
+/// A pixel button's pressed look (visual design §7, Android's instant press): `content(true)` from the moment
+/// `pressed` goes on, `content(false)` again in one step when it goes off, but only once it has shown pressed for 70
+/// ms, so a tap quicker than that still shows. Never animated, whatever animation surrounds it; reduce motion
+/// changes nothing here.
+struct PressedLook<Content: View>: View {
+    let pressed: Bool
+    let content: (Bool) -> Content
+
+    @State private var down: Bool
+    @State private var since: ContinuousClock.Instant?
+
+    /// The shortest a press shows (the mockups' 70 ms button step).
+    static var minimum: Duration { .milliseconds(70) }
+
+    init(pressed: Bool, @ViewBuilder content: @escaping (Bool) -> Content) {
+        self.pressed = pressed
+        self.content = content
+        _down = State(initialValue: pressed)
+        _since = State(initialValue: pressed ? .now : nil)
+    }
+
+    var body: some View {
+        content(down)
+            .animation(nil, value: down)
+            .onChange(of: pressed) { _, pressed in
+                guard pressed else { return }
+                down = true
+                since = .now
+            }
+            .task(id: pressed) {
+                guard !pressed, down else { return }
+                let shown = since.map { ContinuousClock.now - $0 } ?? Self.minimum
+                if shown < Self.minimum {
+                    try? await Task.sleep(for: Self.minimum - shown)
+                    // Pressed again meanwhile: this task was replaced, the button stays down.
+                    guard !Task.isCancelled else { return }
+                }
+                down = false
+            }
     }
 }
 

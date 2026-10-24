@@ -2,29 +2,23 @@ import QuartzCore
 
 /// Draws one Critter's `ActorSnapshot` with plain Core Animation layers: a shadow, the body
 /// (clipped at the ground, so a sinking pose disappears into it), and a pool of small glyph
-/// layers reused for the head marker, the waiting badge, particles and props.
+/// layers reused for the head marker, the waiting badge, particles and props. Where each goes is
+/// `SpriteLayout`'s (which `SpriteDrawing` also draws still pictures by).
 ///
 /// The layer itself sits at `groundOrigin` (zero size, not clipping) and everything inside
 /// is placed relative to it, in cells of `unit` points; y grows upward like the host view.
 /// Nothing animates implicitly: every change happens in an actions-disabled transaction, and
 /// a snapshot equal to the previous one is skipped entirely.
 public final class CritterSpriteLayer: CALayer {
-    /// The body clip reaches this far above the ground...
-    private static let clipHeightCells: CGFloat = 40
-    /// ...and this far to either side of the 18-cell base box.
-    private static let clipMarginCells: CGFloat = 12
-    private static let baseColumns: CGFloat = 18
-    private static let groundRow: CGFloat = 10
-    private static let shadowOpacity: Float = 0.28
-
     /// The bitmaps of the skin this Critter wears.
     public let atlas: SpriteAtlas
     private let unit: CGFloat
-    private let shadowLayer = CALayer()
-    private let clipLayer = CALayer()
-    private let bodyLayer = CALayer()
+    // Internal (not private) for the tests that compare them with `SpriteDrawing`.
+    let shadowLayer = CALayer()
+    let clipLayer = CALayer()
+    let bodyLayer = CALayer()
     /// Reused glyph layers, in drawing order (later ones on top).
-    private var glyphLayers: [CALayer] = []
+    private(set) var glyphLayers: [CALayer] = []
     private var last: ActorSnapshot?
 
     /// View coordinates of the point where the base box's column 0 meets the ground.
@@ -54,7 +48,7 @@ public final class CritterSpriteLayer: CALayer {
         masksToBounds = false
 
         shadowLayer.backgroundColor = CGColor(gray: 0, alpha: 1)
-        shadowLayer.opacity = Self.shadowOpacity
+        shadowLayer.opacity = SpriteLayout.shadowOpacity
         shadowLayer.isHidden = true
         addSublayer(shadowLayer)
 
@@ -94,49 +88,26 @@ public final class CritterSpriteLayer: CALayer {
 
         isHidden = s.hidden
         zPosition = CGFloat(s.z)
-        guard !s.hidden else { return }
+        guard let layout = SpriteLayout(s, atlas: atlas, unit: unit, seatRow: seatRow) else { return }
 
-        let u = unit
-        // B: the anchor plus the follow offset, relative to `groundOrigin`.
-        let bx = CGFloat(s.offsetX) * u
-        let by = CGFloat(s.offsetY) * u
-        let bodyX = CGFloat(s.bodyX)
-
-        // Body: clipped at the ground; the clip travels with the key's dx.
-        clipLayer.frame = CGRect(
-            x: bx + (bodyX - Self.clipMarginCells) * u, y: by,
-            width: (Self.baseColumns + 2 * Self.clipMarginCells) * u, height: Self.clipHeightCells * u
-        )
-        if let pose = atlas.pose(s.pose, dim: s.tint == .dim) {
-            let grid = pose.grid
-            bodyLayer.contents = pose.image
-            bodyLayer.frame = CGRect(
-                x: (CGFloat(grid.minX) + Self.clipMarginCells) * u,
-                y: (Self.groundRow - CGFloat(grid.minY) - CGFloat(grid.height) + CGFloat(s.bodyY)) * u,
-                width: CGFloat(grid.width) * u, height: CGFloat(grid.height) * u
-            )
-            bodyLayer.opacity = Float(s.alpha)
+        clipLayer.frame = layout.bodyClip
+        if let body = layout.body, let frame = layout.bodyFrameInClip {
+            bodyLayer.contents = body.image
+            bodyLayer.frame = frame
+            bodyLayer.opacity = Float(body.alpha)
             bodyLayer.isHidden = false
         } else {
             bodyLayer.isHidden = true
         }
 
-        // Shadow: just below the ground, centred under the body.
-        let seated = seatRow.map { s.bodyX == 0 && s.bodyY == $0 } ?? false
-        if s.shadowWidth > 0 && !seated {
-            let width = CGFloat(s.shadowWidth)
-            let height = max(2, u / 2)
-            shadowLayer.frame = CGRect(x: bx + (bodyX + 9 - width / 2) * u, y: by - height, width: width * u, height: height)
+        if let shadow = layout.shadow {
+            shadowLayer.frame = shadow
             shadowLayer.isHidden = false
         } else {
             shadowLayer.isHidden = true
         }
 
-        // Glyphs, bottom to top: props, particles, head marker, badge. Never clipped.
-        var draws = s.props + s.particles
-        if let accessory = s.accessory { draws.append(accessory) }
-        if let badge = s.badge { draws.append(badge) }
-        while glyphLayers.count < draws.count {
+        while glyphLayers.count < layout.glyphs.count {
             let layer = CALayer()
             layer.magnificationFilter = .nearest
             layer.minificationFilter = .nearest
@@ -144,19 +115,13 @@ public final class CritterSpriteLayer: CALayer {
             glyphLayers.append(layer)
         }
         for (index, layer) in glyphLayers.enumerated() {
-            guard index < draws.count, let image = atlas.glyph(draws[index].glyph, color: draws[index].color) else {
+            guard index < layout.glyphs.count, let glyph = layout.glyphs[index] else {
                 layer.isHidden = true
                 continue
             }
-            let d = draws[index]
-            let size = atlas.glyphSize(d.glyph)
-            layer.contents = image
-            layer.frame = CGRect(
-                x: bx + CGFloat(d.x) * u,
-                y: by + (Self.groundRow - CGFloat(d.y) - CGFloat(size.height)) * u,
-                width: CGFloat(size.width) * u, height: CGFloat(size.height) * u
-            )
-            layer.opacity = Float(d.alpha)
+            layer.contents = glyph.image
+            layer.frame = glyph.frame
+            layer.opacity = Float(glyph.alpha)
             layer.isHidden = false
         }
     }

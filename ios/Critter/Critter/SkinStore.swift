@@ -14,8 +14,9 @@ final class SkinStore {
     /// Finds a skin by name for every screen.
     private(set) var library: PhoneSkinLibrary
 
-    /// How much the Mac dims idle and done Critters (`prefs.idleDim`): every `CritterSlot`'s `dimStrength`.
-    private(set) var idleDim: Double = 0.5
+    /// How much the Mac dims the Critters whose state is dimmed (`prefs.idleDim`): every `CritterSlot`'s
+    /// `dimStrength`, and the portraits'. 1, the full tint, until the first snapshot (the Mac's default).
+    private(set) var idleDim: Double = 1
 
     /// The bundled skins only, unaffected by the phone's own choice: for the settings' previews and the gallery.
     @ObservationIgnored let previewLibrary = PhoneSkinLibrary(
