@@ -15,6 +15,7 @@ struct HomeView: View {
 
     @Environment(PhoneSettings.self) private var settings
     @Environment(SkinStore.self) private var skins
+    @Environment(BoardAutoOpen.self) private var autoOpen
     @Environment(\.reduceMotion) private var reduceMotion
 
     /// The answers being composed, shared by the cards' buttons and the answer card.
@@ -95,6 +96,14 @@ struct HomeView: View {
                 onAnswer: { request, allow in answerInline(request, allow: allow) },
                 onClose: { closeBoard(.closeButton) }
             )
+        }
+        .onChange(of: autoOpen.wantsBoard, initial: true) { _, wanted in
+            // Charging in landscape opens the board; unplugged or upright long enough closes it.
+            if wanted, !showBoard {
+                openBoard()
+            } else if !wanted, showBoard {
+                closeBoard(autoOpen.closeReason)
+            }
         }
         .onChange(of: store.conn, initial: true) { _, conn in
             switch conn {
@@ -351,9 +360,11 @@ struct HomeView: View {
         withTransaction(transaction) { showBoard = true }
     }
 
-    /// Takes the board down, left by `exit`: the screen as it was before it, portrait again.
+    /// Takes the board down, left by `exit`: the screen as it was before it, portrait again. Closed by hand, it does
+    /// not open by itself again until the charger is plugged in again.
     private func closeBoard(_ exit: BoardScreen.Exit) {
         boardScreen.leave(exit)
+        if exit == .closeButton { autoOpen.manualExit() }
         OrientationLock.shared.lock(.portrait)
         var transaction = Transaction()
         transaction.disablesAnimations = true

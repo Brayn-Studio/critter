@@ -76,7 +76,9 @@ final class BoardSounds {
         let key = "\(theme)/\(state.rawValue)"
         if let player = players[key] { return player }
         guard Self.states.contains(state),
-              let url = Bundle.main.url(forResource: state.rawValue, withExtension: "wav", subdirectory: "Sounds/\(theme)"),
+              let url = Bundle.main.url(
+                  forResource: state.rawValue, withExtension: "wav", subdirectory: "Sounds/\(theme)"
+              ),
               let player = try? AVAudioPlayer(contentsOf: url)
         else { return nil }
         player.prepareToPlay()

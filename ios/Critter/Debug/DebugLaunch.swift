@@ -73,10 +73,15 @@ import Foundation
 /// - `-critterBoardScript <action>@<seconds>,…`: with `-critterBoard`, closes and opens the board at those times
 ///   after launch (`close@4,open@6,close@30`), through the same calls as its close button and 「打开看板」.
 /// - `-critterBoardLog`: standard output gets "board [t s] …" lines (`BoardLog`): the screen saved on the way in,
-///   every brightness set, every way out with what it restored, and the sounds.
+///   every brightness set, every way out with what it restored, the sounds, and the automatic opening's steps.
 /// - `-critterBoardDimAfter <seconds>`: the board dims after this long without a touch or a change, not 15 minutes.
 /// - `-critterFixtureStep <sessionId>:<state>@<seconds>`: with `-critterFixture`, that long after connecting the
 ///   fixture Mac puts that session in that state and sends the snapshot (a sound on the board, a state change).
+/// - `-critterFakeDock`: the automatic opening reads a made-up charger and gravity sensor instead of the phone's
+///   (the simulator has neither): 2 s after launch it is plugged in and lying still in landscape; at 20 s it stands
+///   upright; at 26 s the setting 「充电横放时自动打开」 is switched off and at 29 s on again; at 32 s it is
+///   unplugged. The fake sensor gives a reading every 100 ms while it is on, in g like CoreMotion, through the same
+///   path as the real one. With `-critterBoardLog`.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -142,6 +147,7 @@ struct DebugLaunch {
     var boardLog = false
     var boardDimAfter: TimeInterval?
     var fixtureStep: FixtureStep?
+    var fakeDock = false
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -226,6 +232,7 @@ struct DebugLaunch {
                 fixtureStep = FixtureStep(sessionId: String(target[0]), state: state, at: at)
             }
         }
+        fakeDock = arguments.contains("-critterFakeDock")
     }
 
     /// With `-critterPairing`: the fake Macs and certificates the pairing screen uses.

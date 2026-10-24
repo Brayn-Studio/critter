@@ -171,7 +171,9 @@ private struct Horizon: View {
             var x = start
             var i = 0
             while x < size.width - start {
-                if i % 9 == 3 || i % 23 == 11 { tufts.addRect(CGRect(x: x, y: ground - cell, width: cell, height: cell)) }
+                if i % 9 == 3 || i % 23 == 11 {
+                    tufts.addRect(CGRect(x: x, y: ground - cell, width: cell, height: cell))
+                }
                 x += cell
                 i += 1
             }
@@ -268,7 +270,9 @@ private struct SessionTexts: View {
     /// "proj · main" (the branch left out when there is none).
     static func folderBranch(_ s: BridgeSession) -> String {
         var parts = [SessionText.folderName(s.cwd)]
-        if let branch = s.branch, !branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { parts.append(branch) }
+        if let branch = s.branch, !branch.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            parts.append(branch)
+        }
         return parts.joined(separator: " · ")
     }
 }

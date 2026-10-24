@@ -31,6 +31,7 @@ struct BoardView: View {
 
     @Environment(PhoneSettings.self) private var settings
     @Environment(SkinStore.self) private var skins
+    @Environment(BoardAutoOpen.self) private var autoOpen
     @Environment(\.scenePhase) private var scenePhase
     @State private var sounds = BoardSounds()
     /// The request whose answer card is open over the board.
@@ -101,7 +102,8 @@ struct BoardView: View {
         #if DEBUG
         .task {
             // `-critterBoard` with `-critterOpen answer:…`: the card opens over the board once the snapshot is in.
-            guard DebugLaunch.current.board != nil, case .answer(let requestId)? = DebugLaunch.current.open else { return }
+            let launch = DebugLaunch.current
+            guard launch.board != nil, case .answer(let requestId)? = launch.open else { return }
             for _ in 0..<20 where store.snapshot == nil { try? await Task.sleep(for: .milliseconds(100)) }
             try? await Task.sleep(for: .milliseconds(500))
             presentedRequestId = requestId
@@ -152,6 +154,7 @@ struct BoardView: View {
     private func appeared() {
         OrientationLock.shared.lock(.landscape)
         store.boardOpen = true
+        autoOpen.boardShown(true)
         screen.enter(base: settings.boardBrightness)
         // The snapshot already on screen is not news: no sound for it.
         sounds.update(store.snapshot, live: store.isLive, enabled: settings.boardSounds)
@@ -159,6 +162,7 @@ struct BoardView: View {
 
     private func disappeared() {
         store.boardOpen = false
+        autoOpen.boardShown(false)
         sounds.stop()
         // Whoever closed the board said why; this only catches a way out that did not.
         screen.leave(.closeButton)

@@ -11,10 +11,16 @@ struct CritterApp: App {
     @State private var store: BridgeStore
     @State private var settings = PhoneSettings()
     @State private var skins = SkinStore()
+    /// Opens the board by itself while charging in landscape (only while the app is in front).
+    @State private var autoOpen: BoardAutoOpen
     /// A `critter-pair://` link the app was opened with, until the pairing screen takes it.
     @State private var link: IncomingPairLink?
     /// `pair.deviceName`.
     private let deviceName: String
+    #if DEBUG
+    /// `-critterFakeDock`: the charger and gravity sensor the automatic opening reads instead of the phone's.
+    private let fakeDock: FakeDock?
+    #endif
 
     init() {
         #if DEBUG
@@ -22,9 +28,15 @@ struct CritterApp: App {
         _store = State(initialValue: launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore())
         _link = State(initialValue: launch.launchLink)
         deviceName = launch.deviceName ?? UIDevice.current.name
+        let dock = launch.fakeDock ? FakeDock() : nil
+        fakeDock = dock
+        _autoOpen = State(
+            initialValue: dock.map { BoardAutoOpen(power: $0.power, gravity: $0.gravity) } ?? BoardAutoOpen()
+        )
         #else
         _store = State(initialValue: Self.makeStore())
         deviceName = UIDevice.current.name
+        _autoOpen = State(initialValue: BoardAutoOpen())
         #endif
     }
 
@@ -35,7 +47,9 @@ struct CritterApp: App {
                 .environment(settings)
                 .environment(skins)
                 .environment(OrientationLock.shared)
+                .environment(autoOpen)
                 .onChange(of: settings.forcedSkin, initial: true) { _, name in skins.setForced(name) }
+                .onChange(of: settings.boardAutoOpen, initial: true) { _, on in autoOpen.setAutoOpen(on) }
                 .onChange(of: store.snapshot, initial: true) { _, snapshot in
                     if let snapshot { skins.update(from: snapshot, store: store) }
                 }
@@ -45,6 +59,9 @@ struct CritterApp: App {
                     link = IncomingPairLink(uri: uri, confirmed: false)
                 }
                 #if DEBUG
+                .task {
+                    await fakeDock?.run(settings: settings)
+                }
                 .task {
                     if DebugLaunch.current.frameLog { FrameLog.start() }
                     guard let url = DebugLaunch.current.openURL else { return }
@@ -60,6 +77,9 @@ struct CritterApp: App {
             case .background: store.sceneEnteredBackground()
             default: break
             }
+        }
+        .onChange(of: scenePhase, initial: true) { _, phase in
+            autoOpen.sceneActive(phase == .active)
         }
     }
 

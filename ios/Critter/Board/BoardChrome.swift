@@ -336,8 +336,8 @@ struct SafeAreaReader: UIViewRepresentable {
     }
 }
 
-/// `-critterBoardLog` (DEBUG builds): one line on standard output for each thing the board does to the screen and
-/// each sound it plays (`BoardLog`). Nothing in a release build.
+/// `-critterBoardLog` (DEBUG builds): one line on standard output for each thing the board does to the screen, each
+/// sound it plays and each step of the automatic opening (`BoardLog`). Nothing in a release build.
 func boardLog(_ message: @autoclosure () -> String) {
     #if DEBUG
     BoardLog.write(message())

@@ -2,8 +2,9 @@
 import Foundation
 
 /// `-critterBoardLog`: "board [12.3 s] <what>" on standard output, the time counted from launch, for each thing the
-/// board does to the screen (`BoardScreenKeeper`: entering, every brightness set, every way out) and each sound it
-/// plays. Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
+/// board does to the screen (`BoardScreenKeeper`: entering, every brightness set, every way out), each sound it plays
+/// and each step of the automatic opening (`BoardAutoOpen`: the charger, the scene, the gravity sensor going on and
+/// off, the trigger's decisions). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
 enum BoardLog {
     static func write(_ message: String) {
         let launch = DebugLaunch.current
