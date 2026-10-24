@@ -3,9 +3,9 @@ import CritterClient
 import CritterKit
 import SwiftUI
 
-/// `-critterGallery`: the seven bundled skins on a strip of meadow and their still portraits, then every pixel widget
-/// in its states, in the order of the mockups' "部件" section, then the fonts, every pixel icon and the wordmark. For
-/// screenshots next to the mockups (`scripts/dev/render-mockups.sh`).
+/// `-critterGallery`: the seven bundled skins on a strip of meadow and their still portraits, the meadow's four skies
+/// and the home meadow, then every pixel widget in its states, in the order of the mockups' "部件" section, then the
+/// fonts, every pixel icon and the wordmark. For screenshots next to the mockups (`scripts/dev/render-mockups.sh`).
 struct Gallery: View {
     @Environment(SkinStore.self) private var skins
     @Environment(\.colorScheme) private var colorScheme
@@ -25,6 +25,8 @@ struct Gallery: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 22) {
                     section("critters", "宠物") { critters }
+                    section("skies", "天空跟着时间走") { skies }
+                    section("meadow", "首页草地") { meadow }
                     section("parts", "部件") { parts }
                     section("more", "更多部件") { moreParts }
                     section("fonts", "字体") { fonts }
@@ -121,6 +123,59 @@ struct Gallery: View {
             )
         }
     }
+
+    /// The mockups' "天空跟着时间走": the four skies, each a 96 pt patch of meadow (3 pt cells, the ground 18 pt above
+    /// the bottom) with one Critter at 2 pt a cell, dimmed and idle, asleep at night. Always in the light sky set,
+    /// like the mockups' panel.
+    private var skies: some View {
+        let tiles: [(SkyTime, String, String)] = [
+            (.dawn, "清晨 6–10 点", "peep"), (.day, "白天 10–17 点", "sprig"),
+            (.dusk, "黄昏 17–20 点", "mochi"), (.night, "夜里 20–6 点", "bristle"),
+        ]
+        return LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+            ForEach(tiles, id: \.1) { time, title, skin in
+                VStack(alignment: .leading, spacing: 4) {
+                    LonePet(
+                        skin: skins.previewLibrary.manifest(skin), state: .idle, sleeping: time == .night, cell: 2,
+                        groundInset: 18, bright: false, time: time,
+                        clouds: [CGPoint(x: 0.05, y: 0.15), CGPoint(x: 0.62, y: 0.35)], moon: CGPoint(x: 0.8, y: 0.16)
+                    )
+                    .frame(height: 96)
+                    .clipShape(PixelShape(step: 3))
+                    Text(verbatim: title)
+                        .font(.nunito(size: 13, weight: .bold))
+                        .foregroundStyle(Theme.ink2)
+                }
+            }
+        }
+    }
+
+    /// The home meadow on the clock's sky (`-critterSkyHour` fixes it): seven sessions, so four stand on their own
+    /// and three merge into a pile; one waits for you.
+    private var meadow: some View {
+        SkyClock { time in
+            Meadow(
+                sessions: Self.meadowSessions, pending: ["g1"], skins: skins.previewLibrary, dim: skins.idleDim,
+                time: time, height: 236, ground: 200, onTap: { touched = "点了 \($0)" }
+            )
+        }
+        .frame(height: 236)
+        .clipShape(PixelShape(step: 4))
+    }
+
+    private static let meadowSessions: [BridgeSession] = {
+        let rows: [(String, String, PetState)] = [
+            ("critter-4c", "sprig", .waiting), ("robocup-b8", "mochi", .running), ("infra-e3", "bristle", .running),
+            ("blog-21", "peep", .done), ("notes-07", "bonnet", .idle), ("api-9f", "frill", .error),
+            ("docs-12", "spout", .idle),
+        ]
+        return rows.enumerated().map { i, row in
+            BridgeSession(
+                id: "g\(i + 1)", name: row.0, source: .terminal, state: row.2, cwd: "~/CODE/\(row.0)", skin: row.1,
+                eventTime: 0, startedAt: Int64(i), tracked: true
+            )
+        }
+    }()
 
     /// The mockups' "部件" panel, row by row.
     private var parts: some View {
