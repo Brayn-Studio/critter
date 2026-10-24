@@ -2,6 +2,7 @@ import ActivityKit
 import CritterClient
 import CritterKit
 import Foundation
+import Observation
 import os
 
 /// The app's side of the Live Activity (spec §6.6, §8.5, §9):
@@ -17,8 +18,8 @@ import os
 /// The activity's stale date is 15 minutes after each content, as the Mac sets it. Tokens are logged by their first 8
 /// characters and length (category `activity`), like the device token.
 ///
-/// One for the app's life (`shared`).
-@MainActor
+/// One for the app's life (`shared`). Observable for the settings' line about the system's own switch (`systemAllows`).
+@MainActor @Observable
 final class LiveActivityManager {
     static let shared = LiveActivityManager()
 
@@ -26,20 +27,28 @@ final class LiveActivityManager {
     static let staleAfter: TimeInterval = 15 * 60
 
     /// The tokens the system has given, for the registration.
-    private(set) var tokens = ActivityTokens()
+    @ObservationIgnored private(set) var tokens = ActivityTokens()
     /// The system lets the app have Live Activities (its own setting for the app). Off: as if the switch were off.
-    private(set) var systemAllows = ActivityAuthorizationInfo().areActivitiesEnabled
+    private(set) var systemAllows = LiveActivityManager.systemAllowsAtLaunch
     /// Off for `-critterActivityDemo`, whose made-up activity the app's rules would end or overwrite.
-    var followsSnapshots = true
+    @ObservationIgnored var followsSnapshots = true
 
     /// What each running activity shows as far as the app knows: what the app set, or what the Mac's pushes did.
-    private var shown: [String: LiveActivityContent] = [:]
-    private var watched: Set<String> = []
-    private var started = false
+    @ObservationIgnored private var shown: [String: LiveActivityContent] = [:]
+    @ObservationIgnored private var watched: Set<String> = []
+    @ObservationIgnored private var started = false
     /// A start failed (the system refused it) while in front: not tried again until the app comes to the front again,
     /// so a refusal is not repeated on every snapshot.
-    private var startRefused = false
-    private var wasInFront = false
+    @ObservationIgnored private var startRefused = false
+    @ObservationIgnored private var wasInFront = false
+
+    /// The system's setting as the app starts (`-critterSystemBlocksActivities`, DEBUG: off).
+    private static var systemAllowsAtLaunch: Bool {
+        #if DEBUG
+        if DebugLaunch.current.systemBlocksActivities { return false }
+        #endif
+        return ActivityAuthorizationInfo().areActivitiesEnabled
+    }
 
     private static let log = Logger(subsystem: "com.braynlabs.critter", category: "activity")
 

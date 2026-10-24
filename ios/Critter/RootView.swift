@@ -5,8 +5,8 @@ import SwiftUI
 /// settings open it again; otherwise the pairing screen until the phone is paired, then the home screen. A pairing link
 /// opened while paired brings the pairing screen back over it (pairing again replaces the pairing only once the new one
 /// has succeeded). A tap on a notification while it is there goes back to the home screen, which opens what the
-/// notification is about -- unless a pairing is under way or a link waits there. The board opens by itself only while
-/// the home screen is up.
+/// notification is about -- unless a pairing is under way (`isPairing`, until the new pairing is saved) or a link waits
+/// there; a pairing made meanwhile drops it. The board opens by itself only while the home screen is up.
 struct RootView: View {
     let store: BridgeStore
     let deviceName: String
@@ -50,12 +50,17 @@ struct RootView: View {
             pairingAgain = true
         }
         .onChange(of: showsHome, initial: true) { _, shown in autoOpen.homeShown(shown) }
+        .onChange(of: store.pairing?.deviceId) { _, deviceId in
+            // Tapped while pairing again: once the new pairing is made, it is the replaced Mac's, which the new one
+            // knows nothing of (the home screen checks the same when it takes it).
+            if let target = router.target, !target.belongs(to: deviceId) { router.target = nil }
+        }
         .onChange(of: router.target, initial: true) { _, target in
             guard target != nil else { return }
             // Not paired: nothing to open, and not later for another Mac either.
             if store.pairing == nil {
                 router.target = nil
-            } else if store.pairingPhase == nil, link == nil {
+            } else if !store.isPairing, link == nil {
                 // Back to the home screen, which opens it: from pairing again, or from the guide (run again, or
                 // paired on its way).
                 pairingAgain = false

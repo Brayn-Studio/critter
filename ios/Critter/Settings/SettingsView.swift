@@ -1,10 +1,13 @@
 import CritterClient
 import CritterKit
 import SwiftUI
+import UIKit
+import UserNotifications
 
-/// The settings (mockup "设置", visual design §8.8, Android `SettingsScreen`): the connection card, then grouped
-/// cards each under a pixel icon: the skin, the board, motion and power. Every switch writes `PhoneSettings` at once;
-/// picking a skin changes every screen's Critters at once.
+/// The settings (mockup "设置", visual design §8.8, spec §8.8, Android `SettingsScreen`): the connection card, then
+/// grouped cards each under a pixel icon: the skin, push, the Live Activity, the board, the alerts, motion and power.
+/// Every switch writes `PhoneSettings` at once (the Live Activity and the alerts go to the Mac with the next
+/// registration, at once while connected); picking a skin changes every screen's Critters at once.
 struct SettingsView: View {
     let store: BridgeStore
     /// 「重新配对」: the pairing screen over the home screen; the pairing stays until the new one has succeeded.
@@ -14,6 +17,7 @@ struct SettingsView: View {
 
     @Environment(PhoneSettings.self) private var settings
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.openURL) private var openURL
     @State private var confirmingUnpair = false
 
     private var macName: String {
@@ -44,10 +48,24 @@ struct SettingsView: View {
                             SkinPicker(selected: $settings.forcedSkin)
                         }
                         .id(Group.skins)
+                        SettingsGroup(icon: .letter, title: "推送") {
+                            pushRows(settings)
+                        }
+                        .id(Group.push)
+                        SettingsGroup(icon: .ball, title: "实时活动") {
+                            activityRows(settings)
+                        }
+                        .id(Group.activity)
                         SettingsGroup(icon: .board, title: "看板") {
                             boardRows(settings)
                         }
                         .id(Group.board)
+                        SettingsGroup(icon: .bell, title: "提醒") {
+                            SwitchRow(title: "做完了时通知", isOn: $settings.notifyDone)
+                            RowLine()
+                            SwitchRow(title: "出错时通知", isOn: $settings.notifyError)
+                        }
+                        .id(Group.alerts)
                         SettingsGroup(icon: .spark, title: "动画与省电") {
                             SwitchRow(
                                 title: "减少动态效果", detail: "宠物停在代表姿势上；系统的「减少动态效果」打开时也会生效",
@@ -90,8 +108,76 @@ struct SettingsView: View {
     /// The groups' ids, for `-critterSettingsAt`.
     private enum Group {
         static let skins = "skins"
+        static let push = "push"
+        static let activity = "activity"
         static let board = "board"
+        static let alerts = "alerts"
         static let motion = "motion"
+    }
+
+    // MARK: - Push
+
+    /// What the system says about notifications.
+    private var authorization: UNAuthorizationStatus {
+        PushSetup.shared.authorization
+    }
+
+    /// Whether this phone is registered with the Mac, in the Mac's words when it said any (`BridgeStore.pushStatus`);
+    /// notifications switched off in the system instead, on an orange line with 「去打开」 (never asked: 「允许通知」
+    /// asks). The Mac sends the test notification: the phone has no message to make it (spec §8.8). A Mac left without
+    /// being told keeps its line until dismissed.
+    @ViewBuilder
+    private func pushRows(_ settings: PhoneSettings) -> some View {
+        switch authorization {
+        case .denied:
+            NoticeRow(text: store.pushStatus, action: "去打开") {
+                if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
+            }
+        case .notDetermined:
+            NoticeRow(text: "还没允许通知，收不到「等你确认」的提醒。", action: "允许通知") {
+                Task { await PushSetup.shared.requestPermission() }
+            }
+        default:
+            InfoRow(title: "推送登记", detail: store.pushStatus, tone: Self.tone(of: store.pushStatus))
+        }
+        RowLine()
+        InfoRow(title: "发一条测试通知", detail: "在 Mac 的 Critter 设置里点「发送测试通知」")
+        if let left = settings.leftMac {
+            NoticeRow(
+                text: "「\(left)」没收到这台手机撤销推送的消息，可能还会发来通知（只显示「有会话需要你」）。在那台 Mac 的 Critter 设置里，「已配对的手机」中这台手机旁点「撤销」。",
+                action: "知道了"
+            ) {
+                settings.leftMac = nil
+            }
+        }
+    }
+
+    /// Registered as the Mac can push: green; not yet (or nothing to register with): grey; the rest (the Mac without its
+    /// push setup, too old, refused) is what needs looking at: orange.
+    private static func tone(of status: String) -> Color {
+        switch status {
+        case PushRegistrar.registeredLine: Theme.done
+        case PushRegistrar.notRegisteredLine: Theme.ink2
+        default: Theme.waitInk
+        }
+    }
+
+    // MARK: - The Live Activity
+
+    /// The switch (spec §8.5), on by default; off, the Mac neither starts nor updates one. Switched off for the app in
+    /// the system's settings: an orange line with 「去打开」.
+    @ViewBuilder
+    private func activityRows(_ settings: PhoneSettings) -> some View {
+        @Bindable var settings = settings
+        SwitchRow(
+            title: "显示实时活动", detail: "在锁屏和灵动岛上显示会话；App 没开着时由 Mac 更新",
+            isOn: $settings.liveActivity
+        )
+        if settings.liveActivity, !LiveActivityManager.shared.systemAllows {
+            NoticeRow(text: "系统设置里关掉了 Critter 的实时活动，锁屏和灵动岛上不会显示。", action: "去打开") {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+        }
     }
 
     // MARK: - The board
@@ -137,7 +223,7 @@ struct SettingsView: View {
             },
             onDismiss: { confirmingUnpair = false }
         ) {
-            Text("手机会断开。之后要用，得在 Mac 上重新「添加手机」再扫码。")
+            Text("手机会断开，不再收到提醒。之后要用，得在 Mac 上重新「添加手机」再扫码。")
         }
     }
 }
@@ -268,6 +354,57 @@ private struct SwitchRow: View {
         .padding(.horizontal, rowPadding)
         .padding(.vertical, 10)
         .frame(minHeight: 52)
+    }
+}
+
+/// A title and a line under it, nothing to change (the push status, where the test notification comes from).
+private struct InfoRow: View {
+    let title: String
+    let detail: String
+    var tone: Color = Theme.ink2
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            RowTitle(text: title)
+            Text(verbatim: detail)
+                .font(.nunito(size: 12, weight: .semibold))
+                .lineSpacing(12 * (1.45 - 1.36))
+                .foregroundStyle(tone)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, rowPadding)
+        .padding(.vertical, 10)
+        .frame(minHeight: 52)
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// Something the system or another device keeps from working, in orange with what to do about it (Android `NoticeRow`,
+/// the mockups' `.notice-row`): the bang, the words, and a small orange button.
+private struct NoticeRow: View {
+    let text: String
+    let action: String
+    let onAction: () -> Void
+
+    var body: some View {
+        HStack(spacing: 10) {
+            PixelIconView(.bang)
+                .foregroundStyle(Theme.waitInk)
+            Text(verbatim: text)
+                .font(.nunito(size: 12.5, weight: .bold))
+                .lineSpacing(12.5 * (1.52 - 1.36))
+                .foregroundStyle(Theme.waitInk)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            PixelButton(title: action, style: .warning, size: .small, action: onAction)
+                .fixedSize()
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, 10)
+        .padding(.bottom, 12)
+        .pixelSurface(fill: Theme.waitBg, lip: Theme.waitBg, step: 3, lipHeight: 0)
+        .padding(.horizontal, rowPadding)
+        .padding(.top, 6)
+        .padding(.bottom, 4)
     }
 }
 

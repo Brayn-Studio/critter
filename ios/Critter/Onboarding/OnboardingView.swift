@@ -18,7 +18,6 @@ struct OnboardingView: View {
     let onFinish: () -> Void
 
     @Environment(PhoneSettings.self) private var settings
-    @Environment(\.reduceMotion) private var reduceMotion
     @State private var step: OnboardingStep
 
     init(

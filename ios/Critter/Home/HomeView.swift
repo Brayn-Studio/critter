@@ -37,6 +37,8 @@ struct HomeView: View {
     @State private var inline: [String: InlineAnswerState] = [:]
     /// Offline once an attempt has failed, until connected again: a retry's brief "connecting" stays offline.
     @State private var lost = false
+    /// A session target from a notification has waited `SheetTarget.liveWait` for a live snapshot.
+    @State private var targetWaitedOut = false
 
     /// The mockups' status bar: the meadow is 236 pt tall with its ground at 200 pt under a 30 pt status bar. A
     /// taller status bar (62 pt on iPhone 17 Pro) makes the meadow taller by the difference, so the sky under it
@@ -130,6 +132,16 @@ struct HomeView: View {
             }
         }
         .onChange(of: router.target, initial: true) { openNotificationTarget() }
+        .onChange(of: store.isLive) { openNotificationTarget() }
+        // A session missing from a cached snapshot waits this long for a live one, as the sheets do.
+        .task(id: router.target) {
+            targetWaitedOut = false
+            guard router.target != nil else { return }
+            try? await Task.sleep(for: SheetTarget.liveWait)
+            guard !Task.isCancelled else { return }
+            targetWaitedOut = true
+            openNotificationTarget()
+        }
         .onChange(of: store.snapshot) { _, body in
             openNotificationTarget()
             let pending = Set(body?.pending.map(\.requestId) ?? [])
@@ -421,14 +433,23 @@ struct HomeView: View {
         presentedSessionId = session.id
     }
 
-    /// A notification asked for a request's card or a session's details (spec §8.4): the same card as a tap on the
-    /// home screen, by request id (one that is gone says so, as the card always does), over the board if it is up. A
-    /// session's details wait for a snapshot; a session that is gone opens nothing (the home screen is the place to
-    /// look); with the board up, they close it as its close button would (they cannot show over it).
+    /// A notification asked for a request's card or a session's details (spec §8.4, `NotificationTarget.decision`): the
+    /// same card as a tap on the home screen, by request id (one that is gone says so, as the card always does), over
+    /// the board if it is up. A session's details wait for a live snapshot when the one on screen lacks it (the cached
+    /// one at a cold launch is older than the session), for as long as the sheets wait; a session that is gone then
+    /// opens nothing (the home screen is the place to look); with the board up, they close it as its close button
+    /// would (they cannot show over it). One from before a new pairing is dropped.
     private func openNotificationTarget() {
         guard let target = router.target else { return }
-        switch target {
-        case .request(let requestId):
+        let decision = target.decision(
+            pairing: store.pairing?.deviceId, snapshot: store.snapshot, isLive: store.isLive, waitedOut: targetWaitedOut
+        )
+        switch decision {
+        case .wait:
+            return
+        case .drop:
+            router.target = nil
+        case .openRequest(let requestId):
             router.target = nil
             if showBoard {
                 boardRequestId = requestId
@@ -436,10 +457,8 @@ struct HomeView: View {
             }
             presentedSessionId = nil
             presentedRequestId = requestId
-        case .session(let sessionId):
-            guard let snapshot = store.snapshot else { return }
+        case .openSession(let session):
             router.target = nil
-            guard let session = snapshot.sessions.first(where: { $0.id == sessionId }) else { return }
             if showBoard { closeBoard(.closeButton) }
             presentedRequestId = nil
             open(session)

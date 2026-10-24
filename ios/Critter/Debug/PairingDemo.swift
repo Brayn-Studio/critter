@@ -152,7 +152,7 @@ struct DemoPairer: PairingLink {
             onAwaitingApproval()
             try? await Task.sleep(for: .seconds(after))
             if Task.isCancelled { return .failed(.unreachable) }
-            return .paired(deviceId: "fixture", token: "fixture", macName: target.macName)
+            return .paired(deviceId: "demo-paired", token: "demo", macName: target.macName)
         }
     }
 }

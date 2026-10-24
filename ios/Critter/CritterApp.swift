@@ -94,6 +94,10 @@ struct CritterApp: App {
                     if DebugLaunch.current.sharedCheck { await SharedCheck.run() }
                 }
                 .task {
+                    // `-critterLeftMac`: the settings' line about a Mac left that may still push here, as if just left.
+                    if let name = DebugLaunch.current.leftMac { settings.leftMac = name }
+                }
+                .task {
                     if let step = DebugLaunch.current.notificationAction { await NotificationActionDebug.run(step, store: store) }
                 }
                 .task {
@@ -209,7 +213,9 @@ struct CritterApp: App {
             },
             pairer: Pairer(transport: transport),
             background: UIKitBackgroundRunner(),
-            pushAcks: SecretPushAckStorage.inKeychain()
+            pushAcks: SecretPushAckStorage.inKeychain(),
+            // A Mac left that may still push here: a new push key, and a line in the settings.
+            onUntoldMac: { PushSetup.shared.macLeftUntold($0) }
         )
     }
 }

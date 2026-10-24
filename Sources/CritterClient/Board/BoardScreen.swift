@@ -149,8 +149,9 @@ public struct BoardCloseHold: Sendable {
         return reasonNow.map(Release.close) ?? .calledOff
     }
 
-    /// The board went (by hand, or any other way): nothing is held for it any more.
+    /// The board went (by hand, or any other way): nothing is held for it any more, and the card over it went with it.
     public mutating func boardGone() {
         held = nil
+        cardIsOpen = false
     }
 }

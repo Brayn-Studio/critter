@@ -139,6 +139,51 @@ private func registrar(
     #expect(registrar(deviceToken: nil).status(acked: quiet, macVersion: "1.5.0") == "还没登记（要连上 Mac）")
 }
 
+// MARK: - Leaving a Mac (unpairing, pairing with another)
+
+/// What is taken back from a Mac being left: the empty token, when it may have a registration (as unpairing always
+/// did); nothing from a Mac that never knew the frame.
+@Test func leavingAMacTakesItsRegistrationBack() {
+    let phone = registrar()
+    let stored = phone.record(reply: .stored("已登记"), sent: phone.registration(), macVersion: "1.5.0", acked: PushAck())
+    #expect(PushRegistrar.takingBack(phone, acked: stored, macVersion: "1.5.0") == phone.unregistration())
+    // Not known yet whether it has one: taken back all the same (an empty token costs nothing).
+    #expect(PushRegistrar.takingBack(phone, acked: PushAck(), macVersion: "1.5.0") == phone.unregistration())
+    // It already took everything back (everything was off).
+    let off = registrar(notificationsAllowed: false, activity: ActivityRegistration(enabled: false))
+    let empty = off.record(reply: .stored(nil), sent: off.registration(), macVersion: "1.5.0", acked: stored)
+    #expect(PushRegistrar.takingBack(off, acked: empty, macVersion: "1.5.0") == nil)
+    // A Mac that sent nothing back to the frame has nothing to take back.
+    let silent = phone.record(reply: .noReply, sent: phone.registration(), macVersion: "1.3.0", acked: PushAck())
+    #expect(PushRegistrar.takingBack(phone, acked: silent, macVersion: "1.3.0") == nil)
+}
+
+/// Before the app has said what to register this run, what the Mac last stored says what to take back, with its key.
+@Test func leavingBeforeTheAppHasSaidTakesBackWhatTheMacStored() {
+    let phone = registrar(done: true)
+    let stored = phone.record(reply: .stored("已登记"), sent: phone.registration(), macVersion: "1.5.0", acked: PushAck())
+    let back = PushRegistrar.takingBack(nil, acked: stored, macVersion: "1.5.0")
+    #expect(back?.token == "")
+    #expect(back?.key == key)
+    #expect(back?.bundleId == "com.braynlabs.critter")
+    #expect(back?.notifyDone == false)
+    #expect(PushRegistrar.takingBack(nil, acked: PushAck(), macVersion: "1.5.0") == nil)
+}
+
+/// Whether a Mac may push to this phone after it is left: it stored a registration with a token, and the last word
+/// from it was not an empty one.
+@Test func aMacHoldsARegistrationOnceItStoredOneWithAToken() {
+    let phone = registrar()
+    #expect(!PushAck().holdsRegistration)
+    let stored = phone.record(reply: .stored("已登记"), sent: phone.registration(), macVersion: "1.5.0", acked: PushAck())
+    #expect(stored.holdsRegistration)
+    let back = phone.record(reply: .stored(nil), sent: phone.unregistration(), macVersion: "1.5.0", acked: stored)
+    #expect(!back.holdsRegistration)
+    // Refused: what it stored before is still there.
+    let refused = phone.record(reply: .rejected("保存失败"), sent: registrar(done: true).registration(), macVersion: "1.5.0", acked: stored)
+    #expect(refused.holdsRegistration)
+}
+
 // MARK: - The Live Activity's tokens (spec §6.6, §8.5)
 
 private func data(_ hex: String) -> Data {

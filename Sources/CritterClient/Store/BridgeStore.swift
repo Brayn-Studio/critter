@@ -20,7 +20,11 @@ import os
 /// - The last snapshot is kept for the next launch at most every 30 seconds (`snapshotWriteInterval`), the newest one;
 ///   one held back is kept when the app leaves the foreground or the connection ends (Android does the same). It
 ///   belongs to its pairing: unpaired or paired again, it is dropped.
-/// - One pairing attempt at a time: `pair` while one is under way returns `.busy` at once.
+/// - One pairing attempt at a time: `pair` while one is under way (`isPairing`, from the attempt's start until the new
+///   pairing is saved and connecting) returns `.busy` at once.
+/// - Leaving a Mac (pairing with another, unpairing) takes its push registration back over its connection first (an
+///   empty token, at most `unregisterWait`). A Mac that may still push here and did not confirm (out of reach, silent
+///   for 3 s, refused) is reported to the app (`onUntoldMac`), which changes the push key and says so in the settings.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -32,8 +36,11 @@ public final class BridgeStore {
     public private(set) var snapshotAt: Date?
     /// Whether `snapshot` came over the current connection (not from the cache or an earlier connection).
     public private(set) var isLive = false
-    /// Set while a pairing is under way.
+    /// Where a pairing attempt is while it waits for the Mac; nil once the Mac has answered.
     public private(set) var pairingPhase: PairingPhase?
+    /// A `pair` call is under way, from its start until it has returned: past the Mac's answer, while the old
+    /// connection is stopped and the new pairing saved.
+    public private(set) var isPairing = false
     /// What the paired Mac's latest `welcome` said it runs (e.g. "1.4.0"); kept while the connection is down,
     /// nil until the Mac has welcomed this pairing.
     public private(set) var macVersion: String?
@@ -64,6 +71,7 @@ public final class BridgeStore {
     @ObservationIgnored private let now: () -> Date
     @ObservationIgnored private let pushAcks: any PushAckStorage
     @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
+    @ObservationIgnored private let onUntoldMac: @MainActor (StoredPairing) -> Void
     @ObservationIgnored private var networkPump: Task<Void, Never>?
 
     /// How long an unpairing waits for the Mac to take the push registration back.
@@ -109,6 +117,8 @@ public final class BridgeStore {
     @ObservationIgnored private var pushSending = false
     /// What went to the Mac on the current connection: the same registration goes once per connection.
     @ObservationIgnored private var pushSentOnConnection: PushRegistration?
+    /// A registration with a token went to this pairing's Mac and the answer was cut off: it may have stored it.
+    @ObservationIgnored private var pushCutOff = false
     /// When the snapshot written last arrived; nil until one is written for this pairing.
     @ObservationIgnored private var lastSnapshotWrite: Date?
     /// The newest snapshot not written yet, held back by `snapshotWriteInterval`.
@@ -122,6 +132,8 @@ public final class BridgeStore {
     ///   - now: stamps the snapshots.
     ///   - pushAcks: keeps what the Mac confirmed of the push registration.
     ///   - sleep: waits out `unregisterWait`.
+    ///   - onUntoldMac: a Mac this phone left may still push here (see the type's notes); called on the main actor, when
+    ///     pairing again before the new pairing connects.
     public init(
         storage: any PairingStorage,
         makeLink: @escaping @MainActor (StoredPairing, @escaping @Sendable (BridgeEvent) -> Void) -> any BridgeLink,
@@ -129,7 +141,8 @@ public final class BridgeStore {
         network: any NetworkWatching = NWPathNetworkWatcher(),
         backgroundGrace: Duration = .seconds(10), now: @escaping () -> Date = Date.init,
         pushAcks: any PushAckStorage = MemoryPushAckStorage(),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        onUntoldMac: @escaping @MainActor (StoredPairing) -> Void = { _ in }
     ) {
         self.storage = storage
         self.makeLink = makeLink
@@ -139,6 +152,7 @@ public final class BridgeStore {
         self.now = now
         self.pushAcks = pushAcks
         self.sleep = sleep
+        self.onUntoldMac = onUntoldMac
         pushAck = PushAck()
         if let (pairing, _) = storage.load() {
             self.pairing = pairing
@@ -288,6 +302,11 @@ public final class BridgeStore {
             pushSending = false
             // From a link that was replaced meanwhile (unpaired, paired again): not this pairing's.
             guard connection?.id == connectionId else { return }
+            switch reply {
+            case .stored: pushCutOff = false
+            case .offline where !sent.token.isEmpty: pushCutOff = true
+            default: break
+            }
             let next = registrar.record(reply: reply, sent: sent, macVersion: version, acked: pushAck)
             if next != pushAck {
                 pushAck = next
@@ -319,9 +338,14 @@ public final class BridgeStore {
     /// by the new, and the new connection is started (unless the app is in the background); on failure
     /// nothing changes. While an attempt is under way another is turned away at once (`.busy`), and the one under way
     /// goes on. A pairing the phone cannot keep (`.notSaved`: the keychain refused its token) leaves the old one in
-    /// place, and the old one's connection comes back.
+    /// place, and the old one's connection comes back. The Mac being replaced is first asked to take the push
+    /// registration back over its connection (at most `unregisterWait`); one that may still push here and did not
+    /// confirm is reported (`onUntoldMac`) before the new pairing connects. The attempt counts as under way
+    /// (`isPairing`) until all of that is done.
     public func pair(_ target: PairingTarget, deviceName: String) async -> PairResult {
-        guard pairingPhase == nil else { return .failed(.busy) }
+        guard !isPairing else { return .failed(.busy) }
+        isPairing = true
+        defer { isPairing = false }
         pairAttempt += 1
         let attempt = pairAttempt
         pairingPhase = .connecting
@@ -332,18 +356,24 @@ public final class BridgeStore {
         pairingPhase = nil
         guard case .paired(let deviceId, let token, let macName) = result else { return result }
 
+        // The Mac being left: its registration taken back over its connection, before that stops.
+        let left = pairing.map(leaving)
+        var told = true
         if let old = detachConnection() {
             // No connection any more: nothing is live while the old one is being stopped.
             conn = .idle
             isLive = false
-            await callLink { await old.stop() }.value
+            told = await leave(old, takingBack: left?.unregistration).value
         }
         let new = StoredPairing(endpoint: target.endpoint, fingerprint: target.fingerprint, macName: macName, deviceId: deviceId)
         guard storage.save(new, token: token) else {
-            // Unpaired meanwhile: nothing to bring back.
+            // The old pairing stays (unpaired meanwhile: nothing to bring back). Its Mac was asked to drop the
+            // registration on the way, so it registers afresh when it connects again.
+            if left?.unregistration != nil { forgetPushAck() }
             if let pairing, connection == nil { connect(to: pairing) }
             return .failed(.notSaved)
         }
+        if let left, left.mayStillPush(told: told) { onUntoldMac(left.pairing) }
         pairing = new
         clearLiveState()
         forgetPushAck()
@@ -368,23 +398,22 @@ public final class BridgeStore {
 
     /// Forgets the Mac: stops the connection, deletes the pairing and the cached snapshot. Connected, the connection
     /// first takes the push registration back (an empty token), waiting at most `unregisterWait` for the Mac, so that it
-    /// stops pushing (spec §8.8); the phone is unpaired at once all the same.
+    /// stops pushing (spec §8.8); the phone is unpaired at once all the same. A Mac that may still push here and did not
+    /// confirm (offline, silent, refused) is reported (`onUntoldMac`).
     public func unpair() {
-        let unregister: PushRegistration? = {
-            guard case .connected = conn, let push, push.shouldUnregister(acked: pushAck, macVersion: macVersion) else { return nil }
-            return push.unregistration()
-        }()
+        let left = pairing.map(leaving)
         if let old = detachConnection() {
-            let wait = Self.unregisterWait
-            let sleep = sleep
-            let call = callLink {
-                if let unregister {
-                    await Self.firstOf({ _ = await old.registerPush(unregister) }, orAfter: wait, sleep: sleep)
+            let call = leave(old, takingBack: left?.unregistration)
+            if let left, left.unregistration != nil || left.mayHold {
+                // Let the system give it the time even if the app leaves the foreground meanwhile.
+                let report = onUntoldMac
+                background.run {
+                    let told = await call.value
+                    if left.mayStillPush(told: told) { report(left.pairing) }
                 }
-                await old.stop()
             }
-            // Let the system give it the time even if the app leaves the foreground meanwhile.
-            if unregister != nil { background.run { await call.value } }
+        } else if let left, left.mayStillPush(told: false) {
+            onUntoldMac(left.pairing)
         }
         storage.clear()
         pairing = nil
@@ -397,30 +426,74 @@ public final class BridgeStore {
         pushAck = PushAck()
         pushAcks.savePushAck(nil)
         pushSentOnConnection = nil
+        pushCutOff = false
     }
 
-    /// Runs `work` and returns when it has finished or `limit` has passed, whichever comes first (`work` goes on).
-    private static func firstOf(
-        _ work: @escaping @Sendable () async -> Void, orAfter limit: Duration,
+    /// What leaving a Mac means for its push registration (spec §8.8).
+    private struct Leaving {
+        let pairing: StoredPairing
+        /// The empty token to send over its connection: it may have a registration and is connected. Nil: nothing to
+        /// send (nothing to take back, or no connection to take it back over).
+        let unregistration: PushRegistration?
+        /// It may hold a registration it can push with: it stored one with a token, or one went and the answer was cut
+        /// off.
+        let mayHold: Bool
+
+        /// Whether it may go on pushing here: it may hold a registration, and did not confirm taking it back.
+        func mayStillPush(told: Bool) -> Bool {
+            mayHold && !(unregistration != nil && told)
+        }
+    }
+
+    /// Leaving `pairing`, the paired Mac, as things are now.
+    private func leaving(_ pairing: StoredPairing) -> Leaving {
+        let takeBack = PushRegistrar.takingBack(push, acked: pushAck, macVersion: macVersion)
+        let connected = if case .connected = conn { true } else { false }
+        return Leaving(
+            pairing: pairing, unregistration: connected ? takeBack : nil,
+            mayHold: takeBack != nil && (pushAck.holdsRegistration || pushCutOff)
+        )
+    }
+
+    /// Stops `link`, the connection to a Mac being left, once it has taken `unregistration` over (waiting at most
+    /// `unregisterWait` for the Mac). Whether the Mac confirmed it; true when there was nothing to send.
+    private func leave(_ link: any BridgeLink, takingBack unregistration: PushRegistration?) -> Task<Bool, Never> {
+        let wait = Self.unregisterWait
+        let sleep = sleep
+        return callLink {
+            var told = true
+            if let unregistration {
+                let reply = await Self.firstOf({ await link.registerPush(unregistration) }, orAfter: wait, sleep: sleep)
+                if case .stored? = reply { told = true } else { told = false }
+            }
+            await link.stop()
+            return told
+        }
+    }
+
+    /// Runs `work` and returns what it gave when it has finished, or nil once `limit` has passed, whichever comes first
+    /// (`work` goes on).
+    private static func firstOf<T: Sendable>(
+        _ work: @escaping @Sendable () async -> T, orAfter limit: Duration,
         sleep: @escaping @Sendable (Duration) async throws -> Void
-    ) async {
+    ) async -> T? {
         let done = OSAllocatedUnfairLock(initialState: false)
-        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            let finish: @Sendable () -> Void = {
+        return await withCheckedContinuation { (continuation: CheckedContinuation<T?, Never>) in
+            let finish: @Sendable (T?) -> Void = { value in
                 let first = done.withLock { done in
                     defer { done = true }
                     return !done
                 }
-                if first { continuation.resume() }
+                if first { continuation.resume(returning: value) }
             }
             let timer = Task {
                 try? await sleep(limit)
-                finish()
+                finish(nil)
             }
             Task {
-                await work()
+                let value = await work()
                 timer.cancel()
-                finish()
+                finish(value)
             }
         }
     }
@@ -488,13 +561,13 @@ public final class BridgeStore {
 
     /// Runs `work` on the link after every call made before it has finished.
     @discardableResult
-    private func callLink(_ work: @escaping @MainActor () async -> Void) -> Task<Void, Never> {
+    private func callLink<T: Sendable>(_ work: @escaping @MainActor () async -> T) -> Task<T, Never> {
         let previous = lastLinkCall
         let call = Task { @MainActor in
             await previous?.value
-            await work()
+            return await work()
         }
-        lastLinkCall = call
+        lastLinkCall = Task { _ = await call.value }
         return call
     }
 

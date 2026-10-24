@@ -19,6 +19,12 @@ public struct PushAck: Codable, Equatable, Sendable {
     public var refusal: String?
 
     public init() {}
+
+    /// Whether the Mac may push to this phone with what it holds: it stored a registration with a token, and not an
+    /// empty one since. (A refusal leaves what it stored before.)
+    public var holdsRegistration: Bool {
+        stored.map { !$0.token.isEmpty } ?? false
+    }
 }
 
 /// Where `PushAck` is kept. Called on the main actor.
@@ -119,6 +125,21 @@ public struct PushRegistrar: Equatable, Sendable {
     public func shouldUnregister(acked: PushAck, macVersion: String?) -> Bool {
         if let silent = acked.silentMacVersion, silent == Self.versionKey(macVersion) { return false }
         return acked.stored.map { !$0.token.isEmpty } ?? true
+    }
+
+    /// What to take back from a Mac this phone is leaving (unpairing, or pairing with another, spec §8.8): the empty
+    /// token when the Mac may have a registration (`shouldUnregister`); nil when there is nothing to take back. Before
+    /// the app has said what to register this run (`registrar` nil), from what the Mac last stored, with its key.
+    public static func takingBack(_ registrar: PushRegistrar?, acked: PushAck, macVersion: String?) -> PushRegistration? {
+        if let registrar {
+            return registrar.shouldUnregister(acked: acked, macVersion: macVersion) ? registrar.unregistration() : nil
+        }
+        if let silent = acked.silentMacVersion, silent == versionKey(macVersion) { return nil }
+        guard acked.holdsRegistration, let stored = acked.stored else { return nil }
+        return PushRegistration(
+            token: "", environment: stored.environment, bundleId: stored.bundleId, key: stored.key, notifyDone: false,
+            notifyError: false
+        )
     }
 
     /// What to keep after the Mac's `reply` to `sent` (from a Mac that runs `macVersion`): a stored registration and

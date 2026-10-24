@@ -72,6 +72,9 @@ final class PushSetup {
     /// Reads the permission again (it may have changed in the system's settings) and hands the store what to register.
     func refresh() async {
         authorization = await UNUserNotificationCenter.current().notificationSettings().authorizationStatus
+        #if DEBUG
+        if let forced = DebugLaunch.current.notificationPermission { authorization = forced }
+        #endif
         authorizationRead = true
         update()
     }
@@ -115,6 +118,21 @@ final class PushSetup {
             )
         }
         store.setPush(registrar)
+    }
+
+    /// The Mac this phone just left (`BridgeStore`'s `onUntoldMac`) may still hold its push registration: a new push key,
+    /// so that what it pushes can no longer be opened (the notification shows "有会话需要你"), handed to the Mac paired
+    /// now with the next registration; and its name for the settings' line, until the user dismisses it.
+    func macLeftUntold(_ pairing: StoredPairing) {
+        let key = PushCrypto.makeKey()
+        let status = SharedKeychain.push.write(Data(key.utf8), account: SharedKeychain.pushKeyAccount)
+        if status == errSecSuccess {
+            Self.log.notice("a Mac that may still push here was left: the push key is changed")
+        } else {
+            Self.log.error("changing the push key failed: \(status)")
+        }
+        settings?.leftMac = Theme.macName(pairing.macName)
+        update()
     }
 
     /// The push key: the one in the shared keychain, or a new one saved there. Nil when the keychain cannot be read or

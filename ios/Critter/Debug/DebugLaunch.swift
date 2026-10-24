@@ -71,7 +71,10 @@ import UserNotifications
 ///     `unreachable`), at once or after waiting that long at the Mac. With `-critterOpenURL <a critter-pair:// link>`
 ///     the link comes in during the wait (queued, then confirmed on the failure page) or, at once, on the failure
 ///     page (a link to a host off the local network shows its note there).
-///   - `paired@<seconds>`: the Mac says yes after that long (a link that came meanwhile is dropped).
+///   - `paired@<seconds>`: the Mac says yes after that long (a link that came meanwhile is dropped), as a new device
+///     (`demo-paired`): with `-critterFixture` and `-critterNotificationAction <id>:open@<seconds>` before it, a target
+///     tapped while pairing again is dropped once the new pairing is made, and the log shows the fixture Mac taking the
+///     empty token first.
 ///   - `scan-race`: 1.5 s after the scanner is up the camera "reads" a pairing code, and 100 ms into the green flash
 ///     「返回」 is tapped (「手动输入」 when unpaired); a second later the log says whether anything is pairing.
 ///     `scan-read`: the same read with nothing tapped, so the flash ends in an attempt (the control).
@@ -154,11 +157,24 @@ import UserNotifications
 ///   out of the way. The log (category `activity`) also has a decode check: the protocol doc's push-to-start
 ///   `attributes` (`{}`) as `CritterActivity`, and its start and end `content-state` as its `ContentState`.
 /// - `-critterLiveActivitySwitch <on|off>@<seconds>[,…]`: at those times after launch the settings' Live Activity switch
-///   is set as a tap would set it (`off@8,on@14`), until the settings page has the switch (it is saved like a tap: end
-///   with `on` to leave it on). With `-critterFixture` this shows the app's own activity (`LiveActivityManager`): started
+///   is set as a tap on 「显示实时活动」 would set it (`off@8,on@14`; it is saved like a tap: end with `on` to leave it
+///   on). With `-critterFixture` this shows the app's own activity (`LiveActivityManager`): started
 ///   in front once connected, updated with each new snapshot, ended at once when switched off. The log (category
 ///   `activity`) says what it did and which tokens the system gave; the registration's line (category `notifications`)
 ///   which of them go to the Mac.
+/// - `-critterFixturePush stored|unready|silent|refused`: with `-critterFixture`, how the fixture Mac answers the push
+///   registration (default `stored`: "已登记"): `unready` "已登记；这台 Mac 还没配置推送", `silent` never (a Mac too old
+///   for the frame: "这台 Mac 上的 Critter 版本太旧，收不到推送"), `refused` "保存失败". With `-critterFixtureOffline`
+///   nothing is registered ("还没登记（要连上 Mac）"). The settings' 推送 group shows the line (`-critterOpen settings
+///   -critterSettingsAt push`).
+/// - `-critterNotificationPermission denied|ask|granted|provisional`: the app reads this as the system's notification
+///   permission, whatever the system says (the registration follows it too): `denied` puts "通知被关掉了，去系统设置打开"
+///   with 「去打开」 in the settings, `ask` (never asked) 「允许通知」.
+/// - `-critterLeftMac <name>`: the settings' line about a Mac this phone left that may still push here (saved like the
+///   real one, until 「知道了」), as after pairing again away from an unreachable Mac (`BridgeStore`'s `onUntoldMac`).
+/// - `-critterSystemBlocksActivities`: the app reads the system's Live Activity setting for it as off: the settings'
+///   实时活动 group says so with 「去打开」.
+/// - `-critterSettingsAt` also takes `push`, `activity` and `alerts`.
 /// - `-critterOnboarding <step>[:<state>]`: the app starts in the first-run guide at that step (`welcome`, `pair`,
 ///   `notifications`, `liveActivity`, `board`), paired or not, whatever `critter.settings.onboardingDone` says. Finishing
 ///   it saves `onboardingDone` like a real run. The pairing step is the real pairing screen: unpaired with
@@ -253,6 +269,13 @@ struct DebugLaunch {
     var liveActivitySwitch: [(on: Bool, at: Double)] = []
     /// `-critterOnboarding`.
     var onboarding: OnboardingDemo?
+    /// `-critterFixturePush`: the fixture Mac's answer to a registration with a token.
+    var fixturePush: PushRegistrationReply = .stored(PushRegistrar.registeredLine)
+    /// `-critterNotificationPermission`.
+    var notificationPermission: UNAuthorizationStatus?
+    /// `-critterLeftMac`.
+    var leftMac: String?
+    var systemBlocksActivities = false
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -357,6 +380,21 @@ struct DebugLaunch {
             return (on: parts[0] == "on", at: at)
         }
         onboarding = value("critterOnboarding").flatMap(OnboardingDemo.init(argument:))
+        switch value("critterFixturePush") {
+        case "unready": fixturePush = .stored("已登记；这台 Mac 还没配置推送")
+        case "silent": fixturePush = .noReply
+        case "refused": fixturePush = .rejected("保存失败")
+        default: break
+        }
+        switch value("critterNotificationPermission") {
+        case "denied": notificationPermission = .denied
+        case "ask": notificationPermission = .notDetermined
+        case "granted": notificationPermission = .authorized
+        case "provisional": notificationPermission = .provisional
+        default: break
+        }
+        leftMac = value("critterLeftMac")
+        systemBlocksActivities = arguments.contains("-critterSystemBlocksActivities")
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug
@@ -567,12 +605,13 @@ actor FixtureLink: BridgeLink {
     func requestSkin(_ name: String) -> JSONValue? { nil }
 
     /// There is no Mac to push from, but the registration is taken as a Mac that can push would take it (the log says
-    /// what came, never the key), so the settings show the whole way through.
+    /// what came, never the key), so the settings show the whole way through; `-critterFixturePush` makes it answer as
+    /// another Mac would.
     func registerPush(_ registration: PushRegistration) -> PushRegistrationReply {
         Logger(subsystem: "com.braynlabs.critter", category: "notifications").notice(
             "fixture Mac: push registration token \(registration.token.isEmpty ? "empty (unregister)" : String(registration.token.prefix(8)) + "…", privacy: .public), \(registration.environment.rawValue, privacy: .public), \(registration.bundleId, privacy: .public), done \(registration.notifyDone), error \(registration.notifyError), live activity \(registration.activity?.enabled ?? false), key \(PushCrypto.keyData(registration.key) != nil ? "32 bytes" : "bad", privacy: .public)"
         )
-        return .stored(registration.token.isEmpty ? nil : PushRegistrar.registeredLine)
+        return registration.token.isEmpty ? .stored(nil) : DebugLaunch.current.fixturePush
     }
 
     /// An answer the fixture Mac took over another connection (a notification's button): the request leaves.

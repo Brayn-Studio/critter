@@ -185,6 +185,7 @@ private final class FakeLink: BridgeLink {
         var pushes: [PushRegistration] = []
         var pushReply = PushRegistrationReply.stored(nil)
         var holdPushes = false
+        var holdStops = false
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
@@ -192,6 +193,8 @@ private final class FakeLink: BridgeLink {
     let release = Gate(open: false)
     /// Push registrations held by `holdPushes()` wait here.
     let releasePushes = Gate(open: false)
+    /// Stops held by `holdStops()` wait here.
+    let releaseStops = Gate(open: false)
 
     init(index: Int, journal: Journal, onEvent: @escaping @Sendable (BridgeEvent) -> Void) {
         self.index = index
@@ -220,6 +223,9 @@ private final class FakeLink: BridgeLink {
     /// From now on a push registration does not return until `releasePushes` is opened.
     func holdPushes() { state.withLock { $0.holdPushes = true } }
 
+    /// From now on `stop` does not return until `releaseStops` is opened.
+    func holdStops() { state.withLock { $0.holdStops = true } }
+
     /// From now on the Mac has a skin of this name, with this manifest.
     func serve(_ manifest: JSONValue, named name: String) { state.withLock { $0.skins[name] = manifest } }
 
@@ -230,7 +236,11 @@ private final class FakeLink: BridgeLink {
 
     func stop() async {
         journal.add("stop \(index)")
-        state.withLock { $0.stops += 1 }
+        let hold = state.withLock { s in
+            s.stops += 1
+            return s.holdStops
+        }
+        if hold { await releaseStops.wait() }
     }
 
     func reconnectNow() async {
@@ -353,6 +363,8 @@ private final class FakePushAcks: PushAckStorage {
     /// The store's own waits (the 3 s an unregistration may take).
     let timer = ManualClock()
     private(set) var links: [FakeLink] = []
+    /// The Macs left that may still push here (`onUntoldMac`), in order.
+    private(set) var untold: [StoredPairing] = []
 
     init(
         paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false, pushAck: PushAck? = nil,
@@ -373,7 +385,11 @@ private final class FakePushAcks: PushAckStorage {
                 return link
             },
             pairer: pairer, background: runner, network: network, backgroundGrace: grace, now: { [clock] in clock.now },
-            pushAcks: pushAcks, sleep: timer.sleep
+            pushAcks: pushAcks, sleep: timer.sleep,
+            onUntoldMac: { pairing in
+                self.journal.add("untold \(pairing.macName)")
+                self.untold.append(pairing)
+            }
         )
     }
 
@@ -1211,7 +1227,8 @@ struct BridgeStoreTests {
         #expect(rig.link.stops == 0)
         rig.timer.advance(by: .seconds(1))
         #expect(await becomes { rig.link.stops == 1 })
-        #expect(Array(rig.journal.all.suffix(3)) == ["clear", "push 0 -", "stop 0"])
+        // Not confirmed: the app hears of it (it changes the push key).
+        #expect(await becomes { Array(rig.journal.all.suffix(4)) == ["clear", "push 0 -", "stop 0", "untold Mac"] })
         rig.link.releasePushes.open()
 
         // A Mac that answers at once: stopped right after.
@@ -1246,6 +1263,196 @@ struct BridgeStoreTests {
         #expect(store.pushStatus == "还没登记（要连上 Mac）")
         connect(rig.links[1])
         #expect(await becomes { rig.links[1].pushes == [phonePush().registration()] })
+    }
+}
+
+// MARK: - Leaving a Mac (pairing with another, unpairing)
+
+@MainActor
+struct BridgeStoreLeavingTests {
+    private let other = PairingTarget(endpoint: moved, fingerprint: pin, code: "AAAA2222", macName: "Other Mac")
+
+    private func connect(_ link: FakeLink, version: String = "1.5.0") {
+        link.emit(.macVersion(version))
+        link.emit(.state(connected))
+    }
+
+    /// A store whose Mac has stored this phone's registration.
+    private func registered(_ rig: Rig) async -> BridgeStore {
+        let store = rig.makeStore()
+        store.setPush(phonePush())
+        connect(rig.link)
+        #expect(await becomes { store.pushStatus == "已登记" })
+        return store
+    }
+
+    /// Ledger (plan 4 review): the attempt was only marked busy until the Mac said yes, not while the old connection
+    /// was being stopped and the new pairing saved; a second `pair` could start in that gap.
+    @Test func pairStaysBusyUntilTheOldConnectionHasStopped() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        rig.link.holdStops()
+        let first = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { rig.journal.all.contains("stop 0") })
+        #expect(store.pairingPhase == nil)
+        #expect(store.isPairing)
+        #expect(await store.pair(other, deviceName: "iPhone") == .failed(.busy))
+        rig.link.releaseStops.open()
+        #expect(await first.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(!store.isPairing)
+        #expect(rig.journal.all.filter { $0.hasPrefix("pair") } == ["pair K7M2QX9P iPhone"])
+        #expect(rig.storage.saves.count == 1)
+        #expect(store.pairing?.deviceId == "d2")
+    }
+
+    /// Pairing with another Mac takes the registration back from the old one first (spec §8.8), as unpairing does:
+    /// the empty token over the old connection, then it stops, then the new pairing is saved and connects.
+    @Test func pairingAgainTakesTheRegistrationBackFromTheOldMac() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        #expect(await store.pair(target, deviceName: "iPhone") == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.link.pushes.count == 2)
+        #expect(rig.link.pushes.last == phonePush().unregistration())
+        #expect(await becomes { rig.links.count == 2 && rig.links[1].starts == 1 })
+        #expect(Array(rig.journal.all.suffix(4)) == ["push 0 -", "stop 0", "save", "start 1"])
+        // The old Mac confirmed it: nothing to say about it.
+        #expect(rig.untold.isEmpty)
+        // The new Mac is asked afresh, with the same key.
+        connect(rig.links[1])
+        #expect(await becomes { rig.links[1].pushes == [phonePush().registration()] })
+    }
+
+    /// The old Mac is out of reach (the reason one pairs again, often): there is no one to take the registration back
+    /// from, so the app is told before the new pairing connects; it changes the push key (what the old Mac pushes can
+    /// no longer be opened) and the settings say that Mac should revoke this phone.
+    @Test func pairingAgainAwayFromTheOldMacTellsTheApp() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(await store.pair(target, deviceName: "iPhone") == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.link.pushes.count == 1)
+        #expect(rig.untold == [stored])
+        #expect(await becomes { rig.links.count == 2 && rig.links[1].starts == 1 })
+        #expect(Array(rig.journal.all.suffix(4)) == ["stop 0", "save", "untold Mac", "start 1"])
+    }
+
+    /// Connected, but the old Mac does not answer: the new pairing goes on after 3 s, and the app is told.
+    @Test func pairingAgainGivesTheOldMac3Seconds() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        rig.link.holdPushes()
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { rig.link.pushes.count == 2 })
+        #expect(await rig.timer.waitForSleepers(1))
+        #expect(rig.timer.asked == [.seconds(3)])
+        rig.timer.advance(by: .seconds(2))
+        await settle()
+        #expect(rig.link.stops == 0)
+        #expect(rig.storage.saves.isEmpty)
+        #expect(store.isPairing)
+        rig.timer.advance(by: .seconds(1))
+        #expect(await pairing.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.link.stops == 1)
+        #expect(rig.untold == [stored])
+        rig.link.releasePushes.open()
+    }
+
+    /// A Mac that refuses the empty token keeps what it had.
+    @Test func anOldMacThatRefusesIsReported() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        rig.link.replyToPush(with: .rejected("保存失败"))
+        _ = await store.pair(target, deviceName: "iPhone")
+        #expect(rig.link.pushes.last?.token == "")
+        #expect(rig.untold == [stored])
+    }
+
+    /// Nothing is said about a Mac that never stored a registration: none was ever confirmed (never connected since the
+    /// app said what to register), the app never said what to register, or the Mac does not know the frame.
+    @Test func aMacWithoutARegistrationIsLeftQuietly() async {
+        let neverConnected = Rig()
+        let a = neverConnected.makeStore()
+        a.setPush(phonePush())
+        _ = await a.pair(target, deviceName: "iPhone")
+        #expect(neverConnected.untold.isEmpty)
+
+        let nothingSet = Rig()
+        let b = nothingSet.makeStore()
+        connect(nothingSet.link)
+        #expect(await becomes { b.conn == connected })
+        _ = await b.pair(target, deviceName: "iPhone")
+        #expect(nothingSet.link.pushes.isEmpty)
+        #expect(nothingSet.untold.isEmpty)
+
+        let old = Rig()
+        let c = old.makeStore()
+        old.link.replyToPush(with: .noReply)
+        c.setPush(phonePush())
+        connect(old.link, version: "1.3.0")
+        #expect(await becomes { c.pushStatus == "这台 Mac 上的 Critter 版本太旧，收不到推送" })
+        _ = await c.pair(target, deviceName: "iPhone")
+        #expect(old.link.pushes.count == 1)
+        #expect(old.untold.isEmpty)
+    }
+
+    /// Before the app has said what to register this run, the Mac's stored registration is taken back all the same.
+    @Test func whatTheMacStoredIsTakenBackBeforeTheAppHasSaid() async {
+        let confirmed = phonePush().record(
+            reply: .stored("已登记"), sent: phonePush().registration(), macVersion: "1.5.0", acked: PushAck()
+        )
+        let rig = Rig(pushAck: confirmed)
+        let store = rig.makeStore()
+        connect(rig.link)
+        #expect(await becomes { store.conn == connected })
+        _ = await store.pair(target, deviceName: "iPhone")
+        #expect(rig.link.pushes == [phonePush().unregistration()])
+        #expect(rig.untold.isEmpty)
+    }
+
+    /// The new pairing could not be kept: the old one stays, but its Mac was asked to drop the registration on the way,
+    /// so its connection registers afresh when it comes back.
+    @Test func aPairingThatCannotBeSavedRegistersTheOldOneAgain() async {
+        let rig = Rig()
+        let store = await registered(rig)
+        rig.storage.failSaves()
+        #expect(await store.pair(target, deviceName: "iPhone") == .failed(.notSaved))
+        #expect(rig.link.pushes.last?.token == "")
+        #expect(store.pairing == stored)
+        #expect(rig.links.count == 2)
+        connect(rig.links[1])
+        #expect(await becomes { rig.links[1].pushes == [phonePush().registration()] })
+        #expect(rig.untold.isEmpty)
+    }
+
+    /// Unpairing a Mac that cannot be told (offline, or no confirmation within 3 s) is the same hole: the app is told.
+    @Test func unpairingAMacThatCannotBeToldTellsTheApp() async {
+        let away = Rig()
+        let offlineStore = await registered(away)
+        away.link.emit(.state(offline))
+        #expect(await becomes { offlineStore.conn == offline })
+        offlineStore.unpair()
+        await away.runner.finished()
+        #expect(away.link.pushes.count == 1)
+        #expect(away.untold == [stored])
+
+        let slow = Rig()
+        let slowStore = await registered(slow)
+        slow.link.holdPushes()
+        slowStore.unpair()
+        #expect(await slow.timer.waitForSleepers(1))
+        slow.timer.advance(by: .seconds(3))
+        await slow.runner.finished()
+        #expect(slow.untold == [stored])
+        slow.link.releasePushes.open()
+
+        // Told: nothing to say.
+        let quick = Rig()
+        let quickStore = await registered(quick)
+        quickStore.unpair()
+        await quick.runner.finished()
+        #expect(quick.link.pushes.last?.token == "")
+        #expect(quick.untold.isEmpty)
     }
 }
 
@@ -1305,6 +1512,69 @@ struct BridgeStoreWithTheClientTests {
         #expect(mac.connects.count == 2)
         store.unpair()
         #expect(await becomes { mac.openSockets == 0 })
+    }
+
+    /// Pairing with another Mac over the real client: the empty token goes to the old Mac over its own connection (the
+    /// pairing's connection is closed by then), and the new pairing says hello once the old Mac has taken it.
+    @Test func pairingAgainTakesTheRegistrationBackOverTheOldConnection() async throws {
+        let mac = FakeMac()
+        mac.autoWelcome = "Mac"
+        let storage = FakeStorage(journal: Journal(), pairing: stored, snapshot: nil)
+        let untold = UntoldMacs()
+        let store = BridgeStore(
+            storage: storage,
+            makeLink: { pairing, onEvent in
+                BridgeClient(
+                    transport: mac, endpoint: StaticResolver(pairing.endpoint), fingerprint: pairing.fingerprint,
+                    credentials: { storage.load()?.1 }, app: "critter-ios/test", onEvent: onEvent
+                )
+            },
+            pairer: Pairer(transport: mac), background: ImmediateRunner(), network: FakeNetwork(),
+            onUntoldMac: { untold.macs.append($0) }
+        )
+        store.setPush(phonePush())
+        store.sceneBecameActive()
+        #expect(try #require(await mac.nextFrame()) == .hello(protocolVersion: 1, deviceId: "d1", token: "t1", app: "critter-ios/test"))
+        guard case .push(let id, let registration)? = await mac.nextFrame() else {
+            Issue.record("expected the registration")
+            return
+        }
+        #expect(registration == phonePush().registration())
+        mac.send(.result(id: id, ok: true, reason: nil, message: "已登记"))
+        #expect(await becomes { store.pushStatus == "已登记" })
+
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(try #require(await mac.nextFrame()) == .pair(code: target.code, deviceName: "iPhone"))
+        mac.send(.paired(deviceId: "d9", token: "t9", macName: "Pair Mac"))
+        guard case .push(let backId, let back)? = await mac.nextFrame() else {
+            Issue.record("expected the empty token")
+            return
+        }
+        #expect(back == phonePush().unregistration())
+        // Still the old pairing until the old Mac has answered.
+        await settle()
+        #expect(store.pairing == stored)
+        mac.send(.result(id: backId, ok: true, reason: nil, message: nil))
+        #expect(await pairing.value == .paired(deviceId: "d9", token: "t9", macName: "Pair Mac"))
+        #expect(try #require(await mac.nextFrame()) == .hello(protocolVersion: 1, deviceId: "d9", token: "t9", app: "critter-ios/test"))
+        #expect(untold.macs.isEmpty)
+        // The new Mac is registered with, and unpairing takes it back from it the same way.
+        guard case .push(let newId, let afresh)? = await mac.nextFrame() else {
+            Issue.record("expected the new registration")
+            return
+        }
+        #expect(afresh == phonePush().registration())
+        mac.send(.result(id: newId, ok: true, reason: nil, message: "已登记"))
+        #expect(await becomes { store.pushStatus == "已登记" })
+        store.unpair()
+        guard case .push(let lastId, let last)? = await mac.nextFrame() else {
+            Issue.record("expected the empty token")
+            return
+        }
+        #expect(last.token == "")
+        mac.send(.result(id: lastId, ok: true, reason: nil, message: nil))
+        #expect(await becomes { mac.openSockets == 0 })
+        #expect(untold.macs.isEmpty)
     }
 
     /// Pairing as the app does it, over the storage the app uses (`DiskPairingStorage`, with the keychain faked): the
@@ -1406,4 +1676,9 @@ private extension BridgeEvent {
         guard case .snapshot(let seq, let sentAt, let body) = self else { fatalError("not a snapshot") }
         return .snapshot(seq: seq, sentAt: sentAt, body: body)
     }
+}
+
+/// The Macs the store reported as left without being told (`onUntoldMac`).
+@MainActor private final class UntoldMacs {
+    var macs: [StoredPairing] = []
 }

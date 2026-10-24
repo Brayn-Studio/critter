@@ -144,3 +144,15 @@ private let fifteenMinutes: TimeInterval = 15 * 60
     let release = hold.cardOpen(false, reasonNow: .upright)
     #expect(release == .none)
 }
+
+/// The card over the board goes with it: the next board's automatic close is not held by a card that is not there
+/// (its close event never comes, since the card was dropped with the board).
+@Test func aBoardThatWentForgetsItsCard() {
+    var hold = BoardCloseHold()
+    _ = hold.cardOpen(true, reasonNow: nil)
+    hold.boardGone()
+    #expect(!hold.cardIsOpen)
+    let now = hold.close(.unplugged)
+    #expect(now)
+    #expect(hold.held == nil)
+}

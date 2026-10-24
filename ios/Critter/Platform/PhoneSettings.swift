@@ -61,6 +61,13 @@ final class PhoneSettings {
         didSet { save(onboardingDone, Key.onboardingDone) }
     }
 
+    /// A Mac this phone left (paired with another, or unpaired) that could not be told to drop its push registration and
+    /// may go on pushing here: its name, for the settings' line until the user dismisses it (spec §8.8). The push key was
+    /// changed then, so what it pushes can no longer be opened.
+    var leftMac: String? {
+        didSet { save(leftMac, Key.leftMac) }
+    }
+
     /// The day the opening (Critters popping up on the home screen) last played, "yyyy-MM-dd" in the phone's time
     /// zone: it plays once a day.
     var openingShownOn: String? {
@@ -86,6 +93,7 @@ final class PhoneSettings {
         static let boardSounds = "critter.settings.boardSounds"
         static let openingShownOn = "critter.settings.openingShownOn"
         static let onboardingDone = "critter.settings.onboardingDone"
+        static let leftMac = "critter.settings.leftMac"
         // The ones the extensions read too: their keys are shared (`SharedSettings`).
         static let liveActivity = SharedSettings.liveActivity
         static let notifyDone = SharedSettings.notifyDone
@@ -103,6 +111,7 @@ final class PhoneSettings {
         boardSounds = defaults.object(forKey: Key.boardSounds) as? Bool ?? false
         openingShownOn = defaults.string(forKey: Key.openingShownOn)
         onboardingDone = defaults.object(forKey: Key.onboardingDone) as? Bool ?? false
+        leftMac = defaults.string(forKey: Key.leftMac).flatMap { $0.isEmpty ? nil : $0 }
         liveActivity = shared.object(forKey: Key.liveActivity) as? Bool ?? true
         notifyDone = shared.object(forKey: Key.notifyDone) as? Bool ?? false
         notifyError = shared.object(forKey: Key.notifyError) as? Bool ?? false

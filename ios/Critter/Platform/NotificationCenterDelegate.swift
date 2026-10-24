@@ -6,17 +6,13 @@ import UIKit
 @preconcurrency import UserNotifications
 
 /// Where a notification asked the app to go (spec §8.4): a request's answer card (looked up by id, as on the home
-/// screen: one that is gone says the computer has it) or a session's details. The home screen takes it once it is up.
+/// screen: one that is gone says the computer has it) or a session's details, with the pairing it came under
+/// (`NotificationTarget`). The home screen takes it once it is up; a pairing made since drops it.
 @MainActor @Observable
 final class NotificationRouter {
-    enum Target: Equatable {
-        case request(String)
-        case session(String)
-    }
-
     static let shared = NotificationRouter()
 
-    var target: Target?
+    var target: NotificationTarget?
 }
 
 /// A delivered notification, read off the system's objects: what the delegate needs of it.
@@ -158,9 +154,9 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
         case .answer(let requestId, let payload):
             await answer(payload, requestId: requestId, in: notice)
         case .openRequest(let requestId):
-            NotificationRouter.shared.target = .request(requestId)
+            NotificationRouter.shared.target = NotificationTarget(.request(requestId), pairing: store?.pairing?.deviceId)
         case .openSession(let sessionId):
-            NotificationRouter.shared.target = .session(sessionId)
+            NotificationRouter.shared.target = NotificationTarget(.session(sessionId), pairing: store?.pairing?.deviceId)
         case .openApp, .nothing:
             break
         }
