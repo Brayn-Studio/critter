@@ -1830,8 +1830,14 @@ public enum SkinLoader {
 
     /// The manifest in skin folder `dir`, if it decodes and passes `SkinValidator.problems`.
     static func validManifest(in dir: URL) -> SkinManifest? {
-        guard let data = try? Data(contentsOf: dir.appendingPathComponent("manifest.json")),
-              let manifest = try? JSONDecoder().decode(SkinManifest.self, from: data),
+        guard let data = try? Data(contentsOf: dir.appendingPathComponent("manifest.json")) else { return nil }
+        return decode(data)
+    }
+
+    /// `data` as a skin manifest, if it decodes and passes `SkinValidator.problems`; nil for anything else
+    /// (a manifest the Mac pushed to a phone is checked the same way as one read from disk).
+    public static func decode(_ data: Data) -> SkinManifest? {
+        guard let manifest = try? JSONDecoder().decode(SkinManifest.self, from: data),
               SkinValidator.problems(manifest).isEmpty
         else {
             return nil
