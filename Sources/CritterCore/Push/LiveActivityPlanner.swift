@@ -86,6 +86,9 @@ public final class LiveActivityPlanner {
         if let activityToken, activityToken != endedToken { endedToken = nil }
         let token = activityToken == endedToken ? nil : activityToken
         observe(token, now: now)
+        // A start whose token never came holds nothing off after 8 hours, whether or not a start follows now: its
+        // deadline is not due again.
+        if let unconfirmed = unconfirmedStartAt, now - unconfirmed >= Self.unconfirmedStartLimit { unconfirmedStartAt = nil }
 
         guard activityEnabled else {
             // The phone has no Live Activity now: no start of the Mac's is waiting for its token either.
@@ -174,13 +177,24 @@ public final class LiveActivityPlanner {
         lastStartAt = nil
     }
 
+    /// The last push-to-start went nowhere for another reason than its token: APNs refused the setup or the push,
+    /// or there was no network. No activity is waiting for its token, so it holds nothing off for 8 hours; the 10
+    /// minutes between starts still count (the push may have got through before the network failed).
+    public func startNotDelivered() {
+        guard unconfirmedStartAt != nil else { return }
+        forget()
+        unconfirmedStartAt = nil
+    }
+
     /// When `next` next has something to do without a new snapshot: the end of the throttle period, the end of
-    /// the empty wait, or the 7.5 hours. Nil if none.
+    /// the empty wait, the 7.5 hours, or the 8 hours after which a start whose token never came no longer holds
+    /// the next one off (the 7.5 hours forget the activity, not the start). Nil if none.
     public func nextDeadline() -> Int64? {
         var deadlines: [Int64] = []
         if changeWaiting, let last = lastUpdateAt { deadlines.append(last + Self.throttle) }
         if activitySince != nil, let emptySince { deadlines.append(emptySince + Self.endAfterEmpty) }
         if let since = activitySince, !ageWaitsForStartToken { deadlines.append(since + Self.maxAge) }
+        if let unconfirmed = unconfirmedStartAt { deadlines.append(unconfirmed + Self.unconfirmedStartLimit) }
         return deadlines.min()
     }
 
@@ -224,11 +238,9 @@ public final class LiveActivityPlanner {
         actions.append(.update(update, priority: priority))
     }
 
+    /// `next` has let go of a start whose 8 hours are over.
     private func canStart(at now: Int64) -> Bool {
-        if let unconfirmed = unconfirmedStartAt {
-            guard now - unconfirmed >= Self.unconfirmedStartLimit else { return false }
-            unconfirmedStartAt = nil
-        }
+        guard unconfirmedStartAt == nil else { return false }
         return lastStartAt.map { now - $0 >= Self.minStartInterval } ?? true
     }
 

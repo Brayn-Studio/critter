@@ -30,6 +30,8 @@ public enum PushRegistryEdits {
                 kept = registry.setActivity(deviceId: deviceId, activityId: nil, activityToken: nil)
             case .unconfirmedActivityStart(let deviceId, let time):
                 kept = registry.setUnconfirmedActivityStart(deviceId: deviceId, at: time)
+            case .dropRegistration(let deviceId):
+                kept = registry.dropPushToken(deviceId: deviceId)
             }
             if kept {
                 written = true
@@ -47,6 +49,7 @@ private extension RegistryEdit {
         switch self {
         case .clearActivity: "the end of its Live Activity"
         case .unconfirmedActivityStart(_, let time): time == nil ? "the release of its Live Activity start" : "its Live Activity start"
+        case .dropRegistration: "dropping its registration"
         }
     }
 }

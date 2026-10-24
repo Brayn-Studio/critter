@@ -549,3 +549,73 @@ private final class RegistryLoop {
     loop.keepEdits()
     #expect(loop.refreshes == 1)
 }
+
+@Test func aStartThatWentNowhereIsLetGoAndKeptAtOnce() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    for failure in [APNsOutcome.configError("密钥或 Team ID 不对"), .rejected("network error"), .rejected("signing")] {
+        let pushes = fanout([record("a", registration("aa", activity: start))])
+        #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
+        #expect(pushes.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: t0)])
+        // No activity came of it: the record lets the start go now, not with the next snapshot.
+        pushes.delivered(failure, to: target("a", .activityStart, "5151"))
+        #expect(pushes.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: nil)], Comment(rawValue: "\(failure)"))
+        // The token is fine: it starts again, after the usual ten minutes rather than 8 hours.
+        #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 60_000)).isEmpty)
+        #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0 + 10 * 60_000)) == ["start>activityStart:5151"])
+    }
+
+    // A start APNs took goes on waiting for its token; another device's failures change nothing here.
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    _ = pushes.takeRegistryEdits()
+    pushes.delivered(.sent, to: target("a", .activityStart, "5151"))
+    pushes.delivered(.rejected("network error"), to: target("b", .activityStart, "5151"))
+    pushes.delivered(.rejected("network error"), to: target("a", .device, "aa"))
+    #expect(pushes.takeRegistryEdits().isEmpty)
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 20 * 60_000)).isEmpty)
+}
+
+@Test func aGoneTokenIsKeptInTheRegistryAtOnce() {
+    let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: app)), record("b", registration("bb", key: keyB))])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    _ = pushes.takeRegistryEdits()
+
+    // The activity's token: forgotten here and in the record.
+    pushes.delivered(.dropToken, to: target("a", .activity, "a1a1"))
+    #expect(pushes.takeRegistryEdits() == [.clearActivity(deviceId: "a")])
+    #expect(pushes.registration("a")?.activity?.activityToken == nil)
+    // An old token says nothing about the current one.
+    pushes.delivered(.dropToken, to: target("b", .device, "0ld"))
+    #expect(pushes.takeRegistryEdits().isEmpty)
+    // The device token: the whole registration goes, here at once and from the record.
+    pushes.delivered(.dropToken, to: target("b", .device, "bb"))
+    #expect(pushes.takeRegistryEdits() == [.dropRegistration(deviceId: "b")])
+    #expect(pushes.registration("b") == nil)
+    #expect(alerts(pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1000), to: "b").isEmpty)
+    // A refused start token lets the start go in the record too.
+    let starting = fanout([record("c", registration("cc", activity: ActivityRegistration(enabled: true, startToken: "6161")))])
+    _ = starting.snapshot(body([session("s1", .running)]), now: t0)
+    _ = starting.takeRegistryEdits()
+    starting.delivered(.dropToken, to: target("c", .activityStart, "6161"))
+    #expect(starting.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "c", at: nil)])
+}
+
+@Test func droppingARegistrationIsWrittenToTheRegistry() {
+    let records = [record("a", registration("aa"))]
+    let registry = FakeRegistry(records, writable: true)
+    var changes = 0
+    PushRegistryEdits.keep([.dropRegistration(deviceId: "a")], in: registry, log: { _ in }) { changes += 1 }
+    #expect(registry.records.first?.push == nil)
+    #expect(changes == 1)
+}
+
+@Test func switchingTheBridgeOffLetsAStartWaitingForItsTokenGo() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    _ = pushes.takeRegistryEdits()
+    // Nothing to end without a token, but the start is let go: the doc's list of what releases it says so.
+    #expect(pushes.endAll(now: t0 + 1000).isEmpty)
+    #expect(pushes.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: nil)])
+}

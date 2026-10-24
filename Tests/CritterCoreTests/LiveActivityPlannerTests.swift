@@ -476,3 +476,45 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(planner.unconfirmedStartAt == nil)
     #expect(next(planner, c, at: t0 + second) == [.start(stamped(c, t0 + second))])
 }
+
+@Test func aStartThatWentNowhereHoldsOffOnlyTheUsualTenMinutes() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(planner, c, at: t0)
+    // APNs refused the setup or the push, or the network failed: no activity is waiting for its token, so nothing
+    // is held off for 8 hours. The push may have got through before the network failed: the ten minutes between
+    // starts still count.
+    planner.startNotDelivered()
+    #expect(planner.unconfirmedStartAt == nil)
+    #expect(next(planner, c, at: t0 + second).isEmpty)
+    #expect(next(planner, c, at: t0 + 10 * minute) == [.start(stamped(c, t0 + 10 * minute))])
+    // A start whose token came meanwhile was delivered: nothing changes.
+    _ = next(planner, c, at: t0 + 10 * minute + second, Phone(activityToken: "tok1"))
+    planner.startNotDelivered()
+    #expect(next(planner, content(.waiting), at: t0 + 11 * minute, Phone(activityToken: "tok1")).count == 1)
+}
+
+@Test func aStartWhoseTokenNeverCameIsDueAgainAt8Hours() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(planner, c, at: t0)
+    #expect(planner.nextDeadline() == restart)
+    // At 7.5 hours the Mac stops believing in it, but a start is not allowed before 8: that moment is a deadline,
+    // so the start does not wait for the next snapshot.
+    #expect(next(planner, c, at: restart).isEmpty)
+    #expect(planner.nextDeadline() == t0 + 8 * hour)
+    #expect(next(planner, c, at: t0 + 8 * hour) == [.start(stamped(c, t0 + 8 * hour))])
+}
+
+@Test func the8HoursOfAStartWhoseTokenNeverCameAreDueOnce() {
+    // Critter restarts with a start kept from before.
+    let planner = LiveActivityPlanner(unconfirmedStartAt: t0)
+    #expect(planner.nextDeadline() == t0 + 8 * hour)
+    // At 8 hours there are no sessions: nothing to start, and the start no longer holds anything off -- nor is it
+    // due again, or the caller's timer would fire on it over and over.
+    #expect(next(planner, content(), at: t0 + 8 * hour).isEmpty)
+    #expect(planner.unconfirmedStartAt == nil)
+    #expect(planner.nextDeadline() == nil)
+    let c = content(.waiting)
+    #expect(next(planner, c, at: t0 + 9 * hour) == [.start(stamped(c, t0 + 9 * hour))])
+}

@@ -32,7 +32,8 @@ final class PushCoordinator: @unchecked Sendable {
     private let loadSetup: () -> APNsSetup
     private let log: (String) -> Void
     private let fanout: PushFanout
-    /// Called after a dead token was dropped from the registry, to refresh the device list.
+    /// Called after the registry was written (a dead token dropped, an activity's token forgotten, a start kept),
+    /// to refresh the device list. Not after a write that failed: that would ask for the same write again.
     var onRegistryChanged: (() -> Void)?
 
     // Bridge queue only.
@@ -199,8 +200,8 @@ final class PushCoordinator: @unchecked Sendable {
         }
     }
 
-    /// Writes what the fan-out needs kept to `devices.json`: Live Activity tokens it ended, starts waiting for
-    /// their token.
+    /// Writes what the fan-out needs kept to `devices.json` -- Live Activity tokens it ended, starts waiting for
+    /// their token, tokens APNs says are gone -- and reads the devices again if that changed them.
     private func keepRegistryEdits() {
         PushRegistryEdits.keep(fanout.takeRegistryEdits(), in: registry, log: log) { onRegistryChanged?() }
     }
@@ -212,28 +213,14 @@ final class PushCoordinator: @unchecked Sendable {
     }
 
     private func delivered(_ outcome: APNsOutcome, push: OutgoingPush, generation: Int) {
-        switch outcome {
-        case .dropToken:
-            let device = push.target.deviceId.prefix(8)
-            let token = push.target.token.prefix(8)
-            switch fanout.tokenGone(push.target) {
-            case .dropRegistration:
-                log("push: device \(device)'s token \(token)… is gone; its registration is dropped")
-                registry.dropPushToken(deviceId: push.target.deviceId)
-                onRegistryChanged?()
-            case .clearActivity:
-                log("push: device \(device)'s Live Activity token \(token)… is gone")
-                registry.setActivity(deviceId: push.target.deviceId, activityId: nil, activityToken: nil)
-                onRegistryChanged?()
-            case .ignore:
-                log("push: a \(push.target.kind.rawValue) token \(token)… of device \(device) is gone")
-            }
-        case .configError where generation != setupGeneration:
+        // A gone token, or a push-to-start that went nowhere (which then holds no start off).
+        fanout.delivered(outcome, to: push.target)
+        if case .configError = outcome, generation != setupGeneration {
             // APNs's answer to a push made with the setup before: the new one is not blocked by it.
             sender?.configChanged()
-        case .sent, .configError, .rejected, .retry:
-            break
         }
+        // Into devices.json now, not with the next snapshot: Critter may quit before one comes.
+        keepRegistryEdits()
         publish()
         reschedule()
     }

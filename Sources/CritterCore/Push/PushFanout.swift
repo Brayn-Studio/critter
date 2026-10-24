@@ -51,15 +51,18 @@ public enum GoneToken: Equatable, Sendable {
 public enum RegistryEdit: Equatable, Sendable {
     public var deviceId: String {
         switch self {
-        case .clearActivity(let id), .unconfirmedActivityStart(let id, _): return id
+        case .clearActivity(let id), .unconfirmedActivityStart(let id, _), .dropRegistration(let id): return id
         }
     }
 
-    /// The Mac ended the device's Live Activity: its token is forgotten (`DeviceRegistry.setActivity(nil, nil)`).
+    /// The Mac ended the device's Live Activity, or APNs said its token is gone: the token is forgotten
+    /// (`DeviceRegistry.setActivity(nil, nil)`).
     case clearActivity(deviceId: String)
     /// When the Mac push-to-started an activity whose token has not come, or nil
     /// (`DeviceRegistry.setUnconfirmedActivityStart`).
     case unconfirmedActivityStart(deviceId: String, at: Int64?)
+    /// APNs said the device token is gone: the whole registration goes (`DeviceRegistry.dropPushToken`).
+    case dropRegistration(deviceId: String)
 }
 
 /// Turns each snapshot into the pushes every registered iPhone gets: its notifications (`PushTracker`) and its
@@ -235,6 +238,40 @@ public final class PushFanout {
             append(to: &pushes, target, "a test") { try PushContent.test(key: registration.key) }
         }
         return pushes
+    }
+
+    /// What became of a push to `target` (`PushSender`'s outcome). A gone token is forgotten here at once and asked
+    /// to be forgotten in the registry; a push-to-start that went nowhere lets go of the start waiting for its
+    /// token. Either way the edits are there to keep straight away (`takeRegistryEdits()`), not with the next
+    /// snapshot.
+    public func delivered(_ outcome: APNsOutcome, to target: PushTarget) {
+        let device = target.deviceId.prefix(8)
+        let token = target.token.prefix(8)
+        switch outcome {
+        case .dropToken:
+            switch tokenGone(target) {
+            case .dropRegistration:
+                log("push: device \(device)'s token \(token)… is gone; its registration is dropped")
+                devices[target.deviceId] = nil
+                lastTimestamp[target.deviceId] = nil
+                edits.removeAll { $0.deviceId == target.deviceId }
+                edits.append(.dropRegistration(deviceId: target.deviceId))
+            case .clearActivity:
+                log("push: device \(device)'s Live Activity token \(token)… is gone")
+                devices[target.deviceId]?.registration.activity?.activityId = nil
+                devices[target.deviceId]?.registration.activity?.activityToken = nil
+                edits.append(.clearActivity(deviceId: target.deviceId))
+            case .ignore:
+                log("push: a \(target.kind.rawValue) token \(token)… of device \(device) is gone")
+            }
+        case .configError, .rejected:
+            guard target.kind == .activityStart, let planner = devices[target.deviceId]?.planner,
+                  devices[target.deviceId]?.registration.activity?.startToken == target.token else { return }
+            planner.startNotDelivered()
+            noteStarts()
+        case .sent, .retry:
+            break
+        }
     }
 
     /// APNs said `target`'s token is gone. A device that has registered another token since keeps it.
