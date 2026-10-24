@@ -157,7 +157,7 @@ private func decision(_ result: HookResult) -> JSONValue? { parse(result.stdout)
     clock.onSleep = { _ in try! store.writeAnswer(AnswerPayload(decision: "revise", message: "改名为 x"), requestId: "req-1") }
     let result = AskCommand.run(stdin: request(tool: "ExitPlanMode", input: planInput), paths: paths, environment: cli, env: clock.environment())
     #expect(decision(result)?["behavior"] == .string("deny"))
-    #expect(decision(result)?["message"] == .string("改名为 x"))
+    #expect(decision(result)?["message"] == .string(AskDecision.reviseMessage("改名为 x")))
 }
 
 @Test func askStopsSilentlyWhenPendingRemoved() {
