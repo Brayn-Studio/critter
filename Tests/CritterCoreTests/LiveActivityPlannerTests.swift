@@ -1,0 +1,397 @@
+import Foundation
+import Testing
+@testable import CritterCore
+
+private let second: Int64 = 1000
+private let minute: Int64 = 60 * second
+private let hour: Int64 = 60 * minute
+private let t0: Int64 = 1_760_000_000_000
+/// When an activity started at `t0` is restarted.
+private let restart = t0 + 7 * hour + 30 * minute
+
+private func session(
+    _ id: String, _ state: PetState, skin: String = "sprig", startedAt: Int64 = 1, name: String = "name"
+) -> BridgeSession {
+    BridgeSession(
+        id: id, name: name, source: .terminal, state: state, detail: "detail of \(id)", activity: "activity", cwd: "/p/\(id)",
+        branch: "main", skin: skin, eventTime: 5, startedAt: startedAt, tracked: true
+    )
+}
+
+private func body(_ sessions: [BridgeSession], fiveHour: Double? = nil, sevenDay: Double? = nil) -> SnapshotBody {
+    let limits = (fiveHour == nil && sevenDay == nil) ? nil : BridgeLimits(
+        fiveHour: fiveHour.map { RateWindow(usedPercentage: $0, resetsAt: 9) },
+        sevenDay: sevenDay.map { RateWindow(usedPercentage: $0, resetsAt: 9) }, updatedAt: 1
+    )
+    return SnapshotBody(
+        sessions: sessions, limits: limits, pending: [],
+        prefs: BridgePrefs(skin: "sprig", randomSkins: false, idleDim: 1.0, mergeThreshold: 4, soundTheme: "pixel")
+    )
+}
+
+private func contentOf(_ snapshot: SnapshotBody) -> LiveActivityContent {
+    LiveActivityPlanner().content(from: snapshot)
+}
+
+/// A content for `states` (one session each, in this order).
+private func content(_ states: PetState...) -> LiveActivityContent {
+    contentOf(body(states.enumerated().map { session("s\($0.offset)", $0.element, startedAt: Int64($0.offset)) }))
+}
+
+private func stamped(_ content: LiveActivityContent, _ now: Int64) -> LiveActivityContent {
+    var copy = content
+    copy.updatedAt = now
+    return copy
+}
+
+private struct Phone {
+    var enabled = true
+    var startToken = true
+    var activityToken: String?
+}
+
+private func next(
+    _ planner: LiveActivityPlanner, _ content: LiveActivityContent, at now: Int64, _ phone: Phone = Phone()
+) -> [LiveActivityAction] {
+    planner.next(
+        content: content, now: now, activityEnabled: phone.enabled, hasStartToken: phone.startToken,
+        activityToken: phone.activityToken
+    )
+}
+
+/// A planner whose activity is running on a phone that reports `token`, started at `t0` showing `shown`.
+private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (LiveActivityPlanner, Phone) {
+    let planner = LiveActivityPlanner()
+    #expect(next(planner, shown, at: t0) == [.start(stamped(shown, t0))])
+    return (planner, Phone(activityToken: token))
+}
+
+// MARK: - The content
+
+@Test func contentLeadsWithTheMostUrgentAndKeepsTwoBehind() {
+    let snapshot = body([
+        session("a", .running, skin: "run1", startedAt: 10),
+        session("b", .done, skin: "done1", startedAt: 20),
+        session("c", .waiting, skin: "late", startedAt: 300),
+        session("d", .waiting, skin: "early", startedAt: 100),
+        session("e", .error, skin: "err1", startedAt: 40),
+        session("f", .idle, skin: "idle1", startedAt: 50),
+    ], fiveHour: 41.6, sevenDay: 7.4)
+    let content = contentOf(snapshot)
+    // Most urgent first (waiting > error > done > running > idle); the earlier-started of equals in front.
+    #expect(content.lead == PetBadge(skin: "early", state: .waiting))
+    #expect(content.back == [PetBadge(skin: "late", state: .waiting), PetBadge(skin: "err1", state: .error)])
+    #expect(content.total == 6)
+    #expect(content.counts == [
+        StateCount(state: .waiting, count: 2), StateCount(state: .error, count: 1), StateCount(state: .done, count: 1),
+        StateCount(state: .running, count: 1), StateCount(state: .idle, count: 1),
+    ])
+    #expect(content.fiveHour == 42 && content.sevenDay == 7)
+}
+
+@Test func contentOfNoSessionsIsEmpty() {
+    let content = contentOf(body([]))
+    #expect(content.total == 0 && content.lead == nil && content.back.isEmpty && content.counts.isEmpty)
+    #expect(content.fiveHour == nil && content.sevenDay == nil)
+}
+
+@Test func contentFollowsTheFlocksOrderForLeadAndBack() {
+    // The lead is the one the Mac's merged flock puts in front (and the phone's `PhoneFlock` does, by the same rule).
+    let sessions = [
+        session("a", .done, startedAt: 5), session("b", .running, startedAt: 1), session("c", .done, startedAt: 2),
+        session("d", .error, startedAt: 9), session("e", .error, startedAt: 3),
+    ]
+    let pets = sessions.map {
+        PetSession(
+            id: $0.id, name: $0.name, source: $0.source, state: $0.state, detail: nil, cwd: $0.cwd, pid: nil,
+            transcriptPath: nil, tracked: true, eventTime: $0.eventTime, sortKey: $0.startedAt
+        )
+    }
+    guard case .merged(let lead, let counts, let total) = FlockModel.merged(pets) else {
+        Issue.record("not merged")
+        return
+    }
+    let content = contentOf(body(sessions))
+    #expect(lead.id == "e")
+    #expect(content.lead == PetBadge(skin: "sprig", state: lead.state))
+    #expect(content.counts == counts)
+    #expect(content.total == total)
+    // Behind the lead: the rest in the same order -- the other error, then the dones, earliest started first.
+    #expect(content.back.map(\.state) == [.error, .done])
+}
+
+@Test func percentagesAreRoundedAndKeptInRange() {
+    #expect(contentOf(body([session("a", .idle)], fiveHour: 12.5, sevenDay: 99.4)).fiveHour == 13)
+    #expect(contentOf(body([session("a", .idle)], fiveHour: 0.4, sevenDay: 150)).sevenDay == 100)
+    #expect(contentOf(body([session("a", .idle)], fiveHour: 0.4)).sevenDay == nil)
+    #expect(contentOf(body([session("a", .idle)], fiveHour: .nan)).fiveHour == nil)
+}
+
+/// Review focus 2 for the Live Activity: counts, skin names, states, percentages and times only.
+@Test func activityContentNeverCarriesText() throws {
+    let snapshot = body([
+        session("id-secret", .waiting, skin: "sprig", name: "Secret Name ÄÖ"),
+        session("other", .running, skin: "mint", name: "Secret Folder"),
+    ], fiveHour: 10, sevenDay: 20)
+    let content = contentOf(snapshot)
+    let json = try JSONSerialization.jsonObject(with: JSONEncoder().encode(content))
+    var strings: [String] = []
+    func collect(_ value: Any) {
+        if let string = value as? String { strings.append(string) }
+        if let array = value as? [Any] { array.forEach(collect) }
+        if let dictionary = value as? [String: Any] { dictionary.values.forEach(collect) }
+    }
+    collect(json)
+    // Every string in it is a skin name or a state; nothing else (no session name, id, path, branch, detail).
+    #expect(!strings.isEmpty)
+    #expect(Set(strings).isSubset(of: ["sprig", "mint", "waiting", "running"]), "\(strings)")
+}
+
+// MARK: - Starting
+
+@Test func activityStartsWhenThereAreSessionsAndAStartToken() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running, .waiting)
+    #expect(next(planner, c, at: t0) == [.start(stamped(c, t0))])
+}
+
+@Test func theStartedContentIsStampedWithTheTimeItIsSent() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    guard case .start(let started)? = next(planner, c, at: t0).first else {
+        Issue.record("no start")
+        return
+    }
+    #expect(started.updatedAt == t0)
+}
+
+@Test func nothingStartsWithoutSessionsOrAStartTokenOrWhileOff() {
+    let c = content(.running)
+    #expect(next(LiveActivityPlanner(), c, at: t0, Phone(startToken: false)).isEmpty)
+    #expect(next(LiveActivityPlanner(), content(), at: t0).isEmpty)
+    #expect(next(LiveActivityPlanner(), c, at: t0, Phone(enabled: false)).isEmpty)
+    // The start token arriving later starts it.
+    let planner = LiveActivityPlanner()
+    #expect(next(planner, c, at: t0, Phone(startToken: false)).isEmpty)
+    #expect(next(planner, c, at: t0 + second) == [.start(stamped(c, t0 + second))])
+}
+
+@Test func noSecondStartWhileTheActivityTokenIsOnItsWay() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    #expect(next(planner, c, at: t0).count == 1)
+    // Snapshots keep coming; the phone has not reported its activity yet. A second start would make a second activity.
+    #expect(next(planner, c, at: t0 + second).isEmpty)
+    #expect(next(planner, content(.waiting), at: t0 + 5 * second).isEmpty)
+    #expect(next(planner, content(.waiting), at: t0 + 2 * hour).isEmpty)
+}
+
+@Test func anActivityTheAppStartedItselfIsUpdatedNotStarted() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    // Its token is known, the Mac has never sent it anything: it gets the current content once.
+    #expect(next(planner, c, at: t0, Phone(activityToken: "tok1")) == [.update(stamped(c, t0), priority: 5)])
+    #expect(next(planner, c, at: t0 + second, Phone(activityToken: "tok1")).isEmpty)
+}
+
+// MARK: - Updating
+
+@Test func activityUpdatesOnlyWhenTheContentChanges() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    #expect(next(planner, shown, at: t0 + minute, phone).isEmpty)
+    // Another snapshot, same Critters and numbers: nothing to send, even though sessions' times moved on.
+    #expect(next(planner, stamped(shown, t0 + 2 * minute), at: t0 + 2 * minute, phone).isEmpty)
+    let changed = content(.done)
+    #expect(next(planner, changed, at: t0 + 3 * minute, phone) == [.update(stamped(changed, t0 + 3 * minute), priority: 5)])
+    #expect(next(planner, changed, at: t0 + 4 * minute, phone).isEmpty)
+}
+
+@Test func moreWaitingIsUrgentOtherChangesAreThrottledTo10s() {
+    let shown = content(.running, .running)
+    let (planner, phone) = running(shown)
+
+    // Within 10 seconds of the last send, an ordinary change waits for the end of the period.
+    let done = content(.done, .running)
+    #expect(next(planner, done, at: t0 + 3 * second, phone).isEmpty)
+    #expect(planner.nextDeadline() == t0 + 10 * second)
+    // More changes meanwhile: only the last one goes out, when the period is over.
+    let errored = content(.error, .running)
+    #expect(next(planner, errored, at: t0 + 6 * second, phone).isEmpty)
+    #expect(next(planner, errored, at: t0 + 9 * second + 999, phone).isEmpty)
+    #expect(next(planner, errored, at: t0 + 10 * second, phone) == [.update(stamped(errored, t0 + 10 * second), priority: 5)])
+    #expect(planner.nextDeadline() == restart)
+
+    // A session starts waiting: priority 10, at once, inside the period.
+    let waiting = content(.waiting, .running)
+    #expect(next(planner, waiting, at: t0 + 11 * second, phone) == [.update(stamped(waiting, t0 + 11 * second), priority: 10)])
+    // More waiting again.
+    let twoWaiting = content(.waiting, .waiting)
+    #expect(next(planner, twoWaiting, at: t0 + 12 * second, phone) == [.update(stamped(twoWaiting, t0 + 12 * second), priority: 10)])
+    // Less waiting is an ordinary change, throttled from the last send.
+    let fewer = content(.waiting, .running)
+    #expect(next(planner, fewer, at: t0 + 13 * second, phone).isEmpty)
+    #expect(next(planner, fewer, at: t0 + 22 * second, phone) == [.update(stamped(fewer, t0 + 22 * second), priority: 5)])
+}
+
+@Test func aChangeThatIsUndoneWithinThePeriodSendsNothing() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    #expect(next(planner, content(.done), at: t0 + 2 * second, phone).isEmpty)
+    #expect(planner.nextDeadline() == t0 + 10 * second)
+    #expect(next(planner, shown, at: t0 + 10 * second, phone).isEmpty)
+    #expect(planner.nextDeadline() == restart)
+}
+
+@Test func updatesNeedTheActivityToken() {
+    let shown = content(.running)
+    let (planner, _) = running(shown)
+    // The phone has not told the Mac the token yet: nothing can be updated.
+    #expect(next(planner, content(.waiting), at: t0 + minute).isEmpty)
+    // When it does, the content that differs is sent.
+    let waiting = content(.waiting)
+    #expect(next(planner, waiting, at: t0 + 2 * minute, Phone(activityToken: "tok1")) == [.update(stamped(waiting, t0 + 2 * minute), priority: 10)])
+}
+
+// MARK: - Ending
+
+@Test func activityEndsFiveMinutesAfterTheLastSession() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    let none = content()
+    let gone = t0 + minute
+    // The activity shows the empty state meanwhile (an ordinary change), and the end is five minutes off.
+    #expect(next(planner, none, at: gone, phone) == [.update(stamped(none, gone), priority: 5)])
+    #expect(planner.nextDeadline() == gone + 5 * minute)
+    #expect(next(planner, none, at: gone + 5 * minute - 1, phone).isEmpty)
+    #expect(next(planner, none, at: gone + 5 * minute, phone) == [.end(dismissAt: gone + 5 * minute)])
+    #expect(planner.nextDeadline() == nil)
+    // Nothing more once it ended, even though the phone still reports the old token for a while.
+    #expect(next(planner, none, at: gone + 6 * minute, phone).isEmpty)
+    // Sessions come back: a new activity, not an update of the dead one.
+    let again = content(.running)
+    #expect(next(planner, again, at: gone + 7 * minute, phone) == [.start(stamped(again, gone + 7 * minute))])
+}
+
+@Test func sessionsBackWithinFiveMinutesKeepTheActivity() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    let none = content()
+    _ = next(planner, none, at: t0 + 20 * second, phone)
+    #expect(planner.nextDeadline() == t0 + 20 * second + 5 * minute)
+    let back = content(.running)
+    #expect(next(planner, back, at: t0 + 2 * minute, phone) == [.update(stamped(back, t0 + 2 * minute), priority: 5)])
+    #expect(planner.nextDeadline() == restart)
+    #expect(next(planner, back, at: t0 + 8 * minute, phone).isEmpty)
+}
+
+@Test func theFiveMinutesRunFromWhenTheSessionsWentNotFromTheLastSnapshot() {
+    let (planner, phone) = running(content(.running))
+    let none = content()
+    _ = next(planner, none, at: t0 + minute, phone)
+    // More empty snapshots do not push the end back.
+    _ = next(planner, none, at: t0 + 3 * minute, phone)
+    #expect(planner.nextDeadline() == t0 + 6 * minute)
+}
+
+@Test func turningItOffEndsTheActivity() {
+    let (planner, phone) = running(content(.running))
+    var off = phone
+    off.enabled = false
+    #expect(next(planner, content(.running), at: t0 + minute, off) == [.end(dismissAt: t0 + minute)])
+    #expect(next(planner, content(.running), at: t0 + 2 * minute, off).isEmpty)
+    #expect(planner.nextDeadline() == nil)
+    // Turned back on, with the old token gone: it starts again.
+    let c = content(.running)
+    #expect(next(planner, c, at: t0 + 3 * minute, Phone()) == [.start(stamped(c, t0 + 3 * minute))])
+}
+
+@Test func turningItOffWithNoActivityKnownSendsNothing() {
+    let planner = LiveActivityPlanner()
+    #expect(next(planner, content(.running), at: t0, Phone(enabled: false)).isEmpty)
+    #expect(planner.nextDeadline() == nil)
+}
+
+@Test func noActivityMeansNoEndAfterTheSessionsGo() {
+    // A start that no token ever followed: nothing to end, and nothing happens at the deadline either.
+    let planner = LiveActivityPlanner()
+    _ = next(planner, content(.running), at: t0)
+    #expect(next(planner, content(), at: t0 + minute).isEmpty)
+    #expect(next(planner, content(), at: t0 + 10 * minute).isEmpty)
+    // And a later session starts one.
+    let c = content(.waiting)
+    #expect(next(planner, c, at: t0 + 11 * minute) == [.start(stamped(c, t0 + 11 * minute))])
+}
+
+@Test func anActivityTheUserSwipedAwayIsStartedAgainButNotAtOnce() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    #expect(next(planner, shown, at: t0 + minute, phone).isEmpty)
+    // The phone reports no activity any more. The Mac cannot tell a swipe from an end: it starts again, but not
+    // within ten minutes of the last start, or the user could never get rid of it.
+    let c = content(.waiting)
+    #expect(next(planner, c, at: t0 + 2 * minute, Phone()).isEmpty)
+    #expect(next(planner, c, at: t0 + 10 * minute - 1, Phone()).isEmpty)
+    #expect(next(planner, c, at: t0 + 10 * minute, Phone()) == [.start(stamped(c, t0 + 10 * minute))])
+}
+
+// MARK: - The 8-hour limit
+
+@Test func activityIsRestartedBefore8Hours() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    #expect(planner.nextDeadline() == restart)
+    #expect(next(planner, shown, at: restart - 1, phone).isEmpty)
+
+    let at = restart
+    #expect(next(planner, shown, at: at, phone) == [.end(dismissAt: at), .start(stamped(shown, at))])
+    // The phone still reports the old token for a moment: it is not mistaken for the new activity, nor ended twice.
+    #expect(next(planner, shown, at: at + second, phone).isEmpty)
+    // The new activity's token arrives; its 7.5 hours start from the restart.
+    var fresh = phone
+    fresh.activityToken = "tok2"
+    #expect(next(planner, shown, at: at + 5 * second, fresh).isEmpty)
+    #expect(planner.nextDeadline() == at + 7 * hour + 30 * minute)
+}
+
+@Test func withoutAStartTokenTheOldActivityIsLeftToRun() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    var noStart = phone
+    noStart.startToken = false
+    #expect(next(planner, shown, at: restart, noStart).isEmpty)
+}
+
+@Test func anActivityTheAppStartedIsTimedFromWhenTheMacFirstSawIt() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(planner, c, at: t0, Phone(activityToken: "app"))
+    #expect(planner.nextDeadline() == restart)
+}
+
+// MARK: - Deadlines
+
+@Test func thereIsNoDeadlineWhenNothingIsWaitingForTime() {
+    let planner = LiveActivityPlanner()
+    #expect(planner.nextDeadline() == nil)
+    let (started, _) = running(content(.running))
+    // A running activity has one: the 8-hour restart.
+    #expect(started.nextDeadline() == restart)
+}
+
+@Test func theEarliestDeadlineWins() {
+    let (planner, phone) = running(content(.running))
+    _ = next(planner, content(), at: t0 + 2 * second, phone)
+    // The throttled empty-state update is due at +10s, before the 5-minute end.
+    #expect(planner.nextDeadline() == t0 + 10 * second)
+    _ = next(planner, content(), at: t0 + 10 * second, phone)
+    #expect(planner.nextDeadline() == t0 + 2 * second + 5 * minute)
+}
+
+// MARK: - Staleness
+
+@Test func theStaleDateIs15MinutesAfterSending() throws {
+    let message = try PushContent.liveActivity(.update(content(.running), priority: 5), now: t0)
+    let aps = try #require((try JSONSerialization.jsonObject(with: message.payload) as? [String: Any])?["aps"] as? [String: Any])
+    #expect(aps["stale-date"] as? Int == Int(t0 / 1000) + 15 * 60)
+}
