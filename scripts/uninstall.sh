@@ -73,6 +73,14 @@ if [ -f "$PET_CMD" ] && grep -qF "$PET_MARKER" "$PET_CMD"; then
   rm -f "$PET_CMD"
 fi
 
+# The DeepSeek Harness profile links ~/.critter/deepseek; unlink it before that directory goes away.
+DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
+DSH_PROFILE="$HOME/.dsh/profiles/desktop/package.json"
+if [ -x "$DSH" ] && [ -f "$DSH_PROFILE" ] && grep -qF '"critter-deepseek"' "$DSH_PROFILE"; then
+  echo "==> Removing the DeepSeek Harness plugin"
+  "$DSH" plugin --profile desktop remove critter-deepseek || true
+fi
+
 echo "==> Removing $CRITTER_HOME"
 rm -rf "$CRITTER_HOME"
 

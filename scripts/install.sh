@@ -59,6 +59,28 @@ echo "==> Building and installing critter-hook to $CRITTER_HOME/bin"
 swift build -c release --product critter-hook
 mkdir -p "$CRITTER_HOME/bin"
 cp "$REPO/.build/release/critter-hook" "$CRITTER_HOME/bin/critter-hook"
+
+# DeepSeek Harness loads plugins from its profile. Critter's plugin is copied to ~/.critter/deepseek
+# (so the profile's link: dependency survives a moved checkout) and added once; re-running the install
+# only refreshes the copy. A failure here must not stop the Claude Code / Codex / Kimi parts.
+DSH="/Applications/DeepSeek Harness.app/Contents/Resources/runtime/cli/bin/dsh"
+DSH_PROFILE="$HOME/.dsh/profiles/desktop/package.json"
+if [ -x "$DSH" ]; then
+  echo "==> Installing the DeepSeek Harness plugin"
+  if {
+    rm -rf "$CRITTER_HOME/deepseek" &&
+    mkdir -p "$CRITTER_HOME/deepseek" &&
+    (cd "$REPO/integrations/deepseek" && tar --exclude=./test -cf - .) | (cd "$CRITTER_HOME/deepseek" && tar -xf -) &&
+    { { [ -f "$DSH_PROFILE" ] && grep -qF '"critter-deepseek"' "$DSH_PROFILE"; } ||
+      "$DSH" plugin --profile desktop add "link:$CRITTER_HOME/deepseek"; }
+  }; then
+    echo "DeepSeek Harness 需要重启一次才会加载 Critter 插件。"
+  else
+    echo "warning: DeepSeek Harness 插件没装上" >&2
+  fi
+else
+  echo "未检测到 DeepSeek Harness，已跳过。"
+fi
 # Codex is discovered read-only from its open rollouts; it needs no Claude plugin.
 if command -v claude >/dev/null 2>&1; then
   "$CRITTER_HOME/bin/critter-hook" statusline-install || echo "warning: 状态栏数据未接入" >&2
@@ -101,4 +123,4 @@ else
   echo "未检测到 claude，已跳过 Claude Code 插件和 /pet 命令。"
 fi
 
-echo "Critter 已安装，支持 Claude Code 和 Codex。启动：open ~/Applications/Critter.app"
+echo "Critter 已安装，支持 Claude Code、Codex、Kimi Code 和 DeepSeek Harness。启动：open ~/Applications/Critter.app"

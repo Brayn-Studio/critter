@@ -5,6 +5,7 @@ build:
 
 test:
 	swift test
+	@if command -v node >/dev/null 2>&1; then node --test "integrations/deepseek/test/*.test.js"; fi
 
 app:
 	./scripts/build-app.sh
