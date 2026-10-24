@@ -88,6 +88,11 @@ public final class PushFanout {
     /// anything.
     public var bundleId: String?
 
+    /// The devices connected to the bridge right now (the caller sets it before each `snapshot` and `deadline`). A
+    /// connected phone's app is in front and starts its own Live Activity, so the Mac does not push-to-start one for
+    /// it -- two would start together. Its activity is updated and ended as any other.
+    public var connectedDevices: Set<String> = []
+
     private var devices: [String: Device] = [:]
     /// What the last snapshot said, for the Live Activity work done at a deadline.
     private var lastSnapshot: SnapshotBody?
@@ -305,7 +310,9 @@ public final class PushFanout {
 
     private func activity(_ id: String, _ device: Device, _ body: SnapshotBody, now: Int64) -> [OutgoingPush] {
         let activity = device.registration.activity
-        let startToken = activity?.startToken.flatMap { $0.isEmpty || $0 == device.refusedStartToken ? nil : $0 }
+        // Connected: the app starts its own (spec §8.5), so no push-to-start meanwhile.
+        let startToken = connectedDevices.contains(id)
+            ? nil : activity?.startToken.flatMap { $0.isEmpty || $0 == device.refusedStartToken ? nil : $0 }
         let actions = device.planner.next(
             content: device.planner.content(from: body), now: now, activityEnabled: activity?.enabled ?? false,
             hasStartToken: startToken != nil, activityToken: activity?.activityToken

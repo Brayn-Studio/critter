@@ -93,6 +93,11 @@ final class BridgeServer: @unchecked Sendable {
         clients.values.contains { !$0.closing && $0.deviceId != nil }
     }
 
+    /// The paired phones connected now, by device id.
+    var connectedDeviceIds: Set<String> {
+        Set(clients.values.compactMap { $0.closing ? nil : $0.deviceId })
+    }
+
     // MARK: - Listening
 
     /// Listens on the first port of `BridgeProtocol.portRange` that isn't taken and returns it;

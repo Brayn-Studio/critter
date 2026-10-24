@@ -19,6 +19,10 @@ public enum LiveActivityAction: Equatable, Sendable {
 public final class LiveActivityPlanner {
     /// An ordinary change is sent at most this often.
     public static let throttle: Int64 = 10 * 1000
+    /// While there are sessions and an activity whose token the phone reported, a content that has not changed is sent
+    /// again (low priority) this long after the last push, as it was: only the push's stale date and timestamp move on,
+    /// so an activity that is quiet but true does not turn grey ("可能不是最新的" after 15 minutes; spec §8.5, §9).
+    public static let refresh: Int64 = 12 * 60 * 1000
     /// The activity ends this long after the last session does.
     public static let endAfterEmpty: Int64 = 5 * 60 * 1000
     /// The system ends an activity after 8 hours; the Mac replaces it at 7.5.
@@ -143,6 +147,11 @@ public final class LiveActivityPlanner {
         }
         guard !same(sent, content) else {
             changeWaiting = false
+            // Quiet but true: the same content again now and then, so that its stale date moves on.
+            if content.total > 0, let last = lastUpdateAt, now - last >= Self.refresh {
+                lastUpdateAt = now
+                actions.append(.update(sent, priority: 5))
+            }
             return actions
         }
         let moreWaiting = waiting(content) > waiting(sent)
@@ -173,12 +182,16 @@ public final class LiveActivityPlanner {
         unconfirmedStartAt = nil
     }
 
-    /// When `next` next has something to do without a new snapshot: the end of the throttle period, the end of
-    /// the empty wait, the 7.5 hours, or the 8 hours after which a start whose token never came no longer holds
-    /// the next one off (the 7.5 hours forget the activity, not the start). Nil if none.
+    /// When `next` next has something to do without a new snapshot: the end of the throttle period, the refresh of
+    /// a quiet activity, the end of the empty wait, the 7.5 hours, or the 8 hours after which a start whose token never
+    /// came no longer holds the next one off (the 7.5 hours forget the activity, not the start). Nil if none.
     public func nextDeadline() -> Int64? {
         var deadlines: [Int64] = []
         if changeWaiting, let last = lastUpdateAt { deadlines.append(last + Self.throttle) }
+        if activitySince != nil, trackedToken != nil, emptySince == nil, let last = lastUpdateAt,
+           (lastSent?.total ?? 0) > 0 {
+            deadlines.append(last + Self.refresh)
+        }
         if activitySince != nil, let emptySince { deadlines.append(emptySince + Self.endAfterEmpty) }
         if let since = activitySince, !ageWaitsForStartToken { deadlines.append(since + Self.maxAge) }
         if let unconfirmed = unconfirmedStartAt { deadlines.append(unconfirmed + Self.unconfirmedStartLimit) }

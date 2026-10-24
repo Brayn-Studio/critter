@@ -6,6 +6,7 @@ import Testing
 // (`PushCoordinatorRules`), and what each registered iPhone is sent for a snapshot (`PushFanout`).
 
 private let t0: Int64 = 1_760_000_000_000
+private let minute: Int64 = 60_000
 private let bundle = APNsConfig.defaultBundleId
 private let keyA = PushCrypto.makeKey()
 private let keyB = PushCrypto.makeKey()
@@ -283,12 +284,34 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 2000)) == ["end>activity:a1a1"])
 }
 
+/// A phone connected to the bridge has its app in front, which starts its own Live Activity (spec §8.5): the Mac
+/// does not push-to-start one for it meanwhile, or two would start together. Once it is gone the Mac starts one as
+/// before; a connected phone's activity is still updated.
+@Test func noPushToStartForAConnectedPhone() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start)), record("b", registration("bb", activity: ActivityRegistration(enabled: true, startToken: "5252")))])
+    pushes.connectedDevices = ["a"]
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5252"])
+    // Still connected at the next snapshot, nothing more for it.
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + minute)).isEmpty)
+    // Gone: started as before.
+    pushes.connectedDevices = []
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .done)]), now: t0 + 2 * minute)) == ["start>activityStart:5151"])
+
+    // The app's own activity, reported while connected, is updated.
+    let own = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let app = fanout([record("a", registration("aa", activity: own))])
+    app.connectedDevices = ["a"]
+    #expect(liveEvents(app.snapshot(body([session("s1", .running)]), now: t0)) == ["update>activity:a1a1"])
+}
+
 @Test func aThrottledUpdateIsSentWhenItsDeadlineComes() {
     let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
     let pushes = fanout([record("a", registration("aa", activity: app))])
     // An activity the app started: the Mac says what is true now.
     #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["update>activity:a1a1"])
-    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.maxAge)
+    // Next: the refresh of a quiet activity.
+    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.refresh)
 
     // A change within 10 s waits for the end of the throttle period.
     #expect(liveEvents(pushes.snapshot(body([session("s1", .done)]), now: t0 + 2000)).isEmpty)
@@ -298,7 +321,23 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     #expect(liveEvents(due) == ["update>activity:a1a1"])
     let state = (json(due[0])["aps"] as? [String: Any])?["content-state"] as? [String: Any]
     #expect((state?["lead"] as? [String: Any])?["state"] as? String == "done")
-    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.maxAge)
+    #expect(pushes.nextDeadline() == t0 + LiveActivityPlanner.throttle + LiveActivityPlanner.refresh)
+}
+
+/// Spec §8.5, §9: sessions all there, nothing changes -- the deadline sends the same content again at low priority,
+/// with a stale date 15 minutes on, so the activity does not turn grey; its time stays the one of the last change.
+@Test func aQuietActivityIsRefreshedAtItsDeadline() throws {
+    let app = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: app))])
+    _ = pushes.snapshot(body([session("s1", .running)]), now: t0)
+    #expect(pushes.deadline(now: t0 + LiveActivityPlanner.refresh - 1).isEmpty)
+    let due = pushes.deadline(now: t0 + LiveActivityPlanner.refresh)
+    #expect(liveEvents(due) == ["update>activity:a1a1"])
+    #expect(due.first?.message.priority == 5)
+    let aps = try #require(json(due[0])["aps"] as? [String: Any])
+    #expect(aps["stale-date"] as? Int == Int((t0 + LiveActivityPlanner.refresh) / 1000) + 15 * 60)
+    #expect((aps["content-state"] as? [String: Any])?["updatedAt"] as? Int64 == t0)
+    #expect(pushes.nextDeadline() == t0 + 2 * LiveActivityPlanner.refresh)
 }
 
 // MARK: - Taking things back

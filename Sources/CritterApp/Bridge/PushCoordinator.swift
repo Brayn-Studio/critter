@@ -35,6 +35,9 @@ final class PushCoordinator: @unchecked Sendable {
     /// Called after the registry was written (a dead token dropped, an activity's token forgotten, a start kept),
     /// to refresh the device list. Not after a write that failed: that would ask for the same write again.
     var onRegistryChanged: (() -> Void)?
+    /// The ids of the devices connected to the bridge now, read on the bridge queue before each snapshot or deadline
+    /// is handed to the fan-out: no push-to-start for a connected phone, whose app starts its own Live Activity.
+    var connectedDevices: () -> Set<String> = { [] }
 
     // Bridge queue only.
     private var bridgeOn = false
@@ -126,6 +129,7 @@ final class PushCoordinator: @unchecked Sendable {
     /// A snapshot `BridgeController` assembled while push is active.
     func snapshotChanged(_ body: SnapshotBody) {
         guard isActive else { return }
+        fanout.connectedDevices = connectedDevices()
         send(fanout.snapshot(body, now: Self.nowMs()))
         keepRegistryEdits()
         reschedule()
@@ -260,6 +264,7 @@ final class PushCoordinator: @unchecked Sendable {
             firedDeadline = next
             // The timer's clock and the wall clock can differ by a little: the deadline counts as reached.
             if isActive {
+                fanout.connectedDevices = connectedDevices()
                 send(fanout.deadline(now: max(Self.nowMs(), next)))
                 keepRegistryEdits()
             }

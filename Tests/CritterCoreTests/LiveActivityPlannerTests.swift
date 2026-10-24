@@ -220,7 +220,8 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(next(planner, errored, at: t0 + 6 * second, phone).isEmpty)
     #expect(next(planner, errored, at: t0 + 9 * second + 999, phone).isEmpty)
     #expect(next(planner, errored, at: t0 + 10 * second, phone) == [.update(stamped(errored, t0 + 10 * second), priority: 5)])
-    #expect(planner.nextDeadline() == restart)
+    // Nothing waits now but the refresh of a quiet activity.
+    #expect(planner.nextDeadline() == t0 + 10 * second + LiveActivityPlanner.refresh)
 
     // A session starts waiting: priority 10, at once, inside the period.
     let waiting = content(.waiting, .running)
@@ -240,7 +241,8 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(next(planner, content(.done), at: t0 + 2 * second, phone).isEmpty)
     #expect(planner.nextDeadline() == t0 + 10 * second)
     #expect(next(planner, shown, at: t0 + 10 * second, phone).isEmpty)
-    #expect(planner.nextDeadline() == restart)
+    // The refresh counts from the last push (the start).
+    #expect(planner.nextDeadline() == t0 + LiveActivityPlanner.refresh)
 }
 
 @Test func updatesNeedTheActivityToken() {
@@ -282,7 +284,7 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(planner.nextDeadline() == t0 + 20 * second + 5 * minute)
     let back = content(.running)
     #expect(next(planner, back, at: t0 + 2 * minute, phone) == [.update(stamped(back, t0 + 2 * minute), priority: 5)])
-    #expect(planner.nextDeadline() == restart)
+    #expect(planner.nextDeadline() == t0 + 2 * minute + LiveActivityPlanner.refresh)
     #expect(next(planner, back, at: t0 + 8 * minute, phone).isEmpty)
 }
 
@@ -393,7 +395,8 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let shown = content(.running)
     let (planner, phone) = running(shown)
     #expect(planner.nextDeadline() == restart)
-    #expect(next(planner, shown, at: restart - 1, phone).isEmpty)
+    // Before the 7.5 hours a quiet activity only gets its refresh (the content as it was sent), no end.
+    #expect(next(planner, shown, at: restart - 1, phone) == [.update(stamped(shown, t0), priority: 5)])
 
     let at = restart
     #expect(next(planner, shown, at: at, phone) == [.end(dismissAt: at), .start(stamped(shown, at))])
@@ -403,7 +406,10 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     var fresh = phone
     fresh.activityToken = "tok2"
     #expect(next(planner, shown, at: at + 5 * second, fresh).isEmpty)
-    #expect(planner.nextDeadline() == at + 7 * hour + 30 * minute)
+    #expect(planner.nextDeadline() == at + LiveActivityPlanner.refresh)
+    #expect(next(planner, shown, at: at + 7 * hour + 30 * minute - 1, fresh) == [.update(stamped(shown, at), priority: 5)])
+    let again = at + 7 * hour + 30 * minute
+    #expect(next(planner, shown, at: again, fresh) == [.end(dismissAt: again), .start(stamped(shown, again))])
 }
 
 @Test func withoutAStartTokenTheOldActivityIsLeftToRun() {
@@ -411,7 +417,8 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let (planner, phone) = running(shown)
     var noStart = phone
     noStart.startToken = false
-    #expect(next(planner, shown, at: restart, noStart).isEmpty)
+    // Not ended (nothing could replace it): only refreshed, as any quiet activity.
+    #expect(next(planner, shown, at: restart, noStart) == [.update(stamped(shown, t0), priority: 5)])
 }
 
 @Test func aRestartThatCannotHappenIsNotDueOverAndOver() {
@@ -419,14 +426,14 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let (planner, phone) = running(shown)
     var noStart = phone
     noStart.startToken = false
-    #expect(next(planner, shown, at: restart, noStart).isEmpty)
+    #expect(next(planner, shown, at: restart, noStart) == [.update(stamped(shown, t0), priority: 5)])
     // Nothing more can be done about its age without a start token: the caller's timer must not fire again and
-    // again on a deadline that has passed.
-    #expect(planner.nextDeadline() == nil)
+    // again on a deadline that has passed. What is left is the next refresh.
+    #expect(planner.nextDeadline() == restart + LiveActivityPlanner.refresh)
     // The old activity still gets its updates.
     let waiting = content(.waiting)
     #expect(next(planner, waiting, at: restart + second, noStart) == [.update(stamped(waiting, restart + second), priority: 10)])
-    #expect(planner.nextDeadline() == nil)
+    #expect(planner.nextDeadline() == restart + second + LiveActivityPlanner.refresh)
     // A start token comes with the next registration: it is replaced on the next snapshot.
     let at = restart + 2 * second
     #expect(next(planner, waiting, at: at, phone) == [.end(dismissAt: at), .start(stamped(waiting, at))])
@@ -437,7 +444,65 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let planner = LiveActivityPlanner()
     let c = content(.running)
     _ = next(planner, c, at: t0, Phone(activityToken: "app"))
-    #expect(planner.nextDeadline() == restart)
+    #expect(planner.nextDeadline() == t0 + LiveActivityPlanner.refresh)
+    // Its 7.5 hours count from that moment.
+    #expect(next(planner, c, at: restart - 1, Phone(activityToken: "app")) == [.update(stamped(c, t0), priority: 5)])
+    #expect(next(planner, c, at: restart, Phone(activityToken: "app")) == [.end(dismissAt: restart), .start(stamped(c, restart))])
+}
+
+// MARK: - A quiet activity is refreshed
+
+/// Sessions are all there but nothing changes: about every 12 minutes the Mac sends the content again, as it was (its
+/// time included), at low priority, so that its stale date moves on and a true activity does not turn grey.
+@Test func aQuietActivityIsRefreshedEvery12Minutes() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    let first = stamped(shown, t0)
+    #expect(next(planner, shown, at: t0 + second, phone).isEmpty)
+    #expect(planner.nextDeadline() == t0 + LiveActivityPlanner.refresh)
+    #expect(next(planner, shown, at: t0 + LiveActivityPlanner.refresh - 1, phone).isEmpty)
+    #expect(next(planner, stamped(shown, t0 + 5 * minute), at: t0 + LiveActivityPlanner.refresh, phone)
+        == [.update(first, priority: 5)])
+    // The next one 12 minutes after that.
+    #expect(planner.nextDeadline() == t0 + 2 * LiveActivityPlanner.refresh)
+    #expect(next(planner, shown, at: t0 + 2 * LiveActivityPlanner.refresh - 1, phone).isEmpty)
+    #expect(next(planner, shown, at: t0 + 2 * LiveActivityPlanner.refresh, phone) == [.update(first, priority: 5)])
+}
+
+@Test func noRefreshWhileTheContentKeepsChanging() {
+    let (planner, phone) = running(content(.running))
+    // A change every 5 minutes is sent as a change; the refresh always counts from the last push.
+    let states: [PetState] = [.done, .running, .error, .running, .done]
+    for (i, state) in states.enumerated() {
+        let at = t0 + Int64(i + 1) * 5 * minute
+        let c = content(state)
+        #expect(next(planner, c, at: at, phone) == [.update(stamped(c, at), priority: 5)])
+        #expect(planner.nextDeadline() == at + LiveActivityPlanner.refresh)
+    }
+    // A change 5 s before a refresh would be due: the refresh is put off, the throttle kept.
+    let last = t0 + 25 * minute
+    let late = content(.idle)
+    #expect(next(planner, late, at: last + LiveActivityPlanner.refresh - 5 * second, phone)
+        == [.update(stamped(late, last + LiveActivityPlanner.refresh - 5 * second), priority: 5)])
+    #expect(next(planner, late, at: last + LiveActivityPlanner.refresh, phone).isEmpty)
+}
+
+@Test func noRefreshWithoutSessionsOrAnActivityItsTokenCameFor() {
+    // No sessions: the empty content is not refreshed, the activity ends five minutes on.
+    let (empty, phone) = running(content(.running))
+    let none = content()
+    _ = next(empty, none, at: t0 + minute, phone)
+    #expect(empty.nextDeadline() == t0 + 6 * minute)
+    // A start whose token never came: nothing to refresh, no refresh deadline.
+    let waitingForToken = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(waitingForToken, c, at: t0)
+    #expect(waitingForToken.nextDeadline() == restart)
+    #expect(next(waitingForToken, c, at: t0 + LiveActivityPlanner.refresh).isEmpty)
+    // No activity at all (switched off): nothing.
+    let off = LiveActivityPlanner()
+    #expect(next(off, c, at: t0, Phone(enabled: false)).isEmpty)
+    #expect(off.nextDeadline() == nil)
 }
 
 // MARK: - Deadlines

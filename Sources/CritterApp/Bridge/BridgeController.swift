@@ -110,6 +110,8 @@ final class BridgeController: @unchecked Sendable {
         push = PushCoordinator(queue: queue, registry: registry, loadSetup: loadPushSetup, log: { DiagnosticLog.shared.log($0) })
         version = AppVersion.current
         push.onRegistryChanged = { [weak self] in self?.refreshDevices() }
+        // On the bridge queue: the phones connected now (their apps start their own Live Activities).
+        push.connectedDevices = { [weak self] in self?.server?.connectedDeviceIds ?? [] }
         queue.async { [self] in
             // The settings list the paired phones even while the bridge is off.
             refreshDevices()
