@@ -182,6 +182,10 @@ import UserNotifications
 /// - `-critterSystemBlocksActivities`: the app reads the system's Live Activity setting for it as off: the settings'
 ///   实时活动 group says so with 「去打开」.
 /// - `-critterSettingsAt` also takes `push`, `activity` and `alerts`.
+/// - `-critterUnpair <seconds>`: with `-critterOpen settings`, that long after the settings are up 「取消配对」 is tapped
+///   (its dialog shows), and a second later the dialog's 「取消配对」: the store unpairs as from a real tap, taking the
+///   push registration back from the Mac over the connection first. For the live check against a real Mac
+///   (`-critterPairURI`); the device stays listed on the Mac until it is revoked there.
 /// - `-critterOnboarding <step>[:<state>]`: the app starts in the first-run guide at that step (`welcome`, `pair`,
 ///   `notifications`, `liveActivity`, `board`), paired or not, whatever `critter.settings.onboardingDone` says. Finishing
 ///   it saves `onboardingDone` like a real run. The pairing step is the real pairing screen: unpaired with
@@ -284,6 +288,8 @@ struct DebugLaunch {
     var notificationPermission: UNAuthorizationStatus?
     /// `-critterLeftMac`.
     var leftMac: String?
+    /// `-critterUnpair`: seconds after the settings are up.
+    var unpairAfter: Double?
     var systemBlocksActivities = false
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
@@ -404,6 +410,7 @@ struct DebugLaunch {
         default: break
         }
         leftMac = value("critterLeftMac")
+        unpairAfter = value("critterUnpair").flatMap(Double.init)
         systemBlocksActivities = arguments.contains("-critterSystemBlocksActivities")
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {

@@ -97,6 +97,14 @@ struct SettingsView: View {
         }
         #if DEBUG
         .task {
+            // `-critterUnpair`: 「取消配对」, then the dialog's 「取消配对」.
+            if let after = DebugLaunch.current.unpairAfter {
+                try? await Task.sleep(for: .seconds(after))
+                confirmingUnpair = true
+                try? await Task.sleep(for: .seconds(1))
+                if confirmingUnpair { unpair() }
+                return
+            }
             // `-critterPickSkin`: the skin picker taps the tile; then back to the home screen.
             guard DebugLaunch.current.pickSkin != nil else { return }
             try? await Task.sleep(for: .seconds(2.5))
@@ -217,14 +225,17 @@ struct SettingsView: View {
     private var unpairDialog: some View {
         PixelDialog(
             title: "取消和 \(macName) 的配对？", confirm: "取消配对", dismiss: "保留", destructive: true,
-            onConfirm: {
-                confirmingUnpair = false
-                store.unpair()
-            },
+            onConfirm: unpair,
             onDismiss: { confirmingUnpair = false }
         ) {
             Text("手机会断开，不再收到提醒。之后要用，得在 Mac 上重新「添加手机」再扫码。")
         }
+    }
+
+    /// The dialog's 「取消配对」.
+    private func unpair() {
+        confirmingUnpair = false
+        store.unpair()
     }
 }
 
