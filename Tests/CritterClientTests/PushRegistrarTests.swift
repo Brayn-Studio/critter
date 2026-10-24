@@ -232,15 +232,69 @@ private func confirmed(_ phone: PushRegistrar) -> PushAck {
     let acked = confirmed(registrar(activity: tokens.registration(enabled: true)))
     let changed5 = tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
     #expect(!changed5)
-    // The system gives the activity another token, or another activity takes its place.
+    // The system gives the activity another token: it goes to the Mac.
     let changed6 = tokens.activityTokenArrived(data("8e8e"), activityId: "A1")
     #expect(changed6)
     #expect(registrar(activity: tokens.registration(enabled: true)).shouldSend(acked: acked, macVersion: "1.5.0"))
-    let changed7 = tokens.activityTokenArrived(data("7d7d"), activityId: "A2")
-    #expect(changed7)
+}
+
+/// Another activity next to the one registered (the Mac's push-to-start next to the app's own) does not take its
+/// place: the app keeps the one the registration names and ends the other.
+@Test func aSecondActivityDoesNotTakeTheNameOfARunningOne() {
+    var tokens = ActivityTokens()
+    tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    let changed = tokens.activityTokenArrived(data("7d7d"), activityId: "A2")
+    #expect(!changed)
+    #expect(tokens.registration(enabled: true) == ActivityRegistration(enabled: true, activityId: "A1", activityToken: "9f9f"))
+}
+
+/// A token that comes for an activity that is no longer running (dismissed before its token came, or ended by the
+/// app as the extra one) is ignored: the registration never names a dead activity.
+@Test func aLateTokenForAnEndedActivityIsIgnored() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("5a5a"))
+    // Dismissed before its first token.
+    let notRegistered = tokens.activityEnded("A1")
+    #expect(!notRegistered)
+    let late = tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    #expect(!late)
+    #expect(tokens.registration(enabled: true) == ActivityRegistration(enabled: true, startToken: "5a5a"))
+    // Registered, then ended: its id and token go, and the same token again does not bring them back.
+    tokens.activityTokenArrived(data("8e8e"), activityId: "A2")
+    let registeredOneEnded = tokens.activityEnded("A2")
+    #expect(registeredOneEnded)
+    let again = tokens.activityTokenArrived(data("8e8e"), activityId: "A2")
+    #expect(!again)
+    #expect(tokens.activityId == nil && tokens.activityToken == nil)
+}
+
+/// The registered activity ends while another one runs whose token came: that one is registered instead, so the Mac
+/// keeps updating what is on the screen (and does not push-to-start a third).
+@Test func whenTheRegisteredActivityEndsAnotherRunningOneTakesItsPlace() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("5a5a"))
+    tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    tokens.activityTokenArrived(data("7d7d"), activityId: "C3")
+    tokens.activityTokenArrived(data("6c6c"), activityId: "B2")
+    let acked = confirmed(registrar(activity: tokens.registration(enabled: true)))
+    let firstEnded = tokens.activityEnded("A1")
+    #expect(firstEnded)
+    // Of the two, the smaller id: the same choice every time.
     #expect(tokens.registration(enabled: true) == ActivityRegistration(
-        enabled: true, startToken: "5a5a", activityId: "A2", activityToken: "7d7d"
+        enabled: true, startToken: "5a5a", activityId: "B2", activityToken: "6c6c"
     ))
+    #expect(registrar(activity: tokens.registration(enabled: true)).shouldSend(acked: acked, macVersion: "1.5.0"))
+    let secondEnded = tokens.activityEnded("B2")
+    #expect(secondEnded)
+    #expect(tokens.activityId == "C3")
+    // None left: nothing named, until a running one's token is read again (`LiveActivityManager` does, from the
+    // activity's `pushToken`).
+    let lastEnded = tokens.activityEnded("C3")
+    #expect(lastEnded)
+    #expect(tokens.activityId == nil)
+    let reread = tokens.activityTokenArrived(data("5e5e"), activityId: "D4")
+    #expect(reread)
+    #expect(tokens.activityId == "D4")
 }
 
 @Test func anEndedActivityTakesItsIdAndTokenOut() {

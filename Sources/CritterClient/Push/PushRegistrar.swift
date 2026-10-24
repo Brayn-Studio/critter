@@ -188,15 +188,21 @@ public struct PushRegistrar: Equatable, Sendable {
 }
 
 /// The Live Activity's tokens as the system gives them to the app (spec §6.6, §8.5), for the registration's
-/// `activity`: the push-to-start token, and the running activity's id and push token. The app keeps one activity: the
-/// latest activity whose token came is the one named. Pure; the app's `LiveActivityManager` hands in what ActivityKit
-/// reports, and builds the registration from `registration(enabled:)`. Each change it reports (`true`) is a new
-/// registration, which goes to the Mac at once when connected (`PushRegistrar.shouldSend`).
+/// `activity`: the push-to-start token, and the running activity's id and push token. One activity is registered (the
+/// app keeps one, `LocalActivity.keeper`): the first whose token comes, until it ends; the token of another one running
+/// next to it is kept aside, and when the registered one ends the one with the smallest id among those takes its place.
+/// Tokens of activities that ended are ignored, also when they come late. Pure; the app's `LiveActivityManager` hands in
+/// what ActivityKit reports, and builds the registration from `registration(enabled:)`. Each change it reports (`true`)
+/// is a new registration, which goes to the Mac at once when connected (`PushRegistrar.shouldSend`).
 public struct ActivityTokens: Equatable, Sendable {
     /// Lowercase hex, as the Mac takes them.
     public private(set) var startToken: String?
     public private(set) var activityId: String?
     public private(set) var activityToken: String?
+    /// The tokens of the other activities running, by id.
+    private var others: [String: String] = [:]
+    /// Activities that ended or were dismissed (or are being ended): their tokens are not taken.
+    private var ended: Set<String> = []
 
     public init(startToken: String? = nil, activityId: String? = nil, activityToken: String? = nil) {
         self.startToken = startToken
@@ -213,25 +219,45 @@ public struct ActivityTokens: Equatable, Sendable {
         return true
     }
 
-    /// The push token of activity `activityId` (`Activity.pushTokenUpdates`): from now on the one the Mac updates.
-    /// Whether anything changed.
+    /// The push token of activity `activityId` (`Activity.pushTokenUpdates`, or its `pushToken` read again): it is
+    /// registered if none is, or if it is the registered one's new token; otherwise kept aside. Ignored for an
+    /// activity that ended. Whether the registration changed.
     @discardableResult
     public mutating func activityTokenArrived(_ token: Data, activityId: String) -> Bool {
+        guard !ended.contains(activityId) else { return false }
         let hex = Self.hex(token)
+        guard self.activityId == nil || self.activityId == activityId else {
+            others[activityId] = hex
+            return false
+        }
         guard hex != activityToken || activityId != self.activityId else { return false }
         self.activityId = activityId
         activityToken = hex
+        others[activityId] = nil
         return true
     }
 
-    /// Activity `activityId` ended or was dismissed (`activityStateUpdates`): if it is the one named, its id and token
-    /// are taken out, so the Mac stops pushing to it. Whether anything changed.
+    /// Activity `activityId` ended or was dismissed (`activityStateUpdates`), or the app is ending it: its token is
+    /// not taken any more. If it is the registered one, another running one whose token came takes its place (the
+    /// smallest id), else nothing is registered. Whether the registration changed.
     @discardableResult
     public mutating func activityEnded(_ activityId: String) -> Bool {
+        ended.insert(activityId)
+        others[activityId] = nil
         guard activityId == self.activityId else { return false }
-        self.activityId = nil
-        activityToken = nil
+        if let next = others.keys.min(), let token = others.removeValue(forKey: next) {
+            self.activityId = next
+            activityToken = token
+        } else {
+            self.activityId = nil
+            activityToken = nil
+        }
         return true
+    }
+
+    /// Whether activity `activityId` is known to have ended (or to be ending).
+    public func hasEnded(_ activityId: String) -> Bool {
+        ended.contains(activityId)
     }
 
     /// The registration's Live Activity part. Off (the switch, or the system's setting for the app): `enabled = false`

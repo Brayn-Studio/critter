@@ -107,6 +107,9 @@ struct CritterApp: App {
                     if let kind = DebugLaunch.current.activityDemo { await ActivityDemo.run(kind) }
                 }
                 .task {
+                    if !DebugLaunch.current.activityScript.isEmpty { await ActivityScript.run(DebugLaunch.current.activityScript) }
+                }
+                .task {
                     var elapsed = 0.0
                     for step in DebugLaunch.current.liveActivitySwitch {
                         try? await Task.sleep(for: .seconds(max(0, step.at - elapsed)))

@@ -11,6 +11,18 @@ public enum LocalActivityStep: Equatable, Sendable {
     case endAll
 }
 
+/// One of the app's running Live Activities, for `LocalActivity.keeper`: its id, and when the app first saw it
+/// (milliseconds since the epoch; the ones there at launch all get the launch time).
+public struct RunningActivity: Equatable, Sendable {
+    public var id: String
+    public var seenAt: Int64
+
+    public init(id: String, seenAt: Int64) {
+        self.id = id
+        self.seenAt = seenAt
+    }
+}
+
 /// The app's part in the Live Activity (spec §8.5, §9). The Mac pushes it; the app only:
 /// - starts one when it is in front, connected (a snapshot from now, and a Mac to give the activity's token to), the
 ///   switch is on and there are sessions, but none is running;
@@ -40,6 +52,17 @@ public enum LocalActivity {
         let content = content(snapshot, now: now)
         guard let shown else { return content.total > 0 ? .start(content) : .none }
         return same(shown, content) ? .none : .update(content)
+    }
+
+    /// Which of the running activities the app keeps when there are more than one (the Mac's push-to-start next to
+    /// the app's own start); the others are ended. The one the registration names (the Mac pushes to it); before any is
+    /// named, the app's own (`own`, the one it started); otherwise the newest -- the one the app saw last, and among
+    /// those seen at the same moment (at launch) the smallest id. Nil when none runs.
+    public static func keeper(running: [RunningActivity], named: String?, own: String?) -> String? {
+        let ids = Set(running.map(\.id))
+        if let named, ids.contains(named) { return named }
+        if let own, ids.contains(own) { return own }
+        return running.sorted { $0.seenAt != $1.seenAt ? $0.seenAt > $1.seenAt : $0.id < $1.id }.first?.id
     }
 
     /// Whether two contents show the same thing: all but the time they were made.

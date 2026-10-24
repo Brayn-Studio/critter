@@ -9,11 +9,14 @@ import os
 /// - follows the tokens the system gives (`Activity.pushToStartTokenUpdates`, and each activity's `pushTokenUpdates` and
 ///   `activityStateUpdates`) and keeps them in `ActivityTokens`; every change goes to the registration
 ///   (`PushSetup.update`), which is sent to the Mac at once while connected. An activity that ends or is dismissed takes
-///   its id and token out of it;
+///   its id and token out of it, and another one still running is registered in its place (from its `pushToken`); a
+///   token that comes for an activity no longer running is ignored. The tasks that follow an activity are cancelled
+///   when it ends;
 /// - starts, updates and ends its own activity as `LocalActivity.step` says (`sync`): it starts one in front while
 ///   connected, with sessions and none running; updates it in front while connected when the content changed; ends
-///   every one at once when the switch is turned off. In the background it never touches it: the Mac pushes it. In
-///   front it keeps one: any other one running (one the Mac push-started next to the app's own) is ended.
+///   every one at once when the switch is turned off. In the background it never touches it: the Mac pushes it.
+/// - keeps one (`LocalActivity.keeper`: the registered one, else the app's own, else the newest). In front -- as of the
+///   last `sync` -- it ends any other one, at each `sync` and as soon as another one comes up or a token comes.
 ///
 /// The activity's stale date is 15 minutes after each content, as the Mac sets it. Tokens are logged by their first 8
 /// characters and length (category `activity`), like the device token.
@@ -35,7 +38,12 @@ final class LiveActivityManager {
 
     /// What each running activity shows as far as the app knows: what the app set, or what the Mac's pushes did.
     @ObservationIgnored private var shown: [String: LiveActivityContent] = [:]
-    @ObservationIgnored private var watched: Set<String> = []
+    /// The tasks following each activity watched (its token, state and content), cancelled when it ends.
+    @ObservationIgnored private var watching: [String: [Task<Void, Never>]] = [:]
+    /// When the app first saw each activity (for `LocalActivity.keeper`).
+    @ObservationIgnored private var seenAt: [String: Int64] = [:]
+    /// The activity the app started itself (`begin`), while it runs.
+    @ObservationIgnored private var ownId: String?
     @ObservationIgnored private var started = false
     /// A start failed (the system refused it) while in front: not tried again until the app comes to the front again,
     /// so a refusal is not repeated on every snapshot.
@@ -66,12 +74,14 @@ final class LiveActivityManager {
         started = true
         Self.log.notice("live activities \(self.systemAllows ? "allowed" : "not allowed", privacy: .public); \(Activity<CritterActivity>.activities.count) running")
         if let token = Activity<CritterActivity>.pushToStartToken { startTokenArrived(token) }
-        for activity in Activity<CritterActivity>.activities { watch(activity) }
+        // All seen at once: `keeper` tells them apart by id.
+        let launch = Self.now()
+        for activity in Activity<CritterActivity>.activities { watch(activity, seenAt: launch) }
         Task {
             for await token in Activity<CritterActivity>.pushToStartTokenUpdates { startTokenArrived(token) }
         }
         Task {
-            for await activity in Activity<CritterActivity>.activityUpdates { watch(activity) }
+            for await activity in Activity<CritterActivity>.activityUpdates { watch(activity, seenAt: Self.now()) }
         }
         Task {
             for await allowed in ActivityAuthorizationInfo().activityEnablementUpdates {
@@ -89,20 +99,7 @@ final class LiveActivityManager {
         if inFront && !wasInFront { startRefused = false }
         wasInFront = inFront
         guard followsSnapshots else { return }
-        let running = Activity<CritterActivity>.activities.filter {
-            switch $0.activityState {
-            case .active, .stale, .pending: true
-            default: false
-            }
-        }
-        // One activity: the one the registration names, else the latest. Another one (the Mac's push-to-start next to
-        // the app's own start, both on connecting) is ended -- in front only, as its starts and updates are.
-        let current = running.first { $0.id == tokens.activityId } ?? running.last
-        for extra in running where inFront && extra.id != current?.id {
-            let id = extra.id
-            Self.log.notice("ending \(id, privacy: .public): another one is running")
-            Task { await Self.end(id) }
-        }
+        let current = keepOne(inFront: inFront)
         let step = LocalActivity.step(
             enabled: enabled && systemAllows, inFront: inFront, live: live, snapshot: snapshot,
             shown: current.map { shown[$0.id] ?? $0.content.state }, now: Self.now()
@@ -121,6 +118,45 @@ final class LiveActivityManager {
             Task { await Self.update(id, to: next) }
         case .endAll:
             endAll()
+        }
+    }
+
+    /// The activity kept (`LocalActivity.keeper`) among those running; in front, every other one is ended (the Mac's
+    /// push-to-start next to the app's own start), and its token is not taken from then on.
+    @discardableResult
+    private func keepOne(inFront: Bool) -> Activity<CritterActivity>? {
+        let running = Self.running()
+        let kept = LocalActivity.keeper(
+            running: running.map { RunningActivity(id: $0.id, seenAt: seenAt[$0.id] ?? 0) }, named: tokens.activityId,
+            own: ownId
+        )
+        if inFront {
+            for extra in running where extra.id != kept {
+                let id = extra.id
+                guard !tokens.hasEnded(id) else { continue }
+                Self.log.notice("ending \(id, privacy: .public): \(kept ?? "none", privacy: .public) is the one kept")
+                if tokens.activityEnded(id) { PushSetup.shared.update() }
+                Task { await Self.end(id) }
+            }
+        }
+        return running.first { $0.id == kept }
+    }
+
+    /// A new activity came up or a token came, after a `sync` in front: keep one at once, not at the next snapshot.
+    private func keepOneIfInFront() {
+        guard followsSnapshots, wasInFront else { return }
+        keepOne(inFront: true)
+    }
+
+    /// The app's activities that are running (or about to).
+    private static func running() -> [Activity<CritterActivity>] {
+        Activity<CritterActivity>.activities.filter { isRunning($0.activityState) }
+    }
+
+    private static func isRunning(_ state: ActivityState) -> Bool {
+        switch state {
+        case .active, .stale, .pending: true
+        default: false
         }
     }
 
@@ -155,30 +191,41 @@ final class LiveActivityManager {
                 pushType: .token
             )
             shown[activity.id] = content
+            ownId = activity.id
             Self.log.notice("started \(activity.id, privacy: .public): \(Self.describe(content), privacy: .public)")
-            watch(activity)
+            watch(activity, seenAt: Self.now())
         } catch {
             startRefused = true
             Self.log.error("starting a Live Activity failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
-    /// Follows `activity`'s token, its state and what it shows, once.
-    private func watch(_ activity: Activity<CritterActivity>) {
+    /// Follows `activity`'s token, its state and what it shows, once, while it runs. One that has ended already (at
+    /// launch, the ones not yet dismissed) is only marked so: its token is never taken.
+    private func watch(_ activity: Activity<CritterActivity>, seenAt: Int64) {
         let id = activity.id
-        guard watched.insert(id).inserted else { return }
+        guard watching[id] == nil, !tokens.hasEnded(id) else { return }
+        guard Self.isRunning(activity.activityState) else {
+            Self.log.notice("\(id, privacy: .public) has ended (\(String(describing: activity.activityState), privacy: .public))")
+            if tokens.activityEnded(id) { PushSetup.shared.update() }
+            return
+        }
         Self.log.notice("watching \(id, privacy: .public) (\(String(describing: activity.activityState), privacy: .public))")
+        self.seenAt[id] = seenAt
         if shown[id] == nil { shown[id] = activity.content.state }
         if let token = activity.pushToken { activityTokenArrived(token, id: id) }
-        Task {
-            for await token in activity.pushTokenUpdates { activityTokenArrived(token, id: id) }
-        }
-        Task {
-            for await state in activity.activityStateUpdates { stateChanged(state, id: id) }
-        }
-        Task {
-            for await content in activity.contentUpdates { shown[id] = content.state }
-        }
+        watching[id] = [
+            Task {
+                for await token in activity.pushTokenUpdates { activityTokenArrived(token, id: id) }
+            },
+            Task {
+                for await state in activity.activityStateUpdates { stateChanged(state, id: id) }
+            },
+            Task {
+                for await content in activity.contentUpdates { shown[id] = content.state }
+            },
+        ]
+        keepOneIfInFront()
     }
 
     private func startTokenArrived(_ token: Data) {
@@ -187,21 +234,57 @@ final class LiveActivityManager {
         PushSetup.shared.update()
     }
 
+    /// A token for activity `id`: taken only while it runs (the system may hand one over after it ended).
     private func activityTokenArrived(_ token: Data, id: String) {
-        guard tokens.activityTokenArrived(token, activityId: id) else { return }
-        Self.log.notice("activity \(id, privacy: .public) token \(Self.describe(token), privacy: .public)")
-        PushSetup.shared.update()
+        let state = Activity<CritterActivity>.activities.first { $0.id == id }?.activityState
+        guard let state, Self.isRunning(state), !tokens.hasEnded(id) else {
+            Self.log.notice("activity \(id, privacy: .public) token \(Self.describe(token), privacy: .public) ignored: it is not running")
+            return
+        }
+        if tokens.activityTokenArrived(token, activityId: id) {
+            Self.log.notice("activity \(id, privacy: .public) token \(Self.describe(token), privacy: .public)")
+            PushSetup.shared.update()
+        } else if tokens.activityId != id {
+            Self.log.notice("activity \(id, privacy: .public) token \(Self.describe(token), privacy: .public) kept aside: \(self.tokens.activityId ?? "none", privacy: .public) is registered")
+        }
+        keepOneIfInFront()
     }
 
     private func stateChanged(_ state: ActivityState, id: String) {
         Self.log.notice("activity \(id, privacy: .public) is \(String(describing: state), privacy: .public)")
         switch state {
         case .ended, .dismissed:
-            shown[id] = nil
-            if tokens.activityEnded(id) { PushSetup.shared.update() }
+            stopWatching(id)
+            var changed = tokens.activityEnded(id)
+            // The registered one ended: another one still running is registered in its place, from its token.
+            if changed, tokens.activityId == nil { changed = registerRunning() || changed }
+            if changed {
+                Self.log.notice("registered activity now \(self.tokens.activityId ?? "none", privacy: .public)")
+                PushSetup.shared.update()
+            }
         default:
             break
         }
+    }
+
+    /// No activity is registered: the one kept among those running is, if the system has its token.
+    private func registerRunning() -> Bool {
+        let running = Self.running().filter { !tokens.hasEnded($0.id) }
+        let kept = LocalActivity.keeper(
+            running: running.map { RunningActivity(id: $0.id, seenAt: seenAt[$0.id] ?? 0) }, named: nil, own: ownId
+        )
+        guard let activity = running.first(where: { $0.id == kept }), let token = activity.pushToken else { return false }
+        return tokens.activityTokenArrived(token, activityId: activity.id)
+    }
+
+    /// Activity `id` ended: what followed it stops, and what was known of it goes.
+    private func stopWatching(_ id: String) {
+        guard let tasks = watching.removeValue(forKey: id) else { return }
+        for task in tasks { task.cancel() }
+        shown[id] = nil
+        seenAt[id] = nil
+        if ownId == id { ownId = nil }
+        Self.log.notice("stopped watching \(id, privacy: .public) (\(self.watching.count) still watched)")
     }
 
     private static func now() -> Int64 {

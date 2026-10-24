@@ -102,3 +102,23 @@ private func step(
     #expect(LocalActivity.same(a, LocalActivity.content(two, now: 2)))
     #expect(!LocalActivity.same(a, LocalActivity.content(snapshot([session("a", .waiting)]), now: 1)))
 }
+
+// MARK: - Which one to keep
+
+private func running(_ ids: [(String, Int64)]) -> [RunningActivity] {
+    ids.map { RunningActivity(id: $0.0, seenAt: $0.1) }
+}
+
+/// More than one running (the Mac's push-to-start next to the app's own): the one the registration names stays;
+/// before any is named, the app's own; otherwise the one seen last, and among those seen at once (at launch) the
+/// smallest id.
+@Test func theRegisteredOneIsKeptThenTheAppsOwnThenTheNewest() {
+    let three = running([("A", 10), ("B", 20), ("C", 20)])
+    #expect(LocalActivity.keeper(running: three, named: "A", own: "B") == "A")
+    #expect(LocalActivity.keeper(running: three, named: nil, own: "A") == "A")
+    // Named or own but no longer running: not kept.
+    #expect(LocalActivity.keeper(running: three, named: "Z", own: "Y") == "B")
+    #expect(LocalActivity.keeper(running: running([("C", 20), ("B", 20)]), named: nil, own: nil) == "B")
+    #expect(LocalActivity.keeper(running: running([("A", 30), ("B", 20)]), named: nil, own: nil) == "A")
+    #expect(LocalActivity.keeper(running: [], named: "A", own: "A") == nil)
+}

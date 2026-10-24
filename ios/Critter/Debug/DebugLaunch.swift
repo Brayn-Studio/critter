@@ -162,6 +162,13 @@ import UserNotifications
 ///   in front once connected, updated with each new snapshot, ended at once when switched off. The log (category
 ///   `activity`) says what it did and which tokens the system gave; the registration's line (category `notifications`)
 ///   which of them go to the Mac.
+/// - `-critterActivityScript <dup|endNamed|hold|follow>@<seconds>[,…]`: at those times after launch another activity
+///   comes up next to the app's own, as the Mac's push-to-start would bring one (`dup`), the registered activity ends as
+///   if dismissed (`endNamed`), or the app's own rules stand aside as in the background (`hold`) and come back
+///   (`follow`); the app keeps running in the background meanwhile (`ActivityScript.swift`). With `-critterFixture`: in
+///   front the extra one is ended at once (the registered one, else the app's own, is kept); held, it is left, and when
+///   the registered one ends it is registered in its place; a token for an activity no longer running is ignored, and
+///   what followed an ended activity is stopped ("stopped watching", category `activity`).
 /// - `-critterFixturePush stored|unready|silent|refused`: with `-critterFixture`, how the fixture Mac answers the push
 ///   registration (default `stored`: "已登记"): `unready` "已登记；这台 Mac 还没配置推送", `silent` never (a Mac too old
 ///   for the frame: "这台 Mac 上的 Critter 版本太旧，收不到推送"), `refused` "保存失败". With `-critterFixtureOffline`
@@ -267,6 +274,8 @@ struct DebugLaunch {
     var activityDemo: ActivityDemo.Kind?
     /// `-critterLiveActivitySwitch`: the switch's value and when, in seconds after launch.
     var liveActivitySwitch: [(on: Bool, at: Double)] = []
+    /// `-critterActivityScript`.
+    var activityScript: [ActivityScript.Step] = []
     /// `-critterOnboarding`.
     var onboarding: OnboardingDemo?
     /// `-critterFixturePush`: the fixture Mac's answer to a registration with a token.
@@ -374,6 +383,7 @@ struct DebugLaunch {
         answerExpiry = value("critterAnswerExpiry").flatMap(Double.init)
         withdrawPush = value("critterWithdrawPush").flatMap(WithdrawPushDebug.Step.init)
         activityDemo = value("critterActivityDemo").flatMap(ActivityDemo.Kind.init(rawValue:))
+        activityScript = ActivityScript.steps(value("critterActivityScript") ?? "")
         liveActivitySwitch = (value("critterLiveActivitySwitch") ?? "").split(separator: ",").compactMap { step in
             let parts = step.split(separator: "@")
             guard parts.count == 2, let at = Double(parts[1]), parts[0] == "on" || parts[0] == "off" else { return nil }
