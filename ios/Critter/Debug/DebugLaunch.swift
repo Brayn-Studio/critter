@@ -188,7 +188,8 @@ import UserNotifications
 ///   written (the line does not say the notifications show only "有会话需要你").
 /// - `-critterLocalNetworkDenied`: the app takes the local network as denied (the simulator never asks for the 本地网络
 ///   permission): the home screen's offline card, the manual entry and an unreachable pairing's failure page say so
-///   with 「去设置」 (`LocalNetworkDenial.line`). A Mac found or a connection opened afterwards clears it, as it would.
+///   with 「去设置」 (`LocalNetworkDenial.line`), for the whole run: the simulator's Bonjour browser is always let browse
+///   and would take a real denial back at once (`LocalNetworkStatus`).
 /// - `-critterScannerForce`: the scanner page starts the camera even where scanning is not supported (the simulator):
 ///   `startScanning()` throws, and the frame says why (`ScannerTrouble`) instead of a camera that reads nothing.
 /// - `-critterFixtureDrop offline|denied@<seconds>`: with `-critterFixture`, that long after its first connection the

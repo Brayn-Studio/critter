@@ -87,8 +87,8 @@ public struct BonjourBrowser: MacBrowser {
 
     /// - Parameters:
     ///   - window: how long to browse; what was found and resolved by then is the result.
-    ///   - access: told when the local network is denied (the browser or a resolution says so), and when a Mac was
-    ///     found.
+    ///   - access: told when the local network is denied (the browser or a resolution says so), and when it is not: a
+    ///     Mac found, the browser let browse, or a window that ended without a refusal.
     public init(window: Duration = .seconds(3), access: LocalNetworkAccess = .shared) {
         self.window = window
         self.access = access
@@ -100,8 +100,9 @@ public struct BonjourBrowser: MacBrowser {
     public func discover() async -> [DiscoveredMac] {
         let search = BonjourSearch(access: access)
         search.start()
-        try? await Task.sleep(for: window)
-        return search.finish()
+        var ranOut = true
+        do { try await Task.sleep(for: window) } catch { ranOut = false }
+        return search.finish(ranOut: ranOut)
     }
 
     /// How many connections resolve one service, at most.
@@ -164,6 +165,8 @@ private final class BonjourSearch: Sendable {
         /// stays here, so it is not tried again in this search.
         var resolving: [String: (connection: NWConnection, attempt: Int)] = [:]
         var found: [String: Endpoint] = [:]
+        /// The browser or a resolving connection was refused for the local network during this search.
+        var sawDenial = false
         var done = false
     }
 
@@ -180,24 +183,32 @@ private final class BonjourSearch: Sendable {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             for result in results { self?.resolve(result.endpoint) }
         }
-        // Denied the local network, the browser waits with the policy error (and finds nothing).
-        browser.stateUpdateHandler = { [access] update in
-            if LocalNetworkDenial.isDenied(update) { access.sawDenied() }
+        // Denied the local network, the browser waits with the policy error (and finds nothing); allowed, it is ready.
+        browser.stateUpdateHandler = { [weak self] update in
+            guard let self else { return }
+            if LocalNetworkDenial.isDenied(update) { self.noteDenied() } else { self.access.saw(update) }
         }
         browser.start(queue: queue)
     }
 
-    /// Stops browsing and resolving; the Macs resolved so far.
-    func finish() -> [DiscoveredMac] {
+    /// Stops browsing and resolving; the Macs resolved so far. A search that ran its whole time (`ranOut`) without a
+    /// refusal says the local network is allowed (`LocalNetworkAccess.browseWindowEnded`).
+    func finish(ranOut: Bool) -> [DiscoveredMac] {
         browser.cancel()
-        let (connections, macs) = state.withLock { s in
+        let (connections, macs, sawDenial) = state.withLock { s in
             s.done = true
             defer { s.resolving = [:] }
             let macs = s.order.compactMap { name in s.found[name].map { DiscoveredMac(name: name, endpoint: $0) } }
-            return (s.resolving.values.map(\.connection), macs)
+            return (s.resolving.values.map(\.connection), macs, s.sawDenial)
         }
         connections.forEach { $0.cancel() }
+        access.browseWindowEnded(sawDenial: sawDenial, ranOut: ranOut)
         return macs
+    }
+
+    private func noteDenied() {
+        state.withLock { $0.sawDenial = true }
+        access.sawDenied()
     }
 
     private func resolve(_ service: NWEndpoint) {
@@ -231,7 +242,7 @@ private final class BonjourSearch: Sendable {
                     self?.retry(name, service: service, attempt: attempt + 1)
                 }
             case .giveUp(let denied):
-                if denied { self.access.sawDenied() }
+                if denied { self.noteDenied() }
                 connection.cancel()
             }
         }

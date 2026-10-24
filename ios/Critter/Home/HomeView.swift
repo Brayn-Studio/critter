@@ -358,7 +358,8 @@ struct HomeView: View {
         }
         guard offline else { return nil }
         if localNetwork.denied {
-            // Retrying cannot help until the permission is back: the way there instead.
+            // Retrying cannot help until the permission is back: the way there instead. Back from Settings, the
+            // connection tried again (and the Bonjour lookup after it) takes the flag back (`LocalNetworkAccess`).
             return StatusCard(
                 title: "连不上 \(macName)", text: { _ in LocalNetworkDenial.line }, action: LocalNetworkDenial.action,
                 prominent: true

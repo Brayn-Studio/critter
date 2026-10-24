@@ -22,8 +22,8 @@ final class NotificationService: UNNotificationServiceExtension {
     /// are only touched under it.
     private let lock = NSLock()
     private var contentHandler: ((UNNotificationContent) -> Void)?
-    /// What goes out if the system ends the extension early: the push as it came, then its open-only version, then
-    /// -- once complete -- the opened one.
+    /// What goes out if the system ends the extension early: the push as it came, then its open-only version. Never the
+    /// opened one: that goes straight out (`finish`), and once it has, there is nothing left to end early.
     private var best: UNNotificationContent?
 
     override func didReceive(

@@ -99,6 +99,50 @@ struct LocalNetworkAccessTests {
         access.sawAllowed()
         #expect(heard.values == [true, false])
     }
+
+    /// The permission given while the Mac is away (nothing to find, no connection to open), or answered slowly to the
+    /// first-run prompt: a browser let browse (`.ready`), or a browse window that ran out without a refusal, takes the
+    /// denial back.
+    @Test func aBrowserLetBrowseTakesTheDenialBack() {
+        let access = LocalNetworkAccess()
+        access.saw(NWBrowser.State.waiting(policyDenied))
+        #expect(access.denied)
+        // Not a word about the permission: still denied.
+        access.saw(NWBrowser.State.setup)
+        access.saw(NWBrowser.State.waiting(.dns(DNSServiceErrorType(-65563))))
+        #expect(access.denied)
+        access.saw(NWBrowser.State.ready)
+        #expect(!access.denied)
+        access.saw(NWBrowser.State.failed(policyDenied))
+        #expect(access.denied)
+    }
+
+    @Test func aBrowseWindowWithoutARefusalTakesTheDenialBack() {
+        let access = LocalNetworkAccess()
+        let heard = Heard()
+        access.observe { heard.add($0) }
+        access.sawDenied()
+        // A refusal came during it, or it was cut short: nothing is learned.
+        access.browseWindowEnded(sawDenial: true, ranOut: true)
+        access.browseWindowEnded(sawDenial: false, ranOut: false)
+        #expect(access.denied)
+        access.browseWindowEnded(sawDenial: false, ranOut: true)
+        #expect(!access.denied)
+        // Allowed already: nothing to say again.
+        access.browseWindowEnded(sawDenial: false, ranOut: true)
+        #expect(heard.values == [true, false])
+    }
+
+    @Test func theRuleForWhatSaysAllowed() {
+        #expect(LocalNetworkDenial.isAllowed(NWBrowser.State.ready))
+        for state in [NWBrowser.State.setup, .cancelled, .waiting(policyDenied), .failed(policyDenied), .waiting(.posix(.ENETDOWN))] {
+            #expect(!LocalNetworkDenial.isAllowed(state), "\(state)")
+        }
+        #expect(LocalNetworkDenial.isAllowed(afterWindowSawDenial: false, ranOut: true))
+        #expect(!LocalNetworkDenial.isAllowed(afterWindowSawDenial: true, ranOut: true))
+        #expect(!LocalNetworkDenial.isAllowed(afterWindowSawDenial: false, ranOut: false))
+        #expect(!LocalNetworkDenial.isAllowed(afterWindowSawDenial: true, ranOut: false))
+    }
 }
 
 /// Bonjour's resolution of a found service: a connection that waits (refused, no route yet) is tried once more with a

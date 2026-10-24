@@ -10,16 +10,26 @@ final class LocalNetworkStatus {
 
     private(set) var denied = false
 
+    /// `-critterLocalNetworkDenied` (DEBUG builds): the simulator never asks for the permission, so the Bonjour
+    /// browser there is always let browse and would take the denial back at once.
+    private let forcedDenied: Bool
+
     private init() {
         let access = LocalNetworkAccess.shared
-        // Heard first, then read: a change in between is not missed.
-        access.observe { denied in
-            Task { @MainActor in LocalNetworkStatus.shared.denied = denied }
-        }
         #if DEBUG
-        // `-critterLocalNetworkDenied`: the simulator never asks for the permission.
-        if DebugLaunch.current.localNetworkDenied { access.sawDenied() }
+        forcedDenied = DebugLaunch.current.localNetworkDenied
+        #else
+        forcedDenied = false
         #endif
-        denied = access.denied
+        // Heard first, then read: a change in between is not missed. Each change hands over nothing but the news that
+        // there was one: the task reads what is true when it runs, so two quick changes cannot land out of order.
+        access.observe { _ in
+            Task { @MainActor in LocalNetworkStatus.shared.refresh() }
+        }
+        refresh()
+    }
+
+    private func refresh() {
+        denied = forcedDenied || LocalNetworkAccess.shared.denied
     }
 }

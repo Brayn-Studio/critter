@@ -38,6 +38,21 @@ public enum LocalNetworkDenial {
         }
     }
 
+    /// A browser that reached `.ready` was let browse: the local network is allowed. Denied, it waits with the policy
+    /// error, and goes on to `.ready` once the user allows (a slow answer to the first-run prompt, or the switch turned
+    /// on in Settings). Pure.
+    public static func isAllowed(_ state: NWBrowser.State) -> Bool {
+        if case .ready = state { return true }
+        return false
+    }
+
+    /// Whether a browse window that ended says the local network is allowed: it ran its whole time (`ranOut`; one cut
+    /// short, by a cancelled task, saw too little) and no refusal came while it ran (`sawDenial`: the browser's, or a
+    /// resolving connection's). Pure.
+    public static func isAllowed(afterWindowSawDenial sawDenial: Bool, ranOut: Bool) -> Bool {
+        ranOut && !sawDenial
+    }
+
     /// A connection's state, with the reason its path is unsatisfied (`currentPath?.unsatisfiedReason`).
     public static func isDenied(_ state: NWConnection.State, path: NWPath.UnsatisfiedReason?) -> Bool {
         switch state {
@@ -63,8 +78,10 @@ public enum LocalNetworkDenial {
 }
 
 /// What the app has seen of its access to the local network, for the screens to say so with 「去设置」. Denied once a
-/// Bonjour lookup or a connection was refused for it (`LocalNetworkDenial`); allowed again once a Mac was found or a
-/// connection opened. Fed by `BonjourBrowser` and `URLSessionTransport` (`shared`, unless they are given another).
+/// Bonjour lookup or a connection was refused for it (`LocalNetworkDenial`); allowed again once a Mac was found, a
+/// connection opened, a Bonjour browser was let browse (`.ready`) or a browse window ended without any refusal -- so
+/// the permission given while the Mac is away (or answered slowly to the first-run prompt) is noticed too. Fed by
+/// `BonjourBrowser` and `URLSessionTransport` (`shared`, unless they are given another).
 public final class LocalNetworkAccess: Sendable {
     public static let shared = LocalNetworkAccess()
 
@@ -92,6 +109,21 @@ public final class LocalNetworkAccess: Sendable {
 
     /// A refusal seen another way (a browser's or a connection's state).
     public func sawDenied() { set(true) }
+
+    /// A Bonjour browser's state: a refusal, or `.ready` (it is let browse); anything else says nothing.
+    public func saw(_ state: NWBrowser.State) {
+        if LocalNetworkDenial.isDenied(state) {
+            set(true)
+        } else if LocalNetworkDenial.isAllowed(state) {
+            set(false)
+        }
+    }
+
+    /// A Bonjour browse window ended (`LocalNetworkDenial.isAllowed(afterWindowSawDenial:ranOut:)`): allowed again if
+    /// it ran out without a refusal; otherwise it says nothing.
+    public func browseWindowEnded(sawDenial: Bool, ranOut: Bool) {
+        if LocalNetworkDenial.isAllowed(afterWindowSawDenial: sawDenial, ranOut: ranOut) { set(false) }
+    }
 
     /// A Mac was found, or a connection opened.
     public func sawAllowed() { set(false) }
