@@ -169,20 +169,18 @@ sleep 5
 xcrun simctl io "$SIM" screenshot "$OUT/relaunch.png" >/dev/null 2>&1 || { echo "could not take a screenshot"; exit 1; }
 xcrun simctl terminate "$SIM" "$BUNDLE" >/dev/null 2>&1
 
-# 3. What the app kept: the pairing (its deviceId is what gets revoked) and the last snapshot, in a folder kept out of
-# backups. The app's defaults live in its container (`simctl spawn ... defaults read` does not see them).
-DATA="$(xcrun simctl get_app_container "$SIM" "$BUNDLE" data)"
-SNAPSHOTS="$DATA/Library/Application Support/Snapshot"
+# 3. What the app kept, in the App Group (shared with its extensions): the pairing's record (its deviceId is what gets
+# revoked; the token is in the shared keychain) and the last snapshot, in a folder kept out of backups.
+GROUP="$(xcrun simctl get_app_container "$SIM" "$BUNDLE" group.com.braynlabs.critter)"
+SNAPSHOTS="$GROUP/Snapshot"
 DEVICE="$(python3 -I -c '
-import json, plistlib, sys
-with open(sys.argv[1], "rb") as f:
-    prefs = plistlib.load(f)
-print(json.loads(prefs["critter.pairing"])["deviceId"])' "$DATA/Library/Preferences/$BUNDLE.plist" 2>/dev/null)"
+import json, sys
+print(json.load(open(sys.argv[1]))["deviceId"])' "$GROUP/Pairing/pairing.json" 2>/dev/null)"
 [ -n "$DEVICE" ] || { echo "the app has no pairing: it did not pair"; exit 1; }
 echo "$DEVICE" >"$WORK/device"
 SESSIONS="$(python3 -I -c '
 import json, sys
-print(len(json.load(open(sys.argv[1]))["body"]["sessions"]))' "$SNAPSHOTS/snapshot.json" 2>/dev/null)"
+print(len(json.load(open(sys.argv[1]))["snapshot"]["body"]["sessions"]))' "$SNAPSHOTS/snapshot.json" 2>/dev/null)"
 [ -n "$SESSIONS" ] || { echo "the app has no snapshot: it did not connect"; exit 1; }
 echo "paired as $DEVICE; the app has a snapshot of $SESSIONS session(s)"
 # `isExcludedFromBackup` on the folder is kept as this attribute.
