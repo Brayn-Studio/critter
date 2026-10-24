@@ -18,6 +18,10 @@ public struct CodexRolloutReader {
     private var activeTools: [String: ActiveTool] = [:]
     private var toolOrder: [String] = []
     private var backgroundCommands: Set<String> = []
+    /// `request_user_input_async` is accepted at once and the turn usually ends right after;
+    /// its question stays open until the user's next input (the answer or a new prompt).
+    private var openQuestions: Set<String> = []
+    private static let question = "Codex 在问你问题"
     private var turnClosed = false
     private var creationEntrypoint: String?
     private static let initialTailBytes = 256 * 1024
@@ -125,29 +129,43 @@ public struct CodexRolloutReader {
             switch type {
             case "task_started", "turn_started":
                 turnClosed = false
-                activeTools = [:]; toolOrder = []; backgroundCommands = []; next.progress = nil
+                activeTools = [:]; toolOrder = []; backgroundCommands = []; openQuestions = []; next.progress = nil
                 next.state = .running; next.detail = BubbleText.thinking; next.activity = "think"
             case "user_message":
                 turnClosed = false
+                openQuestions = []
                 next.progress = nil
                 next.state = .running; next.activity = currentActivity?.rawValue ?? "think"
                 next.detail = currentDetail ?? BubbleText.thinking
             case "task_complete", "turn_complete":
                 turnClosed = true
                 activeTools = [:]; toolOrder = []; backgroundCommands = []
-                next.state = .done; next.activity = nil
+                next.state = openQuestions.isEmpty ? .done : .waiting; next.activity = nil
                 let message = payload["last_agent_message"] as? String ?? ""
-                next.detail = message.isEmpty ? BubbleText.done : ToolSummary.firstSentence(message, max: 80)
+                next.detail = !openQuestions.isEmpty ? Self.question
+                    : message.isEmpty ? BubbleText.done : ToolSummary.firstSentence(message, max: 80)
             case "turn_aborted":
                 turnClosed = true
-                activeTools = [:]; toolOrder = []; backgroundCommands = []; next.progress = nil
+                activeTools = [:]; toolOrder = []; backgroundCommands = []; openQuestions = []; next.progress = nil
                 next.state = .idle; next.detail = nil; next.activity = nil
             case "error":
                 next.state = .error; next.activity = nil
                 next.detail = BubbleText.errorPrefix + ToolSummary.truncate(payload["message"] as? String ?? "Codex", max: 80)
             case "exec_approval_request", "apply_patch_approval_request", "request_user_input":
                 next.state = .waiting; next.activity = nil
-                next.detail = type == "request_user_input" ? "Codex 在问你问题" : "需要你确认：Codex 操作"
+                next.detail = type == "request_user_input" ? Self.question : "需要你确认：Codex 操作"
+            case "item_completed":
+                let item = payload["item"] as? [String: Any] ?? [:]
+                let itemType = item["type"] as? String ?? ""
+                if itemType == "AgentMessage", item["delivery"] as? String == "async",
+                   !(item["questions"] as? [Any] ?? []).isEmpty {
+                    openQuestions.insert(item["id"] as? String ?? "async-question")
+                } else if itemType == "UserMessage", !openQuestions.isEmpty {
+                    // An answer steered into the running turn.
+                    openQuestions = []
+                    next.state = .running; next.activity = currentActivity?.rawValue ?? "think"
+                    next.detail = next.progress ?? currentDetail ?? BubbleText.thinking
+                } else { changed = false }
             default: changed = false
             }
         } else if envelope == "response_item" {
@@ -157,12 +175,16 @@ public struct CodexRolloutReader {
                 let shortName = name.components(separatedBy: ".").last ?? name
                 let input = (payload["arguments"] as? String) ?? (payload["input"] as? String) ?? ""
                 let args = Self.json(Data(input.utf8))
-                let waiting = ["request_user_input", "request_user_input_async"].contains(shortName)
+                let callID = payload["call_id"] as? String ?? "anonymous"
+                if shortName == "request_user_input_async" {
+                    openQuestions.insert(callID)
+                    break
+                }
+                let waiting = shortName == "request_user_input"
                 let references = Self.toolReferences(input: input, args: args)
                 let activity: WorkActivity = references.isDisjoint(with: backgroundCommands) ? Self.activity(shortName, input: input) : .bash
                 let command = args?["cmd"] as? String ?? args?["command"] as? String
-                let summary = waiting ? "Codex 在问你问题" : ToolSummary.truncate(command.map { "命令：" + $0 } ?? (activity == .bash ? "正在执行命令…" : name), max: 80)
-                let callID = payload["call_id"] as? String ?? "anonymous"
+                let summary = waiting ? Self.question : ToolSummary.truncate(command.map { "命令：" + $0 } ?? (activity == .bash ? "正在执行命令…" : name), max: 80)
                 toolOrder.removeAll { $0 == callID }
                 toolOrder.append(callID)
                 activeTools[callID] = ActiveTool(activity: activity, waiting: waiting, detail: summary, references: references)
@@ -172,6 +194,10 @@ public struct CodexRolloutReader {
             case "function_call_output", "custom_tool_call_output":
                 guard next.state != .done else { return }
                 let callID = payload["call_id"] as? String ?? "anonymous"
+                if openQuestions.contains(callID), !Self.accepted(payload["output"]) {
+                    // Codex rejected the question (e.g. empty titles): nothing reached the user.
+                    openQuestions.remove(callID)
+                }
                 if let completed = activeTools[callID], completed.activity == .bash {
                     backgroundCommands.subtract(completed.references)
                     backgroundCommands.formUnion(Self.pendingCommands(in: payload["output"]))
@@ -193,9 +219,18 @@ public struct CodexRolloutReader {
             }
         } else { changed = false }
         guard changed else { return }
+        if !openQuestions.isEmpty, next.state == .running {
+            // Work the model does meanwhile doesn't hide the open question.
+            next.state = .waiting; next.activity = nil; next.detail = Self.question
+        }
         next.lastEvent = "Codex:" + type
         next.eventTime = Self.milliseconds(root["timestamp"] as? String) ?? next.eventTime
         record = next
+    }
+
+    private static func accepted(_ output: Any?) -> Bool {
+        let object = (output as? [String: Any]) ?? (output as? String).flatMap { json(Data($0.utf8)) }
+        return object?["accepted"] as? Bool == true
     }
 
     private var currentTool: ActiveTool? { toolOrder.reversed().compactMap { activeTools[$0] }.first }

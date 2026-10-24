@@ -402,3 +402,95 @@ func codexDiscoveryRequiresALiveProcessHoldingTheRollout(binaryName: String) asy
     var reader = CodexRolloutReader()
     #expect(reader.read(owner:CodexRolloutOwner(path:url.path,pid:42,startTime:nil))?.activity == "think")
 }
+
+// Shaped like Codex 0.163+ rollouts: the async question tool is accepted at once, its question
+// arrives as an async AgentMessage, and the turn usually completes right after.
+private func askAsync(_ callID: String = "call-q") throws -> Data {
+    let arguments = String(decoding: try JSONSerialization.data(withJSONObject: ["questions": [["title": "选哪个方案？", "options": ["方案 A", "方案 B"]]]]), as: UTF8.self)
+    return try line("response_item", ["type": "function_call", "name": "request_user_input_async", "call_id": callID, "arguments": arguments])
+        + line("event_msg", ["type": "item_completed", "turn_id": "turn-1", "item": ["type": "AgentMessage", "id": callID, "phase": "final_answer",
+            "delivery": "async", "content": [["type": "Text", "text": "选哪个方案？"]], "questions": [["title": "选哪个方案？", "options": ["方案 A", "方案 B"]]]]])
+        + line("response_item", ["type": "function_call_output", "call_id": callID, "output": "{\"accepted\":true}"])
+}
+private func userItem() throws -> Data {
+    try line("event_msg", ["type": "item_completed", "turn_id": "turn-1", "item": ["type": "UserMessage", "id": "user-1", "content": [["type": "text", "text": "继续"]]]])
+}
+
+@Test func codexAsyncQuestionStaysWaitingAfterTheTurnEndsUntilTheNextInput() throws {
+    let (dir,url) = try rollout(meta() + line("event_msg",["type":"task_started","turn_id":"turn-1"]) + userItem())
+    defer { try? FileManager.default.removeItem(at:dir) }
+    var reader = CodexRolloutReader(); let owner = CodexRolloutOwner(path:url.path,pid:42,startTime:nil)
+    #expect(reader.read(owner:owner)?.state == .running)
+    let handle = try FileHandle(forWritingTo:url); defer { try? handle.close() }; try handle.seekToEnd()
+    try handle.write(contentsOf:askAsync())
+    var record = reader.read(owner:owner)
+    #expect(record?.state == .waiting)
+    #expect(record?.detail == "Codex 在问你问题")
+    #expect(record?.activity == nil)
+    try handle.write(contentsOf:line("event_msg",["type":"item_completed","turn_id":"turn-1","item":["type":"AgentMessage","id":"answer-1","phase":"final_answer","content":[["type":"Text","text":"请先回答上面的问题。"]]]]))
+    try handle.write(contentsOf:line("event_msg",["type":"task_complete","turn_id":"turn-1","last_agent_message":"请先回答上面的问题。"]))
+    record = reader.read(owner:owner)
+    #expect(record?.state == .waiting)
+    #expect(record?.detail == "Codex 在问你问题")
+    #expect(record?.lastEvent == "Codex:task_complete")
+    try handle.write(contentsOf:line("event_msg",["type":"token_count","info":[:]]))
+    #expect(reader.read(owner:owner)?.state == .waiting)
+    try handle.write(contentsOf:line("event_msg",["type":"task_started","turn_id":"turn-2"]))
+    #expect(reader.read(owner:owner)?.state == .running)
+    try handle.write(contentsOf:line("event_msg",["type":"task_complete","turn_id":"turn-2","last_agent_message":"好的。"]))
+    #expect(reader.read(owner:owner)?.state == .done)
+}
+
+@Test func codexAsyncQuestionReadInOneBatchIsStillShown() throws {
+    let (dir,url) = try rollout(meta() + line("event_msg",["type":"task_started"]) + userItem() + askAsync()
+        + line("event_msg",["type":"task_complete","last_agent_message":"请先回答上面的问题。"]))
+    defer { try? FileManager.default.removeItem(at:dir) }
+    var reader = CodexRolloutReader()
+    let record = reader.read(owner:CodexRolloutOwner(path:url.path,pid:42,startTime:nil))
+    #expect(record?.state == .waiting)
+    #expect(record?.detail == "Codex 在问你问题")
+}
+
+@Test func codexAsyncQuestionOutranksLaterWorkAndClearsOnASteeredAnswer() throws {
+    let (dir,url) = try rollout(meta() + line("event_msg",["type":"task_started"]) + userItem() + askAsync())
+    defer { try? FileManager.default.removeItem(at:dir) }
+    var reader = CodexRolloutReader(); let owner = CodexRolloutOwner(path:url.path,pid:42,startTime:nil)
+    #expect(reader.read(owner:owner)?.state == .waiting)
+    let handle = try FileHandle(forWritingTo:url); defer { try? handle.close() }; try handle.seekToEnd()
+    try handle.write(contentsOf:line("event_msg",["type":"agent_message","phase":"commentary","message":"先按默认方案准备。"]))
+    try handle.write(contentsOf:line("response_item",["type":"custom_tool_call","name":"exec","call_id":"command-1","input":"await tools.exec_command({cmd:'ls'})"]))
+    #expect(reader.read(owner:owner)?.state == .waiting)
+    try handle.write(contentsOf:line("response_item",["type":"custom_tool_call_output","call_id":"command-1","output":"done"]))
+    try handle.write(contentsOf:line("response_item",["type":"reasoning","summary":[]]))
+    var record = reader.read(owner:owner)
+    #expect(record?.state == .waiting)
+    #expect(record?.detail == "Codex 在问你问题")
+    try handle.write(contentsOf:userItem())
+    record = reader.read(owner:owner)
+    #expect(record?.state == .running)
+    #expect(record?.detail == "先按默认方案准备。")
+    try handle.write(contentsOf:line("event_msg",["type":"task_complete","last_agent_message":"完成了。"]))
+    #expect(reader.read(owner:owner)?.state == .done)
+}
+
+@Test func codexAsyncMessagesWithoutQuestionsAndAbortedQuestionsDoNotWait() throws {
+    let note = try line("event_msg",["type":"item_completed","item":["type":"AgentMessage","id":"note-1","phase":"commentary","delivery":"async","content":[["type":"Text","text":"仅通知"]]]])
+    let (dir,url) = try rollout(meta() + line("event_msg",["type":"task_started"]) + note)
+    defer { try? FileManager.default.removeItem(at:dir) }
+    var reader = CodexRolloutReader(); let owner = CodexRolloutOwner(path:url.path,pid:42,startTime:nil)
+    #expect(reader.read(owner:owner)?.state == .running)
+    let handle = try FileHandle(forWritingTo:url); defer { try? handle.close() }; try handle.seekToEnd()
+    // The question can also arrive only as its async AgentMessage.
+    try handle.write(contentsOf:line("event_msg",["type":"item_completed","item":["type":"AgentMessage","id":"question-2","phase":"final_answer","delivery":"async","questions":[["title":"继续吗？","options":["是","否"]]]]]))
+    #expect(reader.read(owner:owner)?.state == .waiting)
+    try handle.write(contentsOf:line("event_msg",["type":"turn_aborted"]))
+    #expect(reader.read(owner:owner)?.state == .idle)
+    try handle.write(contentsOf:line("event_msg",["type":"task_started"]) + line("event_msg",["type":"task_complete","last_agent_message":"好了。"]))
+    #expect(reader.read(owner:owner)?.state == .done)
+    // A question Codex rejected never reached the user.
+    try handle.write(contentsOf:line("event_msg",["type":"task_started"])
+        + line("response_item",["type":"function_call","name":"request_user_input_async","call_id":"bad","arguments":"{\"questions\":[]}"]))
+    #expect(reader.read(owner:owner)?.state == .waiting)
+    try handle.write(contentsOf:line("response_item",["type":"function_call_output","call_id":"bad","output":"questions must not be empty"]))
+    #expect(reader.read(owner:owner)?.state == .running)
+}
