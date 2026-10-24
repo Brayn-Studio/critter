@@ -17,6 +17,10 @@
 		C7A10000000000000000006B /* CritterKit in Frameworks */ = {isa = PBXBuildFile; productRef = C7A10000000000000000006A /* CritterKit */; };
 		C7A10000000000000000007B /* CritterKit in Frameworks */ = {isa = PBXBuildFile; productRef = C7A10000000000000000007A /* CritterKit */; };
 		C7A10000000000000000007C /* Skins in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000040 /* Skins */; };
+		C7A10000000000000000009A /* CritterClient in Frameworks */ = {isa = PBXBuildFile; productRef = C7A10000000000000000009B /* CritterClient */; };
+		C7A10000000000000000009C /* nunito.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000042 /* nunito.ttf */; };
+		C7A10000000000000000009D /* silkscreen_regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000043 /* silkscreen_regular.ttf */; };
+		C7A10000000000000000009E /* silkscreen_bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000044 /* silkscreen_bold.ttf */; };
 		C7A100000000000000000082 /* CritterNotify.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000061 /* CritterNotify.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		C7A100000000000000000083 /* CritterWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000071 /* CritterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
@@ -74,6 +78,17 @@
 		C7A10000000000000000008D /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
+/* Begin PBXFileSystemSynchronizedBuildFileExceptionSet section */
+		C7A10000000000000000009F /* Exceptions for "CritterWidgets" folder in "Critter" target */ = {
+			isa = PBXFileSystemSynchronizedBuildFileExceptionSet;
+			membershipExceptions = (
+				ActivityPictures.swift,
+				CritterActivityViews.swift,
+			);
+			target = C7A100000000000000000004 /* Critter */;
+		};
+/* End PBXFileSystemSynchronizedBuildFileExceptionSet section */
+
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C7A100000000000000000006 /* Critter */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
@@ -87,6 +102,9 @@
 		};
 		C7A100000000000000000072 /* CritterWidgets */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
+			exceptions = (
+				C7A10000000000000000009F /* Exceptions for "CritterWidgets" folder in "Critter" target */,
+			);
 			path = CritterWidgets;
 			sourceTree = "<group>";
 		};
@@ -120,6 +138,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				C7A10000000000000000007B /* CritterKit in Frameworks */,
+				C7A10000000000000000009A /* CritterClient in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -252,6 +271,7 @@
 			name = CritterWidgets;
 			packageProductDependencies = (
 				C7A10000000000000000007A /* CritterKit */,
+				C7A10000000000000000009B /* CritterClient */,
 			);
 			productName = CritterWidgets;
 			productReference = C7A100000000000000000071 /* CritterWidgets.appex */;
@@ -327,6 +347,9 @@
 			buildActionMask = 2147483647;
 			files = (
 				C7A10000000000000000007C /* Skins in Resources */,
+				C7A10000000000000000009C /* nunito.ttf in Resources */,
+				C7A10000000000000000009D /* silkscreen_regular.ttf in Resources */,
+				C7A10000000000000000009E /* silkscreen_bold.ttf in Resources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -510,6 +533,10 @@
 		C7A10000000000000000007A /* CritterKit */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CritterKit;
+		};
+		C7A10000000000000000009B /* CritterClient */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CritterClient;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

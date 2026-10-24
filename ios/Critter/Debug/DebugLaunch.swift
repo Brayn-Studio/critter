@@ -134,6 +134,18 @@ import os
 ///   these notifications goes through the app's handler for background pushes (`WithdrawPushDebug`): `xcrun simctl
 ///   push` turns a background push into a background fetch without its payload. The log lists the delivered
 ///   notifications before and after.
+/// - `-critterActivityDemo many|waiting|idle|stale`: the Live Activity with made-up content (`ActivityDemo.swift`), no Mac
+///   needed: once launched the app ends any running one and starts one showing six sessions (one waiting, `many`), two
+///   waiting with the 5-hour limit nearly used (`waiting`), three idle (`idle`), or `many` with a stale date three
+///   seconds after the start (`stale`: the system greys it, with "可能不是最新的", about two minutes later at the
+///   earliest, and `stale` sends no alert update). Instead of the home screen the app shows the lock screen's block
+///   as the widget draws it (light or dark as the system is, StandBy's look, stale): the simulator's lock screen cannot be
+///   reached from the command line. Put another app in front (`xcrun simctl launch <device> com.apple.Preferences`) for
+///   the Dynamic Island's compact view; three seconds later the app updates the activity once with an alert, which opens
+///   the island to its expanded view for a few seconds. `xcrun simctl io screenshot` catches the island only while the
+///   screen is changing: `xcrun simctl io <device> recordVideo` gets it every time. The app's own Live Activity rules (`LiveActivityManager`) stay
+///   out of the way. The log (category `activity`) also has a decode check: the protocol doc's push-to-start
+///   `attributes` (`{}`) as `CritterActivity`, and its start and end `content-state` as its `ContentState`.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -212,6 +224,8 @@ struct DebugLaunch {
     var fixtureMacAway = false
     /// `-critterWithdrawPush`.
     var withdrawPush: WithdrawPushDebug.Step?
+    /// `-critterActivityDemo`.
+    var activityDemo: ActivityDemo.Kind?
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -307,6 +321,7 @@ struct DebugLaunch {
         notificationAction = value("critterNotificationAction").flatMap(NotificationActionDebug.Step.init)
         fixtureMacAway = arguments.contains("-critterFixtureMacAway")
         withdrawPush = value("critterWithdrawPush").flatMap(WithdrawPushDebug.Step.init)
+        activityDemo = value("critterActivityDemo").flatMap(ActivityDemo.Kind.init(rawValue:))
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug

@@ -42,4 +42,22 @@ public struct LiveActivityContent: Codable, Hashable, Sendable {
         self.sevenDay = sevenDay.map { min(max($0, 0), 100) }
         self.updatedAt = updatedAt
     }
+
+    private enum CodingKeys: String, CodingKey {
+        case counts, lead, back, total, fiveHour, sevenDay, updatedAt
+    }
+
+    /// Reads what the Mac pushes (the phone's `CritterActivity.ContentState`). A part left out reads as nothing (no
+    /// counts, no pets, 0): the system decodes a content state for every push, an `end`'s empty one included, and one
+    /// it cannot decode is dropped rather than drawn.
+    public init(from decoder: any Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        counts = try c.decodeIfPresent([StateCount].self, forKey: .counts) ?? []
+        lead = try c.decodeIfPresent(PetBadge.self, forKey: .lead)
+        back = try c.decodeIfPresent([PetBadge].self, forKey: .back) ?? []
+        total = try c.decodeIfPresent(Int.self, forKey: .total) ?? 0
+        fiveHour = try c.decodeIfPresent(Int.self, forKey: .fiveHour)
+        sevenDay = try c.decodeIfPresent(Int.self, forKey: .sevenDay)
+        updatedAt = try c.decodeIfPresent(Int64.self, forKey: .updatedAt) ?? 0
+    }
 }

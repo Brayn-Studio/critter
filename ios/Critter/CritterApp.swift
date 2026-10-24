@@ -73,7 +73,8 @@ struct CritterApp: App {
                     NotificationCenterDelegate.shared.liveChanged()
                 }
                 .onOpenURL { url in
-                    // Not a pairing link (or a broken one): ignored.
+                    // Not a pairing link (or a broken one): ignored. `critter://home`, a tap on the Live Activity, only
+                    // brings the app to the front.
                     guard let uri = PairingURI(string: url.absoluteString) else { return }
                     link = IncomingPairLink(uri: uri, confirmed: false)
                 }
@@ -89,6 +90,9 @@ struct CritterApp: App {
                 }
                 .task {
                     if let step = DebugLaunch.current.withdrawPush { await WithdrawPushDebug.run(step) }
+                }
+                .task {
+                    if let kind = DebugLaunch.current.activityDemo { await ActivityDemo.run(kind) }
                 }
                 .task {
                     if DebugLaunch.current.frameLog { FrameLog.start() }
@@ -120,6 +124,8 @@ struct CritterApp: App {
         #if DEBUG
         if DebugLaunch.current.gallery {
             Gallery()
+        } else if let kind = DebugLaunch.current.activityDemo {
+            ActivityDemoPage(kind: kind)
         } else {
             RootView(store: store, deviceName: deviceName, link: $link)
         }
