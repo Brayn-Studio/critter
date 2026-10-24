@@ -2,6 +2,7 @@ import CritterClient
 import CritterKit
 import SwiftUI
 import UIKit
+import UIKit.UIGestureRecognizerSubclass
 
 // The pixel widgets (the mockups' "部件" section, Android `Components.kt`). Small widgets move on the pet engine's
 // 60 ms beat in whole jumps (visual design §7): a switch's knob crosses in three (180 ms), a state tag hops one beat
@@ -393,7 +394,8 @@ struct PixelSegmented: View {
 // MARK: - Slider and meter
 
 /// A slider in `segments` cells, `value` in 0...1 snapping to them (Android `PixelSlider`, the mockups' `.slider`):
-/// drag or tap; the thumb wears the sun. Drawn 28 pt tall in a 44 pt touch area.
+/// tap a cell, or drag sideways; the thumb wears the sun. Drawn 28 pt tall in a 44 pt touch area. Nothing changes at
+/// touch-down, and a drag up or down is the page's scroll (`SliderTouch`, read by `SliderTouches`).
 struct PixelSlider: View {
     @Binding var value: Double
     var segments = 10
@@ -419,13 +421,11 @@ struct PixelSlider: View {
                     .offset(x: min(max(width * CGFloat(lit) / CGFloat(segments) - 12, 0), max(width - 24, 0)))
             }
             .frame(width: width, height: minTouch)
-            .contentShape(Rectangle())
-            .gesture(
-                DragGesture(minimumDistance: 0).onChanged { drag in
-                    guard width > 0 else { return }
-                    pick(Int((drag.location.x / width * CGFloat(segments)).rounded()))
+            .overlay {
+                SliderTouches { x in
+                    if let k = SliderTouch.lit(x: x, width: width, segments: segments) { pick(k) }
                 }
-            )
+            }
         }
         .frame(height: minTouch)
         .accessibilityElement()
@@ -448,6 +448,100 @@ struct PixelSlider: View {
         let snapped = min(max(k, 0), segments)
         guard snapped != Self.lit(value, segments) else { return }
         value = Double(snapped) / Double(segments)
+    }
+}
+
+/// The pixel slider's touches, read by UIKit (`SliderTouch`), so the scroll view around the slider keeps the drags
+/// that are its own: a tap reports where it lifted, a drag that starts mostly sideways reports every move from then
+/// on, and one that starts mostly up or down is let go at once (the scroll view takes it). Only the first finger is
+/// read; nothing is reported at touch-down.
+private struct SliderTouches: UIViewRepresentable {
+    /// Where the finger is, across the view.
+    let onTouch: (CGFloat) -> Void
+
+    func makeUIView(context: Context) -> TouchView {
+        TouchView()
+    }
+
+    func updateUIView(_ view: TouchView, context: Context) {
+        view.onTouch = onTouch
+    }
+
+    final class TouchView: UIView {
+        var onTouch: (CGFloat) -> Void = { _ in }
+        private let recognizer = Recognizer()
+
+        override init(frame: CGRect) {
+            super.init(frame: frame)
+            backgroundColor = .clear
+            recognizer.addTarget(self, action: #selector(heard))
+            addGestureRecognizer(recognizer)
+        }
+
+        @available(*, unavailable)
+        required init?(coder: NSCoder) {
+            fatalError("init(coder:) is not used")
+        }
+
+        @objc private func heard(_ recognizer: Recognizer) {
+            switch recognizer.state {
+            case .began, .changed, .ended: onTouch(recognizer.point.x)
+            default: break
+            }
+        }
+    }
+
+    /// A tap (recognized at the lift) or a sideways drag (began once `SliderTouch.slop` is passed); fails as soon as
+    /// the first finger has moved mostly up or down.
+    final class Recognizer: UIGestureRecognizer {
+        /// Where the finger is now, in the view.
+        private(set) var point = CGPoint.zero
+        private var touch: UITouch?
+        private var start = CGPoint.zero
+
+        override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+            guard touch == nil, let first = touches.first else { return }
+            touch = first
+            start = first.location(in: view)
+            point = start
+        }
+
+        override func touchesMoved(_ touches: Set<UITouch>, with event: UIEvent) {
+            guard let touch, touches.contains(touch) else { return }
+            point = touch.location(in: view)
+            switch state {
+            case .possible:
+                switch SliderTouch.read(dx: point.x - start.x, dy: point.y - start.y) {
+                case .undecided: break
+                case .drag: state = .began
+                case .scroll: state = .failed
+                }
+            case .began, .changed:
+                state = .changed
+            default:
+                break
+            }
+        }
+
+        override func touchesEnded(_ touches: Set<UITouch>, with event: UIEvent) {
+            guard let touch, touches.contains(touch) else { return }
+            point = touch.location(in: view)
+            switch state {
+            // Lifted before the slop: a tap, on the cell under it.
+            case .possible, .began, .changed: state = .ended
+            default: break
+            }
+        }
+
+        override func touchesCancelled(_ touches: Set<UITouch>, with event: UIEvent) {
+            guard let touch, touches.contains(touch) else { return }
+            state = state == .possible ? .failed : .cancelled
+        }
+
+        override func reset() {
+            super.reset()
+            touch = nil
+        }
     }
 }
 

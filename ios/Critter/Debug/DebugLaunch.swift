@@ -38,8 +38,10 @@ import Foundation
 ///   then for 200 ms, and standard output says when it showed down and up (`PressCheck.swift`).
 /// - `-critterGalleryHold`: a second after the gallery opens, its sprig is held up as if lifted by a finger (its
 ///   shadow shows on the ground under it).
-/// - `-critterFrameLog`: every 10 seconds, "frames <n>" on standard output: how many ticks changed the picture on any
-///   Critter stage (`FrameLog`). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
+/// - `-critterFrameLog`: every 10 seconds, "frames <n> (board <b>, home <h>)" on standard output: how many ticks
+///   changed the picture on any Critter stage, and the same for each screen (`critterFrameTag`: the home screen with its
+///   sheets, the board; "other" for the rest), so `-critterBoard` shows the home screen drawing nothing under the board
+///   (`FrameLog`). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
 /// - Reduce motion has no flag: it is the app's own switch, `critter.settings.reduceMotion` in the app container's
 ///   preferences. From the command line: terminate the app, then `xcrun simctl spawn <device> defaults write
 ///   "$(xcrun simctl get_app_container <device> com.braynlabs.critter data)/Library/Preferences/com.braynlabs.critter"
