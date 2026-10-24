@@ -358,3 +358,42 @@ The Live Activity's `ContentState`, as the Mac sends it in `content-state`. The 
 - `lead`: the first pet (the most urgent session); `back`: at most 2 more. Each is a `skin` name and a `state`. Absent `lead` = no sessions.
 - `total`: the number of sessions. `fiveHour`, `sevenDay`: used percentage of the 5-hour and 7-day limits, 0...100; absent = unknown.
 - `updatedAt`: milliseconds since the Unix epoch.
+
+### How the Mac pushes
+
+Not part of the LAN protocol, but what a phone gets from APNs once it registered. The Mac signs with the team's APNs key (token authentication: an ES256 JWT with `kid` = the Key ID and `iss` = the Team ID, renewed every 50 minutes) and sends `POST /3/device/<token>` to `api.sandbox.push.apple.com` or `api.push.apple.com`, by the registration's `environment`. The bundle id comes from the Mac's own settings (设置 › iPhone 推送): **the Mac pushes only to registrations whose `bundleId` is that one.**
+
+| What | Sent to | `apns-push-type` | `apns-topic` | `apns-priority` |
+|---|---|---|---|---|
+| A notification (the push payload above) | `token` | `alert` | the bundle id | 10 |
+| Withdrawing notifications | `token` | `background` | the bundle id | 5 |
+| Starting the Live Activity (push-to-start) | `activity.startToken` | `liveactivity` | `<bundle id>.push-type.liveactivity` | 10 |
+| Updating it | `activity.activityToken` | `liveactivity` | `<bundle id>.push-type.liveactivity` | 10 when more sessions wait than before, else 5 |
+| Ending it | `activity.activityToken` | `liveactivity` | `<bundle id>.push-type.liveactivity` | 10 |
+
+A notification's `apns-collapse-id` is its id (see above); a request's also has `apns-expiration`, the request's `expiresAt` in seconds. The test notification of the settings' "发送测试通知" has category `test`, session id `test` and no collapse id.
+
+The Live Activity pushes, for the content example above sent at `1760000000000` (times in them are seconds; `stale-date` is 15 minutes after sending):
+
+```json live-start
+{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"attributes":{},"attributes-type":"CritterActivity","content-state":{"back":[{"skin":"mochi","state":"running"}],"counts":[{"count":2,"state":"waiting"},{"count":1,"state":"running"}],"fiveHour":12,"lead":{"skin":"sprig","state":"waiting"},"sevenDay":30,"total":3,"updatedAt":1760000000000},"event":"start","stale-date":1760000900,"timestamp":1760000000}}
+```
+
+```json live-update
+{"aps":{"content-state":{"back":[{"skin":"mochi","state":"running"}],"counts":[{"count":2,"state":"waiting"},{"count":1,"state":"running"}],"fiveHour":12,"lead":{"skin":"sprig","state":"waiting"},"sevenDay":30,"total":3,"updatedAt":1760000000000},"event":"update","stale-date":1760000900,"timestamp":1760000000}}
+```
+
+An `end` carries an empty content (the system decodes a content state for every event) and when it leaves the screen:
+
+```json live-end
+{"aps":{"content-state":{"back":[],"counts":[],"total":0,"updatedAt":1760000000000},"dismissal-date":1760000000,"event":"end","timestamp":1760000000}}
+```
+
+When the Mac pushes (the Android app's alert rules, spec 6.3 and 6.6):
+
+- Push runs only while phones may connect (the bridge is on), the APNs setup works, and at least one iPhone is registered for the configured bundle id. Otherwise the Mac does nothing for push.
+- **The first snapshot only records.** After the Mac starts, after the bridge is switched on, after the setup changes, and after a device registers -- or its `token`, `environment`, `bundleId` or `key` changes -- nothing is pushed for what that snapshot shows: it is the past. New `notifyDone`/`notifyError` or Live Activity tokens carry on without starting over.
+- A waiting request is pushed once, the first time a snapshot lists it, and withdrawn once a snapshot no longer does. A session waiting for something the phone cannot answer (no request: VS Code, Desktop, read-only Codex) gets one `waitingElsewhere` per waiting spell, withdrawn when it moves on. `done` and `error` are pushed when a session enters that state and the matching `notify…` is on, and withdrawn when it leaves it or ends.
+- The Live Activity is started when `activity.enabled`, there is a `startToken`, at least one session, and no `activityToken`. After a start the Mac waits for the activity's token (no second start before it, nor within 10 minutes of the last start). It is updated when its content changes: at once when more sessions wait, otherwise at most every 10 s. It ends 5 minutes after the last session goes, when `activity.enabled` turns false, when the device is revoked or pairing is reset, and when the bridge is switched off; at 7.5 hours it is ended and started again.
+- A token APNs says is dead (`410`, or `400` with `BadDeviceToken` or `DeviceTokenNotForTopic`): for `token`, the Mac drops the whole registration (the phone registers again the next time it connects); for `activityToken`, it clears `activityId` and `activityToken`; a refused `startToken` is not used again until the phone registers another.
+- `403` (a wrong key, Team ID or bundle id): the Mac sends nothing more until its setup changes. `429`, `5xx` or no answer: retried after 1, 2 and 4 s, then given up.

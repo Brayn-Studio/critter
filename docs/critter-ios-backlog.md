@@ -13,6 +13,16 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - 重新配对时删除旧缓存是异步的：刚配对完就被杀掉，下次启动可能短暂显示上一台 Mac 的快照；排队中的写入和删除交错时，缓存可能空到下一份快照。
 - 钥匙串写 token 失败只记日志：旧 token 先删、新 token 没写进去，配对记录却照写，下次启动显示"尚未配对"。改成先写新 token，成功后再写配对记录。
 - `BridgeStore.pair` 本身没有防重入，现在靠界面挡着。通知入口加进来以后，要在 store 里挡。
+- **真的往 APNs 发一条**（计划 3 只用假的传输层测过）：用户给 `.p8`、在开发者账号里给 App ID 开推送后，从 Mac 设置里"发送测试通知"。同时验证这台 Mac 访问 `api.sandbox.push.apple.com` 要不要走代理（spec §13.6）：Mac 用 `URLSession`，只认系统的代理设置，不认命令行用的 127.0.0.1:1082。
+- **实时活动的推送 token 能不能在后台送回 Mac**（spec §13.1）：push-to-start 启动后，App 在后台被唤醒时能不能连上 Mac，把 `activityToken` 用推送登记送过去。不行就改用 iOS 18 的广播频道，或者只在前台启动。Mac 这边现在的做法：启动一次后等 token，拿不到就不再启动，活动停在旧内容（15 分钟后变灰），直到 7.5 小时或会话全部结束 5 分钟后。
+- Mac 端的联机检查（计划 3 推迟到合回 `main` 之后，因为要运行这条线构建的 Critter.app，会替换用户正在用的那个）：用 `critter-bridge-client` 配一台临时设备，`push --token <64 个 0> --done` 后 `~/.critter/bridge/devices.json` 里有这份登记、权限仍是 0600，设置里这台设备后面有"推送"标签；`push --clear` 后登记消失；没有 `.p8` 时设置显示"未配置"，`~/.critter/app.json` 的 `pushReachable` 为 false；`scripts/dev/e2e-phone.sh` 照常通过；最后撤销这台临时设备。
+- App 的 `ActivityAttributes` 类型要叫 `CritterActivity`：Mac 的 push-to-start 写的是 `LiveActivityContent.attributesName`。
+- App 的 bundle id 定下来后，核对 Mac 设置里的默认值 `com.braynlabs.critter`。Mac 只给登记的 `bundleId` 和设置一致的 iPhone 推送（不一致时设置里写"登记了的 iPhone 不是这个 bundle id 的 App"）。
+- 用户划掉实时活动后，Mac 分不清"划掉"和"结束"，有会话时最多每 10 分钟重新启动一次。真机上嫌烦的话，加一个开关，或者只在有会话开始等你确认时才重开。
+- Codex 控制通道在 Mac 重启后才列出的待批请求，晚于"只记下现状"的第一份快照到达，可能被当成新请求推一次。
+- `push` 帧解码失败（比如不认识的 `environment`）时 Mac 不回 `result`，手机会以为 Mac 版本太旧。只在两边版本不一致时出现。
+- `BridgeClient` 的 init 文档还写着每个请求超时都会断开连接，`registerPush` 例外，改掉。
+- 测试 `devicesFileStaysPrivate` 里 `setActivity` 那一步是空操作（登记里没有实时活动那一部分），补上实时活动再测。
 
 ## 装到真机的计划
 

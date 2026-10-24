@@ -230,7 +230,7 @@ make uninstall
 
 ## 手机连接（Mac 端）
 
-Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手机上回答权限请求、提问和计划。这一节只讲 Mac 这一侧；手机应用在 `android/` 里，线上协议见 `docs/critter-bridge-protocol.md`。
+Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手机上回答权限请求、提问和计划；不开着 App 的 iPhone 由 Mac 通过 Apple 的推送服务提醒（见下面的"iPhone 推送"）。这一节只讲 Mac 这一侧；手机应用在 `android/` 和 `ios/` 里，线上协议见 `docs/critter-bridge-protocol.md`。
 
 ### 打开和配对
 
@@ -261,6 +261,38 @@ Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手�
 - 撤销：设置里点"撤销"，或者运行 `~/.critter/bin/critter-hook statusline-uninstall`，恢复成原来的命令。`make install` 会自动接入，`make uninstall` 会自动撤销。
 - 项目级设置如果覆盖了 `statusLine`，那个项目里的会话采不到这些数据，Critter 不做处理。
 
+### iPhone 推送
+
+iPhone 上的 Critter 只在前台时连着 Mac，所以平时由 Mac 通过 Apple 的推送服务（APNs）把"等你确认"、做完了、出错送到手机上，并更新锁屏和灵动岛上的实时活动。Mac 这一侧已经做好；iPhone 上登记推送、解开通知、实时活动的界面在后面的计划里，在那之前没有 iPhone 会登记，Mac 什么都不推。
+
+配置在设置 › 手机下面的"iPhone 推送"一节，要先打开"允许手机连接"：
+
+1. 准备 APNs 密钥（`.p8`）：在 Apple 开发者网站的 Certificates, Identifiers & Profiles › Keys 里新建一把密钥，勾上 Apple Push Notifications service (APNs)，下载得到 `AuthKey_<Key ID>.p8`。这个文件只能下载一次，自己留好备份。同一个开发者账号里已经有给别的 App 用的 APNs 密钥的话，可以直接用那一把。
+2. 点"选择 .p8 文件…"选中它。Critter 把它复制到 `~/.critter/bridge/apns/AuthKey_<Key ID>.p8`（目录 0700，文件 0600），之前放在那里的密钥会删掉，你选的原文件不动。Key ID 从文件名读出来填好，可以改。
+3. 填 Team ID：开发者网站 Membership 页面上的 10 位团队 ID。
+4. Bundle ID 默认 `com.braynlabs.critter`，要和 iPhone 上 Critter 的 bundle id 一样。iPhone 登记推送时会说自己是哪个 App，不一样的 Mac 不给它推。
+5. 按回车或者离开输入框就保存，存在 `~/.critter/bridge/apns/config.json`（0600），不放在 `UserDefaults` 里。
+
+状态一行：
+
+- "未配置"：还没有选密钥，或者 Key ID、Team ID 没填。
+- "已配置 · 上次发送 3 分钟前"；还没发过时是"已配置 · 还没有发送过"。
+- "出错：<原因>"，红字。比如"读不了 .p8 文件"；"密钥或 Team ID 不对"（APNs 回了 403），出了这个错，改设置之前一条都不再发；"连不上 APNs"，上一条推送重试 3 次（隔 1、2、4 秒）还是发不出去，之后有一条发出去了就会消失。
+
+"发送测试通知"给每台登记了推送的 iPhone 发一条"Critter 推送测试 / 能看到这条，说明推送通了"。还没有 iPhone 登记推送时按钮不可用，旁边写"还没有 iPhone 登记推送"。登记了推送的设备在"已配对的手机"里，名字后面有个小标签"推送"。
+
+什么时候推、推什么：
+
+- 手机连接打开、配置有效、至少有一台 iPhone 登记了推送，三条都满足才工作。否则和没有这个功能时完全一样：不读配置、不为推送组快照、没有定时器、不发请求。
+- 规则和安卓版的提醒一样：每个待答请求推一次"等你确认"，请求了结（在电脑上答了、手机上答了、撤回了）就撤回这条通知；会话在等你确认、手机却答不了（VS Code、Desktop 里的会话，只读的 Codex 会话）时推一条"<名字> 等你确认（请在电脑上处理）"；做完了、出错要 iPhone 上打开对应的开关才推。
+- Mac 刚启动、刚打开手机连接、刚改了推送设置、某台 iPhone 刚登记时，第一份快照只记下现状，不推：重启 Critter 不会把还在等的请求再推一遍。
+- 推送里没有明文：通知的标题、副标题和正文用 iPhone 生成的密钥加密（AES-GCM），Apple 只看得到"Critter / 有会话需要你"、随机的 id、各状态的数量、形象名和额度百分比。实时活动里没有任何文字。
+- `.p8` 只放在 `~/.critter/bridge/apns/`，不离开这台 Mac，也不写进日志；日志里的设备 token 最多写前 8 位。
+- iPhone 上的 Critter 被删掉后，APNs 会说 token 失效，Mac 就删掉这台设备的推送登记。在 Mac 上撤销这台设备或者"重置配对"，会先尽量结束它的实时活动，再删掉登记；关掉"允许手机连接"时，所有实时活动也会结束。
+- 发送用 `URLSession`，走系统的代理设置。
+
+没有 iPhone 时可以用开发用的客户端看登记这一步：`critter-bridge-client push --token <十六进制> [--env sandbox|production] [--done] [--error] [--activity]` 像 iPhone 那样登记（每次一把新的随机推送密钥），`push --clear` 撤销。这样的 token 是假的，真发出去 APNs 会说它无效，Mac 随即删掉这份登记。
+
 ### 手机上能做什么
 
 只有四样：
@@ -276,7 +308,7 @@ Critter 可以让同一 Wi-Fi 下的安卓手机看到所有会话，并在手�
 - 在手机上先答了，电脑上的提示框自动关闭。
 - 在电脑上按 Esc 拒绝，手机上的卡片也会消失。
 
-这靠新增的 `ask` hook 实现：插件给 `PermissionRequest` 多挂了一项 `critter-hook ask`（超时 600 秒），原来的 `event` 那项保留。`ask` 只有在 Critter 在运行、手机连接已打开、而且 10 分钟内有已配对的手机连过时才会等待，否则立刻返回，终端的行为和没装一样。
+这靠新增的 `ask` hook 实现：插件给 `PermissionRequest` 多挂了一项 `critter-hook ask`（超时 600 秒），原来的 `event` 那项保留。`ask` 只有在 Critter 在运行、手机连接已打开，而且 10 分钟内有已配对的手机连过、或者 Mac 能给一台 iPhone 推送（上面"iPhone 推送"的三条都满足，`~/.critter/app.json` 里的 `pushReachable` 为 true）时才会等待，否则立刻返回，终端的行为和没装一样。
 
 目前 `ask` 只对终端里的会话（`CLAUDE_CODE_ENTRYPOINT` 为 `cli`）生效。VS Code、Desktop 和 SDK 里的会话还没验证过确认框能不能和 hook 同时等待，所以 `ask` 在那里直接返回：这些会话照样显示在手机上，但它们的确认只能在电脑上答。插件版本号因此升到 0.3.0。重新运行 `make install` 后，要重启已经打开的会话才会加载它。
 
@@ -377,7 +409,7 @@ scripts/dev/ios-sim-live.sh        # 模拟器里的 App 连这台 Mac 上真的
 
 `scripts/dev/ios-sim-live.sh` 的前提和 `scripts/dev/client-live-check.sh` 一样：Critter 在运行，并且 `defaults write local.critter.pet debugEnabled -bool true`。它会构建并安装 App，用一台临时的 `critter-bridge-client` 设备配对，10 秒后截图到 `ios/build/live/home.png`；再把 App 停掉、不带参数重新打开，5 秒后截图到 `ios/build/live/relaunch.png`（`OUT` 环境变量可以改目录）。两张图都应该显示"已连接"和 Mac 上真实的会话。脚本全程不会对你的会话发"看过了""发一句""停止"，也不会作答；结束时撤销这台临时设备，Mac 设置里的手机列表中不留痕迹。
 
-装到真机、推送通知、实时活动（锁屏和灵动岛）、看板，以及像素风格的外观，都在后面的计划里。
+Mac 这一侧的推送已经做好（见"iPhone 推送"）；装到真机、App 里的推送通知和实时活动（锁屏和灵动岛）、看板，以及像素风格的外观，都在后面的计划里。
 
 ## 调试日志
 

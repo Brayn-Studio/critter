@@ -158,3 +158,16 @@ private func docBlocks(_ label: String) throws -> [String] {
     #expect(String(decoding: try encoder.encode(decoded), as: UTF8.self) == content)
     #expect(decoded.counts.map(\.state) == [.waiting, .running] && decoded.total == 3)
 }
+
+/// The doc's Live Activity pushes are exactly what `PushContent.liveActivity` writes for its content example.
+@Test func protocolDocLiveActivityPushesAreWhatTheMacSends() throws {
+    let content = try JSONDecoder().decode(LiveActivityContent.self, from: Data(try #require(try docBlocks("push-content").first).utf8))
+    let now: Int64 = 1_760_000_000_000
+    let cases: [(String, LiveActivityAction)] = [
+        ("live-start", .start(content)), ("live-update", .update(content, priority: 5)), ("live-end", .end(dismissAt: now)),
+    ]
+    for (label, action) in cases {
+        let block = try #require(try docBlocks(label).first, Comment(rawValue: label))
+        #expect(String(decoding: try PushContent.liveActivity(action, now: now).payload, as: UTF8.self) == block, Comment(rawValue: label))
+    }
+}
