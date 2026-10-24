@@ -1,4 +1,4 @@
-.PHONY: build test app install uninstall android android-install android-setup ios-sim
+.PHONY: build test app install uninstall android android-install android-setup ios-sim ios ios-install ios-test
 
 build:
 	swift build
@@ -57,3 +57,35 @@ android-install:
 IOS_SIM ?= platform=iOS Simulator,name=iPhone 17 Pro,OS=latest
 ios-sim:
 	xcodebuild -project ios/Critter.xcodeproj -scheme Critter -destination '$(IOS_SIM)' -derivedDataPath ios/build build
+
+# Device builds (Release, for the iPhone). Signed by hand: `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual` in
+# ios/Config/Base.xcconfig, so Xcode never registers anything with the developer account by itself. `make ios` first
+# finds the installed provisioning profile for the app and each extension (scripts/ios-device.sh profiles: this
+# team's App ID, not expired, with every entitlement in ios/Config/*.entitlements) and stops, saying what is missing,
+# when one is not there. ALLOW_PROVISIONING=1 instead lets Xcode register the App IDs' capabilities and the App Group
+# and make the profiles (-allowProvisioningUpdates, automatic signing for this one build): only with the account
+# owner's OK.
+IOS_DEVICE_BUILD = xcodebuild -project ios/Critter.xcodeproj -scheme Critter -configuration Release \
+	-destination 'generic/platform=iOS' -derivedDataPath ios/build
+IOS_DEVICE_APP = ios/build/Build/Products/Release-iphoneos/Critter.app
+
+ios:
+	@if [ "$(ALLOW_PROVISIONING)" = "1" ]; then \
+		echo "ALLOW_PROVISIONING=1：这会在开发者账号里登记 App ID 能力和 App Group，并生成描述文件。"; \
+		$(IOS_DEVICE_BUILD) -allowProvisioningUpdates CODE_SIGN_STYLE=Automatic build; \
+	else \
+		profiles=$$(scripts/ios-device.sh profiles) || exit 1; \
+		$(IOS_DEVICE_BUILD) $$profiles build; \
+	fi
+
+# Installs what `make ios` built on the one iPhone connected to this Mac (scripts/ios-device.sh iphone: a real,
+# paired, reachable iPhone); stops when there is none or more than one.
+ios-install:
+	@test -d "$(IOS_DEVICE_APP)" || { echo "make ios-install: $(IOS_DEVICE_APP) is not there: make ios first" >&2; exit 1; }
+	@device=$$(scripts/ios-device.sh iphone) || exit 1; \
+	xcrun devicectl device install app --device "$$device" "$(IOS_DEVICE_APP)"
+
+# The app and both extensions built for the simulator, then the logic they run, which lives in the package: the iOS
+# project has no test target of its own.
+ios-test: ios-sim
+	swift test --filter 'CritterClientTests|CritterKitTests'

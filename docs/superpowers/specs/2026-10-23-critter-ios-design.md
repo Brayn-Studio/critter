@@ -177,9 +177,9 @@ Android 设计 §6.3 的第 3 条门槛是"最近 10 分钟内有任何一台已
 - "只对终端会话开启"（`CLAUDE_CODE_ENTRYPOINT == cli`）的限制不变。
 
 ### 6.8 Makefile
-- `make ios`：用 `xcodebuild` 编译真机版，自动签名（`-allowProvisioningUpdates`）。
-- `make ios-install`：用 `xcrun devicectl` 装到连着的 iPhone。
-- `make ios-test`：在模拟器上跑 iOS 的单元测试。
+- `make ios`：用 `xcodebuild` 编译真机 Release 版，手动签名（`CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`）：先找这台 Mac 上装好的三份描述文件（App 和两个扩展，带齐 entitlements 里的能力），不齐就说缺什么并停下。`ALLOW_PROVISIONING=1` 时这一次改成自动签名加 `-allowProvisioningUpdates`，让 Xcode 在开发者账号里登记能力和 App Group，开头打印提醒；只在账号主人同意时用【计划 5 定：原来是默认自动签名】。
+- `make ios-install`：用 `xcrun devicectl list devices` 找到唯一一台连着的真 iPhone，用 `xcrun devicectl device install app` 装上；没有或不止一台时报错退出。
+- `make ios-test`：先为模拟器构建一遍，再跑 `swift test --filter 'CritterClientTests|CritterKitTests'`（iOS 工程没有单独的测试 target，纯逻辑测试都在包里）。
 
 ## 7. 通信协议
 - 不变的：连接流程、配对、`hello`、`answer`、`seen`、`say`、`interrupt`、`skin`、快照、`result`，全部照协议文档。

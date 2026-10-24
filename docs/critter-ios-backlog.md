@@ -16,7 +16,7 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 装之前必须先做的：
 
-- **不让 Xcode 自己去开发者账号里登记。** `ios/Config/Base.xcconfig` 模拟器构建是 `CODE_SIGN_STYLE = Automatic`（本地签名 `-`），旁边是真的 entitlements（`ios/Config/Critter.entitlements` 等：App Group、钥匙串共享组、推送、时效性通知）。在 Xcode 界面里给真机构建时，自动签名会自己去账号里给 App ID 打开这些能力、登记 App Group、生成描述文件；所以真机构建已经是 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`（计划 4 最终修复轮加的，带注释）。真机构建在描述文件备好之前会签名失败，这是故意的；要改成别的，先问过用户；不加 `-allowProvisioningUpdates`。
+- **不让 Xcode 自己去开发者账号里登记。** `ios/Config/Base.xcconfig` 模拟器构建是 `CODE_SIGN_STYLE = Automatic`（本地签名 `-`），旁边是真的 entitlements（`ios/Config/Critter.entitlements` 等：App Group、钥匙串共享组、推送、时效性通知）。在 Xcode 界面里给真机构建时，自动签名会自己去账号里给 App ID 打开这些能力、登记 App Group、生成描述文件；所以真机构建已经是 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`（计划 4 最终修复轮加的，带注释）。真机构建在描述文件备好之前会签名失败，这是故意的；要改成别的，先问过用户；不加 `-allowProvisioningUpdates`。`make ios`（计划 5 Task 4）构建前先查三份描述文件，不齐就停；`ALLOW_PROVISIONING=1 make ios` 才让 Xcode 自己登记，只在用户当次同意时用。`make ios` 把找到的描述文件用 UUID 填进 `PROVISIONING_PROFILE_SPECIFIER`，还没在真的构建里试过。
 - **描述文件要带齐这些能力**，由用户自己在开发者账号里给 `com.braynlabs.critter` 和两个扩展打开：App Group `group.com.braynlabs.critter`（App、`CritterNotify`、`CritterWidgets` 三个都要）；钥匙串共享组 `<Team ID>.com.braynlabs.critter.shared`（App 和 `CritterNotify`）；推送（`aps-environment = development`，App）；Time Sensitive Notifications（App）。少一样签名就失败。模拟器构建的 entitlements 写在二进制的 `__TEXT,__entitlements` 里，`codesign -d` 显示为空是正常的。
 
 计划 1 留下的：

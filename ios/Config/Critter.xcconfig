@@ -22,3 +22,7 @@ ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 // not cross a /: each folder is listed. The Live Activity's views (CritterWidgets/, compiled into the app only for
 // `-critterActivityDemo`'s page) are left out as well.
 EXCLUDED_SOURCE_FILE_NAMES[config=Release] = $(inherited) $(SRCROOT)/Critter/Debug/* $(SRCROOT)/Critter/Debug/Fixtures/* $(SRCROOT)/CritterWidgets/ActivityPictures.swift $(SRCROOT)/CritterWidgets/CritterActivityViews.swift
+
+// Device builds are signed by hand (Base.xcconfig) with the installed profile `make ios` found for the app
+// (scripts/ios-device.sh profiles). Not set otherwise: no profile, and the device build stops there.
+PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $(CRITTER_PROFILE_APP)

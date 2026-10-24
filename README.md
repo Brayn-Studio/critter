@@ -424,6 +424,7 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模�
 
 ```sh
 make ios-sim                       # 为模拟器构建 App 和两个扩展（通知服务、小组件），输出在 ios/build
+make ios-test                      # 先 make ios-sim，再跑 swift test --filter 'CritterClientTests|CritterKitTests'
 scripts/dev/ios-sim-live.sh        # 模拟器里的 App 连这台 Mac 上真的 Critter
 scripts/dev/push-payloads/make.sh  # 写出各类推送的 simctl push 文件，见下
 scripts/dev/render-mockups.sh      # 把设计稿 mockups 页面渲染成切片，用来和模拟器截图对照
@@ -442,9 +443,23 @@ xcrun simctl push booted com.braynlabs.critter ios/build/push-payloads/permissio
 
 在这个模拟器上，每条都以本地通知投递，类别（按钮）是推送里写的，文字是"Critter / 有会话需要你"（扩展不运行，见上）；所以权限请求（`permission.apns`、`permissionNoReason.apns`、`new-request.apns`、解不开的 `bad.apns`）在这里都只有「打开」，真机上扩展解开文字后才换上「允许」「拒绝」，解不开的仍只有「打开」（单元测试 `aDecryptedPushGetsItsRealCategory`、`anUndecryptedPushStaysOpenOnly`）。通知上的「允许」「拒绝」用 `-critterNotificationAction` 走。`withdraw.apns` 只有 `content-available`，`simctl push` 不收（"Notification has no user visible content"）；撤回用 `-critterWithdrawPush` 代替。投递了哪些，看系统日志里的 "Posting notification"，或者让 App 列出来（`-critterNotificationAction`、`-critterWithdrawPush` 都会在日志 `notifications` 一类里列出投递前后的通知）。
 
-模拟器里的 Debug 构建有一批启动参数（`xcrun simctl launch <模拟器> com.braynlabs.critter -critterFixture home-mixed`），用来直接打开某个画面、某个状态：假数据（`-critterFixture`、`-critterFixtureOffline`）、直接打开某张作答卡、详情、设置或看板（`-critterOpen`、`-critterBoard`）、配对的各个状态（`-critterPairing`）、首次引导的某一步（`-critterOnboarding`）、实时活动的样子（`-critterActivityDemo`）、点通知上的按钮（`-critterNotificationAction`）、Mac 对推送登记的各种回答（`-critterFixturePush`）、设置里取消配对（`-critterUnpair`）、离开一台没能告诉的 Mac（`-critterFixtureDrop`、`-critterLeftMac`）、控件画廊（`-critterGallery`）、模拟充电横放（`-critterFakeDock`），以及帧数和看板的日志。参数和每个假数据的含义都写在 `ios/Critter/Debug/DebugLaunch.swift` 的文件注释里；Release 构建不含这些代码和假数据。
+模拟器里的 Debug 构建有一批启动参数（`xcrun simctl launch <模拟器> com.braynlabs.critter -critterFixture home-mixed`），用来直接打开某个画面、某个状态：假数据（`-critterFixture`、`-critterFixtureOffline`）、直接打开某张作答卡、详情、设置或看板（`-critterOpen`、`-critterBoard`）、配对的各个状态（`-critterPairing`）、首次引导的某一步（`-critterOnboarding`）、实时活动的样子（`-critterActivityDemo`）、点通知上的按钮（`-critterNotificationAction`）、Mac 对推送登记的各种回答（`-critterFixturePush`）、设置里取消配对（`-critterUnpair`）、离开一台没能告诉的 Mac（`-critterFixtureDrop`、`-critterLeftMac`）、控件画廊（`-critterGallery`）、模拟充电横放（`-critterFakeDock`）、本地网络权限被拒（`-critterLocalNetworkDenied`）、扫码器启动失败（`-critterScannerForce`），以及帧数和看板的日志。参数和每个假数据的含义都写在 `ios/Critter/Debug/DebugLaunch.swift` 的文件注释里；Release 构建不含这些代码和假数据。
+
+`make ios-test` 里没有 iOS 工程自己的测试 target：App 和扩展的纯逻辑都在 Swift 包里（`CritterClient`、`CritterKit`），在 Mac 上跑；`CritterClientTests` 里的连接测试在本机回环（127.0.0.1）上起一个用自签证书的 TLS WebSocket 服务，证书由 `/usr/bin/openssl` 临时生成、只导入内存（要 macOS 15 以上），不进钥匙串。
 
 `scripts/dev/render-mockups.sh [--dark] [输出目录]` 用无头 Chrome 把设计稿页面（`docs/superpowers/specs/2026-10-19-critter-phone-visual-mockups.html`）渲染成 1400×1500 的切片，默认放在 `ios/build/mockups/`，`--dark` 渲染深色版放在 `ios/build/mockups-dark/`，需要装了 Google Chrome 和带 Pillow 的 python3。
+
+### 装到 iPhone 上
+
+```sh
+make ios                           # 真机 Release 构建，输出 ios/build/Build/Products/Release-iphoneos/Critter.app
+make ios-install                   # 装到连着这台 Mac 的那一台 iPhone 上
+ALLOW_PROVISIONING=1 make ios      # 让 Xcode 自己去开发者账号里登记（见下），只在账号主人同意时用
+```
+
+- **`make ios`** 用手动签名（`ios/Config/Base.xcconfig` 里的 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`），所以 Xcode 不会自己去开发者账号里登记任何东西。构建前先找这台 Mac 上装好的描述文件（`scripts/ios-device.sh profiles`，只读）：App 和两个扩展各要一份，是这个 Team 的 App ID（`com.braynlabs.critter`、`.notify`、`.widgets`）、没过期、带齐 `ios/Config/*.entitlements` 里的能力（App Group `group.com.braynlabs.critter`、钥匙串共享组、推送、时效性通知，清单见 `docs/critter-ios-backlog.md`"描述文件要带齐这些能力"）。缺哪一份、少哪个能力、哪份过期，它都说出来并停下，不开始构建。描述文件要是开发用的（推送登记的是 `sandbox`）。先在开发者网站给三个 App ID 打开这些能力、生成描述文件，再用 Xcode（设置 › Accounts › 下载手动描述文件）装到这台 Mac 上。
+- **`ALLOW_PROVISIONING=1`** 这一次构建改成自动签名并加 `-allowProvisioningUpdates`：Xcode 会自己在开发者账号里给 App ID 打开能力、登记 App Group、生成描述文件，开头会打印"这会在开发者账号里登记 App ID 能力和 App Group"。它改的是账号里的东西，只在账号主人同意时用；仓库里的签名设置不变。
+- **`make ios-install`** 用 `xcrun devicectl list devices` 找连着的 iPhone（真机、和这台 Mac 配对过、连得上：线连着，或者配对过后在同一个 Wi‑Fi 里），正好一台时用 `xcrun devicectl device install app` 装上；一台都没有或者不止一台时说清楚并停下（`scripts/ios-device.sh iphone`）。手机要解锁、信任这台 Mac，并在 设置 › 隐私与安全性 里打开开发者模式。
 
 ## 调试日志
 

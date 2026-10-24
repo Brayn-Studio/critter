@@ -12,3 +12,7 @@ CODE_SIGN_ENTITLEMENTS = Config/CritterWidgets.entitlements
 APPLICATION_EXTENSION_API_ONLY = YES
 SKIP_INSTALL = YES
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks
+
+// Device builds are signed by hand (Base.xcconfig) with the installed profile `make ios` found for this extension
+// (scripts/ios-device.sh profiles). Not set otherwise: no profile, and the device build stops there.
+PROVISIONING_PROFILE_SPECIFIER[sdk=iphoneos*] = $(CRITTER_PROFILE_WIDGETS)
