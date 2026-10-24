@@ -11,9 +11,10 @@ import UIKit
 /// While it is up the connection pings every 30 s (`BridgeStore.boardOpen`); the screen stays on at the board's
 /// brightness and dims once nothing has happened for 15 minutes (`BoardScreenKeeper`); the whole picture moves by a few
 /// points every 3 minutes so nothing burns in; and with 「看板提示音」 on, a session that just started waiting, finished
-/// or failed plays its sound (`BoardSounds`). Going to the background gives the screen back, coming back takes it
-/// again; every other way out is the closer's to report (`BoardScreenKeeper.leave`). A request is answered on the
-/// answer card, over the board and in landscape.
+/// or failed plays its sound (`BoardSounds`). Leaving the front (inactive: Control Center, the app switcher, a call; or
+/// the background) gives the screen back, coming back to the front takes it again; every other way out is the
+/// closer's to report (`BoardScreenKeeper.leave`). A request is answered on the answer card, over the board and in
+/// landscape.
 ///
 /// The content uses the whole height, and keeps clear of the Dynamic Island on the side it is on in landscape, but not
 /// of the whole of the sides' safe area (62 pt on each side of an iPhone 17 Pro): the island reaches 49 pt in from the
@@ -75,10 +76,14 @@ struct BoardView: View {
         .onAppear(perform: appeared)
         .onDisappear(perform: disappeared)
         .onChange(of: scenePhase) { _, phase in
+            // Not in front (Control Center, the app switcher, a call, on the way to the background): the screen goes
+            // back to the user; in front again, it is the board's again.
+            boardLog("scene \(phase)")
             switch phase {
+            case .inactive: screen.leave(.inactive)
             case .background: screen.leave(.background)
             case .active: screen.enter(base: settings.boardBrightness)
-            default: break
+            @unknown default: screen.leave(.inactive)
             }
         }
         .onChange(of: settings.boardBrightness) { _, brightness in
@@ -114,6 +119,12 @@ struct BoardView: View {
             boardLog("answer \(row.request.requestId) on its card (\(allow ? "允许" : "拒绝")), then open the card")
             onAnswer(row, allow)
             presentedRequestId = row.request.requestId
+        }
+        .onReceive(NotificationCenter.default.publisher(for: FakeDock.cardNotification)) { note in
+            // `-critterFakeDock card`: the first request's card opens as a tap on its Critter does, and closes as a
+            // tap on the scrim does.
+            let open = note.userInfo?["open"] as? Bool ?? false
+            presentedRequestId = open ? store.snapshot?.pending.first?.requestId : nil
         }
         #endif
     }

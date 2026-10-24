@@ -16,13 +16,22 @@ import Foundation
 /// 3 s hold (nothing may be due any more: no tick at 5 s, nor after); unplugged at 9 s and the setting on again at
 /// 9.5 s.
 ///
+/// `card`: an automatic close waits for the answer card open over the board. Plugged in and lying still in landscape
+/// at 2 s (the board opens about 3 s later); at 7 s the first request's answer card opens over the board, as a tap
+/// on its Critter does; unplugged at 9 s (the close due at 19 s waits for the card); plugged in again, still in
+/// landscape, at 22 s; the card closes at 24 s (the held close no longer holds: the board stays). The card opens again
+/// at 26 s; unplugged at 28 s (the close due at 38 s waits); the card closes at 41 s, and the board with it.
+///
 /// The fake sensor reads every 100 ms while it is started, in g like CoreMotion, so the readings take the same path
 /// (and the same conversion to m/s²) as the real ones.
 @MainActor
 final class FakeDock {
     enum Script: Equatable, Sendable {
-        case standard, unplug, holdOff
+        case standard, unplug, holdOff, card
     }
+
+    /// Posted by the `card` script: the board opens the first request's answer card (`open` true) or closes it.
+    static let cardNotification = Notification.Name("critter.fakeDock.card")
 
     let power = FakePower()
     let gravity = FakeGravity()
@@ -54,6 +63,22 @@ final class FakeDock {
             await at(9.5)
             settings.boardAutoOpen = true
             return
+        case .card:
+            await at(7)
+            card(true)
+            await at(9)
+            power.set(false)
+            await at(22)
+            power.set(true)
+            await at(24)
+            card(false)
+            await at(26)
+            card(true)
+            await at(28)
+            power.set(false)
+            await at(41)
+            card(false)
+            return
         case .standard:
             break
         }
@@ -65,6 +90,11 @@ final class FakeDock {
         settings.boardAutoOpen = true
         await at(32)
         power.set(false)
+    }
+
+    private func card(_ open: Bool) {
+        boardLog("fake dock: \(open ? "open" : "close") the answer card over the board")
+        NotificationCenter.default.post(name: Self.cardNotification, object: nil, userInfo: ["open": open])
     }
 
     /// Sleeps until `seconds` after launch.

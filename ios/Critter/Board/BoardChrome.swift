@@ -121,8 +121,9 @@ private struct BoardIconButtonStyle: ButtonStyle {
 /// What the board does to the screen while it is up (spec §8.6, §9; Android `BoardLook.kt`): the brightness is set to
 /// the setting's, and lowered once nothing has happened for 15 minutes (`BoardScreen.brightness`, counted from the
 /// last touch and the last change on the Mac); the screen is kept from locking. Every way out (`BoardScreen.Exit`)
-/// brings back the brightness saved on the way in and lets the screen lock again (`BoardScreen.restore`). Going to
-/// the background is one of them; coming back saves the screen again and sets it again.
+/// brings back the brightness saved on the way in and lets the screen lock again (`BoardScreen.restore`). Leaving the
+/// front (inactive, or the background) is one of them; coming back to the front saves the screen again and sets it
+/// again.
 ///
 /// One for the home screen's life: the board view enters and leaves it, and so does whoever closes the board.
 @MainActor

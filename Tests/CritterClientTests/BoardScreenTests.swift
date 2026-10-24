@@ -72,7 +72,8 @@ private let fifteenMinutes: TimeInterval = 15 * 60
 /// the way in, and the screen free to time out again.
 @Test func everyWayOutRestoresTheScreen() {
     let saved = ScreenState(brightness: 0.62, idleTimerDisabled: false)
-    let exits: [BoardScreen.Exit] = [.closeButton, .unplugged, .upright, .background, .terminated]
+    let exits = BoardScreen.Exit.allCases
+    #expect(Set(exits) == [.closeButton, .unplugged, .upright, .inactive, .background, .terminated])
     for exit in exits {
         let restored = BoardScreen.restore(saved: saved, on: exit)
         #expect(restored.brightness == 0.62, "\(exit)")
@@ -84,4 +85,62 @@ private let fifteenMinutes: TimeInterval = 15 * 60
     for exit in exits {
         #expect(!BoardScreen.restore(saved: dimmedAndAwake, on: exit).idleTimerDisabled, "\(exit)")
     }
+}
+
+// MARK: - An automatic close waits for the answer card
+
+@Test func anAutomaticCloseWithNoCardOpenIsDoneAtOnce() {
+    var hold = BoardCloseHold()
+    let now = hold.close(.unplugged)
+    #expect(now)
+    #expect(hold.held == nil)
+    let release = hold.cardOpen(false, reasonNow: .unplugged)
+    #expect(release == .none)
+}
+
+/// The card and what is typed in it do not go with the board: the close is done once the card closes, if the charger
+/// is still out (or the phone still upright).
+@Test func anAutomaticCloseWaitsForTheCardAndIsDoneWhenItCloses() {
+    var hold = BoardCloseHold()
+    let opened = hold.cardOpen(true, reasonNow: nil)
+    #expect(opened == .none)
+    let first = hold.close(.unplugged)
+    #expect(!first)
+    #expect(hold.held == .unplugged)
+    // The trigger may decide again meanwhile (upright another 3 s): still one close, waiting.
+    let second = hold.close(.upright)
+    #expect(!second)
+    let release = hold.cardOpen(false, reasonNow: .upright)
+    #expect(release == .close(.upright))
+    #expect(hold.held == nil)
+    // Done once: closing nothing again does nothing.
+    let again = hold.cardOpen(false, reasonNow: .upright)
+    #expect(again == .none)
+}
+
+/// Plugged in again and lying in landscape by the time the card closes: no reason holds, the board stays.
+@Test func aHeldCloseWhoseReasonIsGoneIsCalledOff() {
+    var hold = BoardCloseHold()
+    _ = hold.cardOpen(true, reasonNow: nil)
+    let held = hold.close(.unplugged)
+    #expect(!held)
+    let release = hold.cardOpen(false, reasonNow: nil)
+    #expect(release == .calledOff)
+    #expect(hold.held == nil)
+    // A card opened again holds the next close afresh.
+    _ = hold.cardOpen(true, reasonNow: nil)
+    let heldAgain = hold.close(.unplugged)
+    #expect(!heldAgain)
+    let releaseAgain = hold.cardOpen(false, reasonNow: .unplugged)
+    #expect(releaseAgain == .close(.unplugged))
+}
+
+/// Closed by hand (or any other way) while a close was held: the card goes with the board, nothing is left to do.
+@Test func aBoardThatWentForgetsItsHeldClose() {
+    var hold = BoardCloseHold()
+    _ = hold.cardOpen(true, reasonNow: nil)
+    _ = hold.close(.upright)
+    hold.boardGone()
+    let release = hold.cardOpen(false, reasonNow: .upright)
+    #expect(release == .none)
 }

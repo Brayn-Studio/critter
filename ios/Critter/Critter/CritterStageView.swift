@@ -115,6 +115,14 @@ final class CritterStageView: UIView {
     #if DEBUG
     /// `frameCount` over every stage, for `-critterFrameLog`.
     static var framesDrawn = 0
+    /// The same by the screen the stages are on (`critterFrameTag`): every tag a stage has had, from 0.
+    static var framesByTag: [String: Int] = [:]
+    /// The screen this stage counts its frames for (`critterFrameTag`).
+    var frameTag = "other" {
+        didSet {
+            if Self.framesByTag[frameTag] == nil { Self.framesByTag[frameTag] = 0 }
+        }
+    }
     #endif
 
     private static let dragThreshold: CGFloat = 3
@@ -550,6 +558,7 @@ final class CritterStageView: UIView {
             frameCount += 1
             #if DEBUG
             Self.framesDrawn += 1
+            Self.framesByTag[frameTag, default: 0] += 1
             #endif
         }
         return min(next, interactionTicksUntilCue())

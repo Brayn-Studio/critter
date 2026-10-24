@@ -1,15 +1,27 @@
 import CritterKit
 import SwiftUI
 
+extension EnvironmentValues {
+    /// Every Critter stage under it stops its clock, as `CritterStage.paused` does: the home screen's (its meadow
+    /// and its sheets') while the board covers it, which UIKit does not take out of the window.
+    @Entry var critterStagesPaused = false
+    #if DEBUG
+    /// `-critterFrameLog`: the screen the stages under it count their frames for ("home", "board"; "other" for the
+    /// rest).
+    @Entry var critterFrameTag = "other"
+    #endif
+}
+
 /// A `CritterStageView` in SwiftUI: the Critters in `slots`, drawn over whatever is behind (the stage is clear and
 /// lets through touches that land on no Critter), with the touch callbacks. Reduce motion comes from the environment
-/// (`reduceMotion`). For one-off motions (`lookAtYou`, `sinkAll`…) hand it a `CritterStageControl`.
+/// (`reduceMotion`), and so does a pause from above (`critterStagesPaused`). For one-off motions (`lookAtYou`,
+/// `sinkAll`…) hand it a `CritterStageControl`.
 struct CritterStage: UIViewRepresentable {
     var slots: [CritterSlot]
     var claimAllTouches = false
     var carryOnDrag = false
     var restingGaze: GazeZone?
-    /// Stops the clock while still on screen (the board's screen went dark).
+    /// Stops the clock while still on screen; so does `critterStagesPaused` in the environment.
     var paused = false
     var control: CritterStageControl?
     var onTap: (String) -> Void = { _ in }
@@ -17,6 +29,11 @@ struct CritterStage: UIViewRepresentable {
     var onDragStart: (String) -> Void = { _ in }
     var onDragBy: (CGFloat, CGFloat) -> Void = { _, _ in }
     var onCarry: (String, Bool) -> Void = { _, _ in }
+
+    @Environment(\.critterStagesPaused) private var pausedAbove
+    #if DEBUG
+    @Environment(\.critterFrameTag) private var frameTag
+    #endif
 
     func makeCoordinator() -> Coordinator {
         Coordinator(self)
@@ -34,7 +51,10 @@ struct CritterStage: UIViewRepresentable {
         view.claimAllTouches = claimAllTouches
         view.carryOnDrag = carryOnDrag
         view.restingGaze = restingGaze
-        view.setPaused(paused)
+        view.setPaused(paused || pausedAbove)
+        #if DEBUG
+        view.frameTag = frameTag
+        #endif
         if view.slots != slots { view.setActors(slots) }
         control?.view = view
     }

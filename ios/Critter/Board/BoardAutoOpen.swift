@@ -14,14 +14,22 @@ import UIKit
 /// the trigger wants it (charging, active, and the board up or allowed to open); it stops at once when the charger
 /// goes, the app leaves the front or 「充电横放时自动打开」 is switched off. The trigger's deadlines are met with one
 /// sleep each, not by polling.
+///
+/// While an answer card is open over the board (`holdClose`), a close the trigger decides waits for the card, so the
+/// card and what is typed in it are not thrown away under the user's fingers; it is done once the card closes, if its
+/// reason still holds (`BoardCloseHold`).
 @MainActor @Observable
 final class BoardAutoOpen {
     /// Whether the board should be on screen: set when the trigger opens it and whenever a board comes up (opened by
-    /// hand too), cleared when the trigger closes it, gives up on it, or the user closes it. `HomeView` follows it.
+    /// hand too), cleared when the trigger closes it (once no card holds the close), gives up on it, or the user
+    /// closes it. `HomeView` follows it.
     private(set) var wantsBoard = false
 
     /// Why the trigger last closed the board, for the screen's restore.
     @ObservationIgnored private(set) var closeReason: BoardScreen.Exit = .upright
+
+    /// The trigger's closes held while an answer card is open over the board.
+    @ObservationIgnored private var hold = BoardCloseHold()
 
     @ObservationIgnored private let trigger = BoardTrigger()
     @ObservationIgnored private let power: any BoardPowerSource
@@ -63,16 +71,35 @@ final class BoardAutoOpen {
     func boardShown(_ shown: Bool) {
         trigger.onBoardShown(shown)
         wantsBoard = shown
+        if !shown { hold.boardGone() }
         boardLog("auto-open: board \(shown ? "shown" : "gone")")
         update()
     }
 
-    /// The user closed the board: it stays closed until the charger is plugged in again.
+    /// The user closed the board: it stays closed until the charger is plugged in again. Not held by a card.
     func manualExit() {
         trigger.onManualExit(nowMs: Self.now())
         wantsBoard = false
+        hold.boardGone()
         boardLog("auto-open: closed by hand")
         update()
+    }
+
+    /// An answer card opened over the board (`true`) or closed. A close the trigger decided meanwhile is done once
+    /// it closes, if its reason still holds: still unplugged, or still standing upright; plugged in again and not
+    /// upright (lying in landscape again), the board stays.
+    func holdClose(_ cardOpen: Bool) {
+        let reasonNow: BoardScreen.Exit? = !power.charging ? .unplugged : (lastPose == .upright ? .upright : nil)
+        switch hold.cardOpen(cardOpen, reasonNow: reasonNow) {
+        case .close(let reason):
+            closeReason = reason
+            boardLog("auto-open: the card closed; the held close is done (\(reason))")
+            wantsBoard = false
+        case .calledOff:
+            boardLog("auto-open: the card closed; the held close no longer holds (charging, not upright): the board stays")
+        case .none:
+            if cardOpen { boardLog("auto-open: an answer card is open over the board: closes wait for it") }
+        }
     }
 
     /// 「充电横放时自动打开」 changed.
@@ -109,7 +136,12 @@ final class BoardAutoOpen {
             boardLog("auto-open: open the board")
             wantsBoard = true
         case .close:
-            closeReason = power.charging ? .upright : .unplugged
+            let reason: BoardScreen.Exit = power.charging ? .upright : .unplugged
+            guard hold.close(reason) else {
+                boardLog("auto-open: close the board (\(reason)) — held while the answer card is open")
+                return
+            }
+            closeReason = reason
             boardLog("auto-open: close the board (\(closeReason))")
             wantsBoard = false
         case .blocked:

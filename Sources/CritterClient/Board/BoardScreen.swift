@@ -70,6 +70,9 @@ public enum BoardScreen {
         case unplugged
         /// The phone stood upright for 3 seconds.
         case upright
+        /// The app stopped being in front without going to the background (Control Center, the app switcher, a call
+        /// coming in); it takes the screen again once it is active.
+        case inactive
         case background
         /// The app is about to be ended by the system.
         case terminated
@@ -103,5 +106,51 @@ private struct SplitMix64 {
         z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
         z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
         return z ^ (z >> 31)
+    }
+}
+
+/// An automatic close of the board (unplugged for 10 s, upright for 3 s) while an answer card is open over it waits for
+/// the card: the card, and what is typed in it, would go with the board. Closing by hand does not wait. Once the card
+/// closes, the held close is done if a reason for it still holds (the charger still out, the phone still upright), and
+/// called off if none does (plugged in again and lying in landscape: the board stays).
+public struct BoardCloseHold: Sendable {
+    /// What closing the card does about a held close.
+    public enum Release: Equatable, Sendable {
+        /// Nothing was held.
+        case none
+        /// Close the board now, for this reason.
+        case close(BoardScreen.Exit)
+        /// A close was held, and no reason for it holds any more: the board stays.
+        case calledOff
+    }
+
+    /// Whether an answer card is open over the board.
+    public private(set) var cardIsOpen = false
+    /// The close waiting for the card, if any.
+    public private(set) var held: BoardScreen.Exit?
+
+    public init() {}
+
+    /// The automatic opening wants the board closed for `reason`: true to close it now, false when it waits for the
+    /// card.
+    public mutating func close(_ reason: BoardScreen.Exit) -> Bool {
+        guard cardIsOpen else { return true }
+        held = reason
+        return false
+    }
+
+    /// The card opened (`open`) or closed. `reasonNow`: why the board should still close now (`.unplugged`,
+    /// `.upright`), nil if neither holds any more.
+    public mutating func cardOpen(_ open: Bool, reasonNow: BoardScreen.Exit?) -> Release {
+        guard open != cardIsOpen else { return .none }
+        cardIsOpen = open
+        guard !open, held != nil else { return .none }
+        held = nil
+        return reasonNow.map(Release.close) ?? .calledOff
+    }
+
+    /// The board went (by hand, or any other way): nothing is held for it any more.
+    public mutating func boardGone() {
+        held = nil
     }
 }

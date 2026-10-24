@@ -99,7 +99,11 @@ import Foundation
 ///   path as the real one. With `-critterBoardLog`. `-critterFakeDock unplug` plays a shorter one instead: plugged
 ///   in and lying still in landscape at 2 s, unplugged at 10 s (the board closes 10 s later). `-critterFakeDock
 ///   hold-off`: plugged in and landscape at 2 s, the setting switched off at 4 s during the hold (no tick may follow),
-///   unplugged at 9 s and the setting on again at 9.5 s.
+///   unplugged at 9 s and the setting on again at 9.5 s. `-critterFakeDock card` (with the `board` fixture): an
+///   automatic close waits for an answer card open over the board: the card opens at 7 s, unplugged at 9 s (held),
+///   plugged in again in landscape at 22 s, the card closes at 24 s (the board stays), opens again at 26 s, unplugged at
+///   28 s (held), and the card closes at 41 s, the board with it (`FakeDock.swift`). With `-critterOpen answer:<id>`
+///   too, that card is open on the home screen when the board opens by itself, and goes first.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -264,6 +268,7 @@ struct DebugLaunch {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug
             case "hold-off": fakeDock = .holdOff
+            case "card": fakeDock = .card
             default: fakeDock = .standard
             }
         }

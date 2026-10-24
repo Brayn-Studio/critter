@@ -92,6 +92,12 @@ struct HomeView: View {
         .sheetShell(item: answerTarget) { target in
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
         }
+        // Under the board the home screen stays in the window: its Critters (the meadow's, a sheet's) stop until it
+        // is back.
+        .environment(\.critterStagesPaused, showBoard)
+        #if DEBUG
+        .environment(\.critterFrameTag, "home")
+        #endif
         .fullScreenCover(isPresented: $showBoard) {
             BoardView(
                 store: store, drafts: drafts, inline: inline, screen: boardScreen,
@@ -99,14 +105,23 @@ struct HomeView: View {
                 onAnswer: { request, allow in answerInline(request, allow: allow) },
                 onClose: { closeBoard(.closeButton) }
             )
+            .environment(\.critterStagesPaused, false)
+            #if DEBUG
+            .environment(\.critterFrameTag, "board")
+            #endif
         }
         .onChange(of: autoOpen.wantsBoard, initial: true) { _, wanted in
-            // Charging in landscape opens the board; unplugged or upright long enough closes it.
+            // Charging in landscape opens the board; unplugged or upright long enough closes it (once no answer card
+            // over the board holds the close). A board opened by hand is up before this hears of it.
             if wanted, !showBoard {
+                dismissForBoard()
                 openBoard()
             } else if !wanted, showBoard {
                 closeBoard(autoOpen.closeReason)
             }
+        }
+        .onChange(of: boardRequestId != nil) { _, open in
+            autoOpen.holdClose(open)
         }
         .onChange(of: store.conn, initial: true) { _, conn in
             switch conn {
@@ -358,6 +373,19 @@ struct HomeView: View {
 
     // MARK: - The board
 
+    /// The board opens by itself: the home screen's answer card or details go first, so a request is never on a card
+    /// under the board and on one over it at once (the one under it would only say that it was handled). What was
+    /// typed stays in the draft.
+    private func dismissForBoard() {
+        guard presentedRequestId != nil || presentedSessionId != nil else { return }
+        boardLog(
+            "the board opens by itself: the home screen's "
+                + (presentedRequestId != nil ? "answer card \(presentedRequestId ?? "")" : "details") + " closed first"
+        )
+        presentedRequestId = nil
+        presentedSessionId = nil
+    }
+
     /// Puts the board up: at once, then it turns the screen to landscape.
     private func openBoard() {
         var transaction = Transaction()
@@ -370,7 +398,8 @@ struct HomeView: View {
     private func closeBoard(_ exit: BoardScreen.Exit) {
         boardScreen.leave(exit)
         if exit == .closeButton { autoOpen.manualExit() }
-        // A card that was open over the board goes with it.
+        // A card that was open over the board goes with it: only when closed by hand (an automatic close waits for
+        // the card, `BoardAutoOpen.holdClose`).
         boardRequestId = nil
         OrientationLock.shared.lock(.portrait)
         var transaction = Transaction()
