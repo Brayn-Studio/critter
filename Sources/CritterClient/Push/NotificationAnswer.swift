@@ -48,7 +48,8 @@ public enum NotificationAnswer {
     public static let sealedButtons = [open]
 
     /// Every notification category the app registers, by its id, with its buttons: each `PushCategory`, and the
-    /// open-only one the notification service extension puts on a permission request whose text did not open.
+    /// open-only one a permission request's push comes with (`PushPayload.alert`) and keeps while its text has not
+    /// opened.
     public static var categories: [(id: String, buttons: [NotificationButton])] {
         PushCategory.allCases.map { (id: $0.rawValue, buttons: buttons(for: $0)) }
             + [(id: PushOpening.sealedCategory, buttons: sealedButtons)]

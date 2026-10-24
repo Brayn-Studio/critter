@@ -104,10 +104,39 @@ private func opened(_ message: APNsMessage) throws -> PushText {
     let codex = JSONValue.object(["command": .string("npm test"), "acceptsDenyMessage": .bool(false)])
     let message = try PushContent.request(request(.permission, input: codex), session: session(), key: key)
     #expect(try alert(message).category == .permissionNoReason)
-    #expect(try aps(message)["category"] as? String == "permissionNoReason")
+    #expect(try object(message)["k"] as? String == "permissionNoReason")
+    // Until the phone opens its text it only offers 「打开」 (`theMacSendsTheOpenOnlyCategory`).
+    #expect(try aps(message)["category"] as? String == "sealed")
     // Claude's request, and an older one without the field, can be denied with a reason.
     let claude = try PushContent.request(request(.permission, input: command("npm test")), session: session(), key: key)
     #expect(try alert(claude).category == .permission)
+}
+
+/// Ledger (plan 4 final fix wave, residual → plan 5): if the notification service extension never runs (or the system
+/// hands the notification on before it is done), iOS shows the push's own `aps.category`. So a request whose buttons
+/// answer from the notification (「允许」「拒绝」) goes out with the open-only category -- the user would otherwise answer a
+/// command they never saw -- and its real one only in `k` (inside the sealed text's associated data); the extension
+/// switches to it once the text opened. A question's or a plan's only button is 「打开」 (the same as the open-only
+/// one), and the rest have none, so they keep their own.
+@Test func theMacSendsTheOpenOnlyCategory() throws {
+    let codex = JSONValue.object(["command": .string("npm test"), "acceptsDenyMessage": .bool(false)])
+    let messages: [(APNsMessage, String, String)] = [
+        (try PushContent.request(request(.permission, input: command("ls")), session: session(), key: key), "permission", "sealed"),
+        (try PushContent.request(request(.permission, input: codex), session: session(), key: key), "permissionNoReason", "sealed"),
+        (try PushContent.request(request(.question), session: session(), key: key), "question", "question"),
+        (try PushContent.request(request(.plan), session: session(), key: key), "plan", "plan"),
+        (try PushContent.waitingNotice(session(), key: key), "waitingElsewhere", "waitingElsewhere"),
+        (try PushContent.result(session(), state: .done, key: key), "done", "done"),
+        (try PushContent.result(session(), state: .error, key: key), "error", "error"),
+        (try PushContent.test(key: key), "test", "test"),
+    ]
+    for (message, real, shown) in messages {
+        #expect(try object(message)["k"] as? String == real)
+        #expect(try aps(message)["category"] as? String == shown, "\(real)")
+        // The real category is still what the phone reads, and what the text is bound to.
+        #expect(try alert(message).category.rawValue == real)
+        #expect(try opened(message).title.isEmpty == false)
+    }
 }
 
 @Test func waitingIsTimeSensitive() throws {

@@ -60,11 +60,14 @@ extension PushCategory {
 public enum PushOpening {
     /// The notification category of a permission request whose text did not open: only 「打开」, which brings the app up
     /// with the request's card (spec §11). The app registers it with the others (`NotificationAnswer.categories`); it is
-    /// not a `PushCategory`, and the Mac never sends it.
+    /// not a `PushCategory`. The Mac sends it as such a push's `aps.category` (`PushPayload.alert`), the real one only
+    /// in `k`, so that a notification the extension never got to (or that the system took back from it early) has no
+    /// answering buttons either.
     public static let sealedCategory = "sealed"
 
     /// The `categoryIdentifier` of a notification about `category`: its own, unless its text did not open and its
-    /// buttons would answer the request (`answersFromItsNotification`): then `sealedCategory`.
+    /// buttons would answer the request (`answersFromItsNotification`): then `sealedCategory`. With `opened: false`
+    /// it is also the push's `aps.category`: what iOS shows when the extension does not run.
     public static func categoryId(_ category: PushCategory, opened: Bool) -> String {
         opened || !category.answersFromItsNotification ? category.rawValue : sealedCategory
     }

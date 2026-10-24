@@ -123,9 +123,10 @@ import UserNotifications
 ///   pushes of `scripts/dev/push-payloads/make.sh` (sealed with its test key, which it prints) open. Then `xcrun simctl
 ///   push <device> com.braynlabs.critter ios/build/push-payloads/<file>.apns`. In this simulator `simctl push` posts
 ///   the push as a local notification and the extension never runs, so what shows is the plain "Critter / 有会话需要你"
-///   (the decryption, and the open-only category of a permission request that does not open, are tested in
-///   `PushOpeningTests`). For this run only: a launch without it finds the public test key and replaces it
-///   (`PushSetup`, log "the stored push key is the public test key").
+///   with the push's own category: a permission request's is the open-only one (only 「打开」), which the extension
+///   would switch to its real buttons once the text opened (tested in `PushOpeningTests`); use
+///   `-critterNotificationAction` for those buttons. For this run only: a launch without it finds the public test
+///   key and replaces it (`PushSetup`, log "the stored push key is the public test key").
 /// - `-critterNotificationAction <id>:<allow|deny|open|reason:<text>>[@<seconds>]`: that long after launch (default
 ///   1.5 s), the notification with this id (a request id, or `done:<session id>` and the like) is answered or tapped
 ///   through the same handler as a tap on it (`NotificationActionDebug`): `allow`, `deny` and `reason:…` are its buttons

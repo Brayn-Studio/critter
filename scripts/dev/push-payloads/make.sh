@@ -52,8 +52,9 @@ push done --category done --session s-notes --title "notes 做完了" --subtitle
 push error --category error --session s-critter-ios --title "critter-ios 出错" --subtitle "critter-ios · main · 终端" \
   --body "Build failed"
 push test --category test --session test --title "Critter 推送测试" --body "能看到这条，说明推送通了"
-# A sealed text that does not open: the plain "Critter / 有会话需要你", and on a phone only 「打开」 (the extension's
-# open-only category; this simulator does not run the extension, so it shows the push's own buttons).
+# A sealed text that does not open: the plain "Critter / 有会话需要你", and only 「打开」. Every permission request's
+# push comes with that open-only category (`sealed`); on a phone the extension switches to 「允许」「拒绝」 once the text
+# opened, and this one never does. This simulator does not run the extension, so here all of them show only 「打开」.
 push bad --category permission --session s-clawd --request req-perm-1 --title "clawd 想 运行 rm -rf" --corrupt
 # Takes the permission request's and the done session's notifications down. Not for `simctl push` (it refuses it,
 # 1401): `-critterWithdrawPush req-perm-1,done:s-notes` instead.

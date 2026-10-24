@@ -18,7 +18,7 @@ private func dictionary(_ value: Any?) -> [String: Any] { value as? [String: Any
     #expect(dictionary(aps["alert"]) as? [String: String] == ["title": "Critter", "body": "有会话需要你"])
     #expect(Set(aps.keys) == ["alert", "mutable-content", "category", "thread-id", "sound", "interruption-level"])
     #expect(aps["mutable-content"] as? Int == 1)
-    #expect(aps["category"] as? String == "permission")
+    #expect(aps["category"] as? String == "sealed")
     #expect(aps["thread-id"] as? String == "s1")
     #expect(aps["sound"] as? String == "default")
     #expect(aps["interruption-level"] as? String == "time-sensitive")

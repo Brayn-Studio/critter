@@ -44,6 +44,10 @@ public enum ParsedPush: Equatable, Sendable {
 /// The JSON object APNs delivers. Plain text in it is only "Critter / 有会话需要你"; everything
 /// the notification says is in `c`, sealed with `PushCrypto`. The other custom keys are ids and
 /// the category: `r` request id, `s` session id, `k` category, `w` notification ids to withdraw.
+/// `aps.category` is not always `k`: it is what the notification offers until its text has opened
+/// (`PushOpening.categoryId(_:opened: false)`), the open-only `PushOpening.sealedCategory` for a request its
+/// buttons would answer, because iOS shows it as it came when the notification service extension does not
+/// run or is cut short. The extension switches to `k` once the text opened.
 public enum PushPayload {
     public static let title = "Critter"
     public static let body = "有会话需要你"
@@ -60,7 +64,7 @@ public enum PushPayload {
         var aps: [String: Any] = [
             "alert": ["title": title, "body": body],
             "mutable-content": 1,
-            "category": category.rawValue,
+            "category": PushOpening.categoryId(category, opened: false),
             "thread-id": sessionId,
             "sound": "default",
         ]

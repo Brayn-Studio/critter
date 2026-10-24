@@ -11,7 +11,7 @@ import Testing
 /// payload" and "Sealed text"): what the Mac sealed, byte for byte.
 private let docKey = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8"
 private let docPush = #"""
-{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"permission","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXnqaKzMBXOzpqvxT1aUGlhwh","k":"permission","r":"r1","s":"s1"}
+{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"sealed","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXnqaKzMBXOzpqvxT1aUGlhwh","k":"permission","r":"r1","s":"s1"}
 """#
 
 /// A JSON object as APNs hands it to the phone.
@@ -103,24 +103,53 @@ private func generic(_ category: PushCategory, thread: String) -> NotificationLo
     #expect(PushOpening.look(wrongShape, key: key) == generic(.done, thread: "s2"))
 }
 
-/// Ledger (plan 4 final review, FD1): a notification whose text did not open must not offer 「允许」「拒绝」 -- the user
-/// would answer a command they never saw. A permission request (Claude's or Codex's) gets the open-only category, whose
-/// 「打开」 brings up the request's card; once opened it keeps its own buttons. The other categories have no button
-/// that answers (a question's or a plan's 「打开」, none at all): they keep theirs, so the test notification still reads
-/// as one (`NotificationRules`).
-@Test func anUnopenedRequestOffersOnlyOpen() throws {
+/// The category a push comes with: what iOS shows when the notification service extension does not run.
+private func delivered(_ push: [AnyHashable: Any]) -> String? {
+    (push["aps"] as? [String: Any])?["category"] as? String
+}
+
+/// Ledger (plan 5, T1): a push comes with the open-only category when its buttons would answer the request
+/// (`theMacSendsTheOpenOnlyCategory`); once the extension has opened its text the notification gets its real category,
+/// `k`, and with it its own buttons.
+@Test func aDecryptedPushGetsItsRealCategory() throws {
+    let key = PushCrypto.makeKey()
+    for category in PushCategory.allCases {
+        let requestId: String? = [.permission, .permissionNoReason, .question, .plan].contains(category) ? "r9" : nil
+        let push = try push(text, key: key, category: category, requestId: requestId, sessionId: "s3")
+        let look = try #require(PushOpening.look(push, key: key))
+        #expect(look.opened)
+        #expect(look.categoryId == category.rawValue)
+        #expect(look.categoryId == push["k"] as? String)
+    }
+    // A permission request: in as the open-only category, out with 「允许」「拒绝」.
+    let permission = try push(text, key: key, category: .permission, requestId: "r1", sessionId: "s1")
+    #expect(delivered(permission) == PushOpening.sealedCategory)
+    #expect(PushOpening.look(permission, key: key)?.categoryId == "permission")
+    // The protocol doc's push, with its key.
+    #expect(delivered(try userInfo(docPush)) == "sealed")
+    #expect(PushOpening.look(try userInfo(docPush), key: docKey)?.categoryId == "permission")
+}
+
+/// Ledger (plan 4 final review, FD1; plan 5, T1): a notification whose text did not open must not offer 「允许」「拒绝」
+/// -- the user would answer a command they never saw. Whatever kept it shut, a permission request (Claude's or Codex's)
+/// stays in the open-only category, whose 「打开」 brings up the request's card: the extension never ran (iOS shows the
+/// category the push came with), it ran out of time (it hands on `look(_, key: nil)`, made before it reads the key), no
+/// key, another key, a broken text. The other categories have no button that answers (a question's or a plan's
+/// 「打开」, none at all): they come with their own and keep it, so the test notification still reads as one
+/// (`NotificationRules`).
+@Test func anUndecryptedPushStaysOpenOnly() throws {
     let key = PushCrypto.makeKey()
     for category in PushCategory.allCases {
         let requestId: String? = [.permission, .permissionNoReason, .question, .plan].contains(category) ? "r9" : nil
         let good = try push(text, key: key, category: category, requestId: requestId, sessionId: "s3")
-        let opened = try #require(PushOpening.look(good, key: key))
-        #expect(opened.categoryId == category.rawValue)
+        let expected = [.permission, .permissionNoReason].contains(category) ? PushOpening.sealedCategory : category.rawValue
+        // No extension.
+        #expect(delivered(good) == expected, "\(category)")
 
-        // A broken ciphertext, another key, no key.
         var bad = good
         bad["c"] = "AAAA"
-        let expected = [.permission, .permissionNoReason].contains(category) ? PushOpening.sealedCategory : category.rawValue
-        for look in [PushOpening.look(bad, key: key), PushOpening.look(good, key: PushCrypto.makeKey()), PushOpening.look(good, key: nil)] {
+        let early = PushOpening.look(good, key: nil)
+        for look in [early, PushOpening.look(bad, key: key), PushOpening.look(good, key: PushCrypto.makeKey())] {
             let look = try #require(look)
             #expect(!look.opened)
             #expect(look.categoryId == expected)
@@ -129,7 +158,6 @@ private func generic(_ category: PushCategory, thread: String) -> NotificationLo
     }
     // The protocol doc's push, without its key.
     #expect(PushOpening.look(try userInfo(docPush), key: PushCrypto.makeKey())?.categoryId == "sealed")
-    #expect(PushOpening.look(try userInfo(docPush), key: docKey)?.categoryId == "permission")
     // Never one of the push's own categories.
     #expect(PushCategory(rawValue: PushOpening.sealedCategory) == nil)
 }

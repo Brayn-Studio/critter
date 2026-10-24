@@ -319,19 +319,22 @@ The Mac answers with a `result` (`id` echoed):
 What the Mac gives APNs, and the phone and its notification service extension receive. Nothing readable is in it except `Critter` / `有会话需要你`: the notification's own title, subtitle and body are sealed in `c`.
 
 ```json push
-{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"permission","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXnqaKzMBXOzpqvxT1aUGlhwh","k":"permission","r":"r1","s":"s1"}
+{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"sealed","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXnqaKzMBXOzpqvxT1aUGlhwh","k":"permission","r":"r1","s":"s1"}
 ```
 
 | Key | Meaning |
 |---|---|
-| `aps.category`, `k` | What the notification is. One of `permission`, `permissionNoReason` (a permission request that cannot be denied with a reason: Codex), `question`, `plan`, `waitingElsewhere` (a session is waiting but cannot be answered on the phone: "请在电脑上处理"), `done`, `error`, `test`. These are the iOS notification category ids. |
+| `k` | What the notification is. One of `permission`, `permissionNoReason` (a permission request that cannot be denied with a reason: Codex), `question`, `plan`, `waitingElsewhere` (a session is waiting but cannot be answered on the phone: "请在电脑上处理"), `done`, `error`, `test`. These are the iOS notification category ids. |
+| `aps.category` | The category the notification has until its text opens (below): `sealed` for `permission` and `permissionNoReason`, otherwise the same as `k`. |
 | `aps.thread-id`, `s` | The session id. |
 | `r` | The request id. Only for notifications about a request (`permission`, `permissionNoReason`, `question`, `plan`). |
 | `c` | The sealed text (below). |
 | `aps.mutable-content` | Always 1: the service extension opens `c`. If it cannot, the system shows the plain `Critter` / `有会话需要你`. |
 | `aps.interruption-level` | `time-sensitive`, only when a session waits for the user. |
 
-A notification's **id** is its `apns-collapse-id`: the request id for a request, otherwise `<category>:<session id>` (for example `done:s1`).
+**`sealed` is an open-only category.** Its one button, 「打开」, brings the app up with the request's card. A permission request's own buttons (「允许」「拒绝」「拒绝并写理由…」) answer from the notification, so they are offered only once the user can read the request: the service extension sets the notification's category to `k` after `c` opened, and leaves `sealed` when it did not (no key, another key, a broken or moved `c`). iOS shows a push as it came when the extension does not run, or hands it on when the extension runs out of time, so the push itself carries `sealed`. `question` and `plan` (whose only button is 「打开」 too) and the categories without buttons go out with their own category. The app registers `sealed` with the other categories; it is never a `k`.
+
+A notification's **id** is its `apns-collapse-id`: the request id for a request, otherwise `<k>:<session id>` (for example `done:s1`).
 
 To take notifications down the Mac sends a background push naming their ids; the phone removes the delivered notifications with those ids (best effort):
 
