@@ -371,6 +371,8 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模�
 - 减少动态效果：系统的或设置里的任一打开，界面过渡改成淡入淡出，宠物停在代表姿势。
 - 只在 App 开着（在前台）的时候连接。退到后台后会等正在送出的回答有了回执再断开；没有推送，也没有后台提醒。
 
+这些只在模拟器里试过。其中几项连模拟器也做不到真的，还没在真机上试过：看板自动打开（模拟器没有充电状态和重力传感器，只能用 `-critterFakeDock` 模拟充电横放）、亮度调节和保持常亮（模拟器不理亮度写入，日志只证明调用对）、系统的“减少动态效果”开关（`simctl` 改不了，只试了 App 自己的开关）、Mac 把清单发来后换掉小芽（只有单元测试）。模拟器也发不了触摸和键盘，点按、拖动、输入这几条路径只读过代码。待办见 `docs/critter-ios-backlog.md` 的“装到真机的计划”。
+
 在模拟器里跑（需要 Xcode，最低 iOS 17.2，只支持 iPhone）：
 
 ```sh
@@ -385,7 +387,7 @@ scripts/dev/render-mockups.sh      # 把设计稿 mockups 页面渲染成切片�
 
 模拟器里的 Debug 构建有一批启动参数（`xcrun simctl launch <模拟器> com.braynlabs.critter -critterFixture home-mixed`），用来直接打开某个画面、某个状态：假数据（`-critterFixture`、`-critterFixtureOffline`）、直接打开某张作答卡、详情、设置或看板（`-critterOpen`、`-critterBoard`）、配对的各个状态（`-critterPairing`）、控件画廊（`-critterGallery`）、模拟充电横放（`-critterFakeDock`），以及帧数和看板的日志。参数和每个假数据的含义都写在 `ios/Critter/Debug/DebugLaunch.swift` 的文件注释里；Release 构建不含这些代码和假数据。
 
-装到真机、推送通知、实时活动（锁屏和灵动岛）、悬浮球和首次引导，都在后面的计划里。
+装到真机、推送通知、实时活动（锁屏和灵动岛）和首次引导，都在后面的计划里。iPhone 上没有悬浮球：iOS 不允许 App 画在其他 App 上面，由实时活动代替。
 
 ## 调试日志
 
