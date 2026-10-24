@@ -314,7 +314,7 @@ The Mac answers with a `result` (`id` echoed):
 What the Mac gives APNs, and the phone and its notification service extension receive. Nothing readable is in it except `Critter` / `有会话需要你`: the notification's own title, subtitle and body are sealed in `c`.
 
 ```json push
-{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"permission","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXno6EOA5+y9hJa13muqvV0Dj","k":"permission","r":"r1","s":"s1"}
+{"aps":{"alert":{"body":"有会话需要你","title":"Critter"},"category":"permission","interruption-level":"time-sensitive","mutable-content":1,"sound":"default","thread-id":"s1"},"c":"EBESExQVFhcYGRobBtz6eS2wGInoBn90aQ1JJ7IjOiw34CTEhY2LEzIxduFyl3hAuuIrvC530RSl+396ZNhnsVSrNJPVcBrzRLdD0I0flIxrkilABPRZm/r7yt1P0ObZA+9y3ANDyKB+bEKZXnqaKzMBXOzpqvxT1aUGlhwh","k":"permission","r":"r1","s":"s1"}
 ```
 
 | Key | Meaning |
@@ -338,7 +338,9 @@ To take notifications down the Mac sends a background push naming their ids; the
 
 `c` is AES-256-GCM, with the push key `key` (the 32 bytes). Its value is the standard base64 (with padding) of `nonce || ciphertext || tag`: a 12-byte nonce, the ciphertext, a 16-byte tag (CryptoKit's `AES.GCM.SealedBox.combined`). The plaintext is the UTF-8 JSON `{"title":…,"subtitle":…,"body":…}`; all three are strings. The whole push JSON stays within 4096 bytes: the Mac cuts the body, then the subtitle, before sealing.
 
-Test vector, with the `key` of the registration above (a fixed nonce, which the Mac never uses: it makes a new one each time):
+The associated data is the UTF-8 string `<k>|<r>|<s>` of the push the text travels in: its category, its request id (empty when there is none, so `done||s1`), and its session id. A `c` moved into a push with another category, request or session does not open; the phone shows the plain `Critter` / `有会话需要你` then.
+
+Test vector, with the `key` of the registration above and the associated data `permission|r1|s1` of the push above (a fixed nonce, which the Mac never uses: it makes a new one each time):
 
 ```json push-text
 {"body":"swift test","subtitle":"~/CODESPACE/clawd · main · 终端","title":"critter 想运行"}

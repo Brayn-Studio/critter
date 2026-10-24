@@ -52,7 +52,7 @@ private func alert(_ message: APNsMessage) throws -> ParsedPush.Alert {
 }
 
 private func opened(_ message: APNsMessage) throws -> PushText {
-    try PushCrypto.open(try alert(message).sealed, key: key)
+    try PushCrypto.open(try alert(message), key: key)
 }
 
 // MARK: - What the notification says
@@ -223,7 +223,8 @@ private func opened(_ message: APNsMessage) throws -> PushText {
     // As much as fits: one more character would not.
     let longer = PushText(title: text.title, subtitle: text.subtitle, body: String(text.body.dropLast()) + "x…")
     let size = try PushPayload.alert(
-        category: .permission, requestId: "r-1", sessionId: "s-1", sealed: PushCrypto.seal(longer, key: key),
+        category: .permission, requestId: "r-1", sessionId: "s-1",
+        sealed: PushCrypto.seal(longer, key: key, category: .permission, requestId: "r-1", sessionId: "s-1"),
         timeSensitive: true
     )
     #expect(try JSONSerialization.data(withJSONObject: size, options: [.sortedKeys, .withoutEscapingSlashes]).count > 4096)
@@ -389,4 +390,16 @@ private let now: Int64 = 1_760_000_123_456
             #expect(!text.contains(secret), "\(secret) in \(text)")
         }
     }
+}
+
+@Test func aSealedTextMovedToAnotherPushDoesNotOpen() throws {
+    let first = try alert(PushContent.request(request(.permission, input: command("ls")), session: session(), key: key))
+    var second = try alert(PushContent.waitingNotice(session(), key: key))
+    #expect(try PushCrypto.open(first, key: key).body == "ls")
+    // The first request's text in the second push (another category, no request id): it does not open.
+    second.sealed = first.sealed
+    #expect(throws: (any Error).self) { try PushCrypto.open(second, key: key) }
+    var otherRequest = first
+    otherRequest.requestId = (first.requestId ?? "") + "x"
+    #expect(throws: (any Error).self) { try PushCrypto.open(otherRequest, key: key) }
 }

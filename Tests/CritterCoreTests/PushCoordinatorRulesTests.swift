@@ -234,9 +234,12 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     let sent = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
     #expect(sent.map(\.target) == [target("a", .device, "aa"), PushTarget(deviceId: "b", kind: .device, token: "bb", environment: .production)])
     for (push, key, otherKey) in [(sent[0], keyA, keyB), (sent[1], keyB, keyA)] {
-        let sealed = try #require(json(push)["c"] as? String)
-        #expect(try PushCrypto.open(sealed, key: key).title.contains("s1"))
-        #expect(throws: (any Error).self) { try PushCrypto.open(sealed, key: otherKey) }
+        guard case .alert(let alert)? = PushPayload.parse(json(push)) else {
+            Issue.record("not an alert")
+            continue
+        }
+        #expect(try PushCrypto.open(alert, key: key).title.contains("s1"))
+        #expect(throws: (any Error).self) { try PushCrypto.open(alert, key: otherKey) }
     }
 }
 
@@ -353,8 +356,11 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     let tests = pushes.test()
     #expect(tests.map(\.target) == [target("a", .device, "aa"), target("b", .device, "bb")])
     #expect(tests.allSatisfy { json($0)["k"] as? String == PushCategory.test.rawValue })
-    let sealed = try #require(json(tests[1])["c"] as? String)
-    #expect(try PushCrypto.open(sealed, key: keyB) == PushText(title: "Critter 推送测试", subtitle: "", body: "能看到这条，说明推送通了"))
+    guard case .alert(let alert)? = PushPayload.parse(json(tests[1])) else {
+        Issue.record("not an alert")
+        return
+    }
+    #expect(try PushCrypto.open(alert, key: keyB) == PushText(title: "Critter 推送测试", subtitle: "", body: "能看到这条，说明推送通了"))
 }
 
 @Test func aTokenUnderTwoDevicesIsPushedOnceToTheNewerPairing() {

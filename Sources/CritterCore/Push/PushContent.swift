@@ -176,7 +176,8 @@ public enum PushContent {
         func payload(_ text: PushText) throws -> Data {
             try serialize(PushPayload.alert(
                 category: category, requestId: requestId, sessionId: sessionId,
-                sealed: PushCrypto.seal(text, key: key), timeSensitive: timeSensitive
+                sealed: PushCrypto.seal(text, key: key, category: category, requestId: requestId, sessionId: sessionId),
+                timeSensitive: timeSensitive
             ))
         }
         func fits(_ text: PushText) throws -> Bool { try payload(text).count <= maxPayloadBytes }

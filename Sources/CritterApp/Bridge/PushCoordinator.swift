@@ -84,6 +84,10 @@ final class PushCoordinator: @unchecked Sendable {
         guard on != bridgeOn else { return }
         if on {
             bridgeOn = true
+            // Read again when next needed: the files may have changed while it was off.
+            setup = nil
+            signer = nil
+            fanout.bundleId = nil
             fanout.startOver()
         } else {
             if isActive {

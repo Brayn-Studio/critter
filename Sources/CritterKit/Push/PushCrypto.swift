@@ -17,7 +17,9 @@ public struct PushText: Codable, Equatable, Sendable {
 /// Seals notification text so it only appears in the push as ciphertext. AES-256-GCM; the key is
 /// 32 random bytes the phone makes (base64url, no padding); a sealed string is the standard
 /// base64 of CryptoKit's `combined` (12-byte nonce, ciphertext, 16-byte tag) of the JSON
-/// `{"title":…,"subtitle":…,"body":…}`.
+/// `{"title":…,"subtitle":…,"body":…}`. The text is bound to the push it travels in: its category,
+/// request id and session id are the associated data (`associatedData`), so a sealed text moved into
+/// another push does not open.
 public enum PushCrypto {
     public static let keyByteCount = 32
 
@@ -40,18 +42,39 @@ public enum PushCrypto {
         return data
     }
 
-    public static func seal(_ text: PushText, key: String) throws -> String {
+    /// The associated data of a push's sealed text: the UTF-8 of `<k>|<r>|<s>` -- its category, its
+    /// request id (empty when it has none) and its session id, as the payload's `k`, `r` and `s` hold them.
+    public static func associatedData(category: PushCategory, requestId: String?, sessionId: String) -> Data {
+        Data("\(category.rawValue)|\(requestId ?? "")|\(sessionId)".utf8)
+    }
+
+    /// Seals `text` for the push with this category, request id and session id.
+    public static func seal(
+        _ text: PushText, key: String, category: PushCategory, requestId: String?, sessionId: String
+    ) throws -> String {
         let symmetric = try symmetricKey(key)
         let plain = try encoder.encode(text)
-        guard let combined = try AES.GCM.seal(plain, using: symmetric).combined else { throw Failure.badCiphertext }
+        let bound = associatedData(category: category, requestId: requestId, sessionId: sessionId)
+        guard let combined = try AES.GCM.seal(plain, using: symmetric, authenticating: bound).combined else {
+            throw Failure.badCiphertext
+        }
         return combined.base64EncodedString()
     }
 
-    public static func open(_ sealed: String, key: String) throws -> PushText {
+    /// Opens a text sealed for the push with this category, request id and session id; throws for any other.
+    public static func open(
+        _ sealed: String, key: String, category: PushCategory, requestId: String?, sessionId: String
+    ) throws -> PushText {
         let symmetric = try symmetricKey(key)
         guard let combined = Data(base64Encoded: sealed) else { throw Failure.badCiphertext }
-        let plain = try AES.GCM.open(try AES.GCM.SealedBox(combined: combined), using: symmetric)
+        let bound = associatedData(category: category, requestId: requestId, sessionId: sessionId)
+        let plain = try AES.GCM.open(try AES.GCM.SealedBox(combined: combined), using: symmetric, authenticating: bound)
         return try JSONDecoder().decode(PushText.self, from: plain)
+    }
+
+    /// Opens the sealed text of a push the phone received.
+    public static func open(_ alert: ParsedPush.Alert, key: String) throws -> PushText {
+        try open(alert.sealed, key: key, category: alert.category, requestId: alert.requestId, sessionId: alert.sessionId)
     }
 
     private static func symmetricKey(_ key: String) throws -> SymmetricKey {

@@ -149,7 +149,10 @@ private func docBlocks(_ label: String) throws -> [String] {
     let registration = try #require(try docExamples().first { $0.type == "push" }?.object["registration"] as? [String: Any])
     let key = try #require(registration["key"] as? String)
     let plain = try #require(try docBlocks("push-text").first)
-    #expect(try PushCrypto.open(sealed, key: key) == JSONDecoder().decode(PushText.self, from: Data(plain.utf8)))
+    let expected = try JSONDecoder().decode(PushText.self, from: Data(plain.utf8))
+    #expect(try PushCrypto.open(sealed, key: key, category: .permission, requestId: "r1", sessionId: "s1") == expected)
+    // Bound to its push: as `c` of any other push it does not open.
+    #expect(throws: (any Error).self) { try PushCrypto.open(sealed, key: key, category: .permission, requestId: "r2", sessionId: "s1") }
 
     let content = try #require(try docBlocks("push-content").first)
     let encoder = JSONEncoder()
