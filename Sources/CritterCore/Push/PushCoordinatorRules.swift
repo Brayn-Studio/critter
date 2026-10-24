@@ -30,6 +30,13 @@ public enum PushCoordinatorRules {
             || old.key != new.key
     }
 
+    /// The APNs tokens a registration holds: the device's, and its Live Activity's. Two devices must not share
+    /// one (`DeviceRegistry.setPush`), or everything would be pushed twice.
+    public static func tokens(of registration: PushRegistration) -> Set<String> {
+        let all = [registration.token, registration.activity?.startToken, registration.activity?.activityToken]
+        return Set(all.compactMap { $0 }.filter { !$0.isEmpty })
+    }
+
     public static func prefs(_ registration: PushRegistration) -> PushPrefs {
         PushPrefs(notifyDone: registration.notifyDone, notifyError: registration.notifyError)
     }

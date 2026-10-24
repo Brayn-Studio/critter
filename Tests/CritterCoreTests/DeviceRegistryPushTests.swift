@@ -178,3 +178,78 @@ private func permissions(_ file: URL) throws -> Int? {
     #expect(registry.setPush(deviceId: record.id, push()))
     #expect(try FileManager.default.attributesOfItem(atPath: file.path)[.systemFileNumber] as? Int == marker)
 }
+
+private final class Lines: @unchecked Sendable {
+    private let lock = NSLock()
+    private var stored: [String] = []
+    func append(_ line: String) { lock.withLock { stored.append(line) } }
+    var all: [String] { lock.withLock { stored } }
+}
+
+/// A registration this build cannot read (a newer build's value, a field missing) costs only itself: the
+/// devices file is not set aside and no phone has to pair again.
+@Test func anUnreadableRegistrationDropsOnlyItself() throws {
+    let file = tempFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+    let good = #"{"bundleId":"com.braynlabs.critter","environment":"sandbox","key":"\#(key)","notifyDone":true,"notifyError":false,"token":"cc33"}"#
+    let newer = #"{"bundleId":"com.braynlabs.critter","environment":"development","key":"\#(key)","notifyDone":true,"notifyError":false,"token":"aa11"}"#
+    let missing = #"{"bundleId":"com.braynlabs.critter","environment":"sandbox","notifyDone":true,"notifyError":false,"token":"bb22"}"#
+    let text = """
+    [{"id":"D1","name":"iPhone","pairedAt":5,"push":\(newer),"tokenHash":"h1"},
+     {"id":"D2","lastSeen":7,"name":"iPad","pairedAt":6,"push":\(missing),"tokenHash":"h2"},
+     {"id":"D3","name":"Pixel","pairedAt":7,"push":\(good),"tokenHash":"h3"}]
+    """
+    try Data(text.utf8).write(to: file)
+    let lines = Lines()
+    let registry = DeviceRegistry(file: file, log: { lines.append($0) })
+
+    let devices = registry.list()
+    #expect(devices.map(\.id) == ["D1", "D2", "D3"])
+    #expect(devices.map(\.name) == ["iPhone", "iPad", "Pixel"])
+    #expect(devices[1].lastSeen == 7 && devices[0].tokenHash == "h1")
+    #expect(devices[0].push == nil && devices[1].push == nil)
+    #expect(devices[2].push?.token == "cc33")
+    #expect(try FileManager.default.contentsOfDirectory(atPath: file.deletingLastPathComponent().path) == ["devices.json"])
+
+    // Said once per device, however often the file is read, and without the key or the token.
+    _ = registry.list()
+    _ = registry.pushDevices()
+    let said = lines.all.filter { $0.contains("push registration") }
+    #expect(said.count == 2)
+    #expect(said.allSatisfy { !$0.contains(key) && !$0.contains("aa11") && !$0.contains("bb22") })
+
+    // The next write leaves them out and keeps the rest.
+    registry.touch(deviceId: "D3", now: 50)
+    let written = try String(contentsOf: file, encoding: .utf8)
+    #expect(!written.contains("development") && !written.contains("bb22"))
+    #expect(written.contains("cc33") && written.contains("h1") && written.contains("h2"))
+}
+
+/// A phone paired again whose old registration never got taken back: its token is under one device only.
+@Test func aTokenRegisteredAgainUnderAnotherDeviceStaysOnlyWithIt() throws {
+    let file = tempFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let registry = DeviceRegistry(file: file)
+    let (a, _) = try registry.add(name: "iPhone", now: 5)
+    let (b, _) = try registry.add(name: "iPhone", now: 6)
+    let (c, _) = try registry.add(name: "iPad", now: 7)
+    registry.setPush(deviceId: a.id, push(token: "aa11", activity: activity))
+    registry.setPush(deviceId: c.id, push(token: "cc33"))
+
+    #expect(registry.setPush(deviceId: b.id, push(token: "aa11")))
+    #expect(registry.pushDevices().map(\.id) == [b.id, c.id])
+    #expect(registry.list().count == 3)
+    // Registering again under the same device keeps it.
+    #expect(registry.setPush(deviceId: b.id, push(token: "aa11", key: PushCrypto.makeKey())))
+    #expect(registry.pushDevices().map(\.id) == [b.id, c.id])
+
+    // A Live Activity token in common counts too: start or running, either way round.
+    registry.setPush(deviceId: a.id, push(token: "dd44", activity: ActivityRegistration(enabled: true, startToken: "5a5a")))
+    #expect(registry.pushDevices().map(\.id) == [a.id, b.id, c.id])
+    registry.setPush(deviceId: c.id, push(token: "ee55", activity: ActivityRegistration(enabled: true, activityToken: "5a5a")))
+    #expect(registry.pushDevices().map(\.id) == [b.id, c.id])
+    // An empty registration takes nobody else's.
+    registry.setPush(deviceId: a.id, push(token: ""))
+    #expect(registry.pushDevices().map(\.id) == [b.id, c.id])
+}

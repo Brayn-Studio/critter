@@ -354,3 +354,12 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     let sealed = try #require(json(tests[1])["c"] as? String)
     #expect(try PushCrypto.open(sealed, key: keyB) == PushText(title: "Critter 推送测试", subtitle: "", body: "能看到这条，说明推送通了"))
 }
+
+@Test func aTokenUnderTwoDevicesIsPushedOnceToTheNewerPairing() {
+    // A devices file from before the registry kept tokens apart: the same phone under two pairings.
+    let pushes = fanout([record("old", registration("aa")), record("new", registration("aa", key: keyB)), record("c", registration("cc"))])
+    #expect(pushes.reachableDevices == 2)
+    _ = pushes.snapshot(body([session("s1")]), now: t0)
+    let sent = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
+    #expect(sent.map(\.target.deviceId) == ["c", "new"])
+}

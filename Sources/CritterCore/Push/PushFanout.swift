@@ -81,11 +81,16 @@ public final class PushFanout {
     // MARK: - Devices
 
     /// Takes in the registry's list: new registrations are added, changed ones replace the old (starting over
-    /// when their pushes now go elsewhere), and devices without one any more are forgotten.
+    /// when their pushes now go elsewhere), and devices without one any more are forgotten. A token two
+    /// records share (a file from before the registry kept them apart) goes to the later pairing only.
     public func sync(_ records: [DeviceRecord]) {
         var next: [String: Device] = [:]
-        for record in records {
+        var taken: Set<String> = []
+        for record in records.reversed() {
             guard let registration = record.push, !registration.isEmpty else { continue }
+            let tokens = PushCoordinatorRules.tokens(of: registration)
+            guard tokens.isDisjoint(with: taken) else { continue }
+            taken.formUnion(tokens)
             if var device = devices[record.id], !PushCoordinatorRules.startsOver(from: device.registration, to: registration) {
                 device.registration = registration
                 device.tracker.prefs = PushCoordinatorRules.prefs(registration)
