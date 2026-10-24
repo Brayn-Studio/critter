@@ -10,9 +10,10 @@ import SwiftUI
 /// 「跳过」 with what skipping costs (`onSkip`, `skipNote`), 「返回」 going back a step (`onClose`), and a pairing made
 /// going on to the next step (`onPaired`).
 ///
-/// One attempt at a time: while one is under way (`store.pairingPhase` set), nothing starts another. The screen then
-/// shows where it is, and how it failed if it did; when it succeeds the root view shows the home screen. A link that
-/// comes in meanwhile waits (`queuedLink`, the latest one wins): it is taken once the attempt has failed or been
+/// One attempt at a time: while one is under way (`store.isPairing`, or `store.pairingPhase` set), nothing starts
+/// another -- also not while the store, past the Mac's answer, still stops the old connection and saves. The screen
+/// then shows where it is, and how it failed if it did; when it succeeds the root view shows the home screen. A link
+/// that comes in meanwhile waits (`queuedLink`, the latest one wins): it is taken once the attempt has failed or been
 /// cancelled, and dropped without a word once it has succeeded.
 struct PairingView: View {
     let store: BridgeStore
@@ -70,6 +71,9 @@ struct PairingView: View {
                 // A cancelled attempt is over only once the store has let go of it.
                 if phase == nil { takeQueuedIfIdle() }
             }
+            .onChange(of: store.isPairing) { _, pairing in
+                if !pairing { takeQueuedIfIdle() }
+            }
             // Closed during a flash: the code that was read is not paired with behind the home screen.
             .onDisappear { stopFlash() }
             #if DEBUG
@@ -106,9 +110,10 @@ struct PairingView: View {
         BridgeProtocol.deviceName(deviceName)
     }
 
-    /// An attempt is under way, or about to start (a scanned code flashing).
+    /// An attempt is under way (here, or in the store until its `pair` has returned), or about to start (a scanned code
+    /// flashing).
     private var busy: Bool {
-        attempt != nil || store.pairingPhase != nil || flashing
+        attempt != nil || store.isPairing || store.pairingPhase != nil || flashing
     }
 
     // MARK: - Pairing
