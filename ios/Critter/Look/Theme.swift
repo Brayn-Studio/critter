@@ -44,7 +44,7 @@ enum Theme {
 
     // MARK: - States
 
-    static let run = Color(light: 0xA86B00, dark: 0xFFC655)
+    static let run = Color(light: 0x965F00, dark: 0xFFC655)
     static let runBg = Color(light: 0xFFF1CC, dark: 0x3A2F14)
     static let runGlyph = Color(light: 0xE8A21E, dark: 0xF2B33D)
     /// The one loud colour of the app, only for waiting: the fill, with ink on it (7.4:1).
@@ -147,7 +147,7 @@ enum Theme {
         static let button = Color(rgb: 0x2A2540)
         static let buttonInk = Color(rgb: 0xD8D4E6)
         static let buttonLip = Color(rgb: 0x16131F)
-        static let primary = Color(rgb: 0x7C66E6)
+        static let primary = Color(rgb: 0x7560E0)
         static let primaryLip = Color(rgb: 0x4A36B0)
         /// A command on a pro card's slip (the mockups' `.pslip`).
         static let slipInk = Color(rgb: 0xE9D7BC)
