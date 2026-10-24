@@ -137,6 +137,20 @@ enum Theme {
         static let meterCalm = Color(rgb: 0x3C6E43)
         static let meterBusy = Color(rgb: 0x8A6A22)
         static let meterHot = Color(rgb: 0x8C3A35)
+        /// The pro board's state chips (the mockups' `.pchip`): their words while running and done, and ink on the
+        /// orange while waiting. The mockups have no error chip: its red is dimmed like the other two.
+        static let chipRun = Color(rgb: 0xD9A93A)
+        static let chipDone = Color(rgb: 0x4FB86C)
+        static let chipErr = Color(rgb: 0xD9685F)
+        static let chipWaitInk = Color(rgb: 0x16110A)
+        /// The pro board's buttons (the mockups' `.pbtn`): 「拒绝」 and 「允许」, each with its darker bottom row.
+        static let button = Color(rgb: 0x2A2540)
+        static let buttonInk = Color(rgb: 0xD8D4E6)
+        static let buttonLip = Color(rgb: 0x16131F)
+        static let primary = Color(rgb: 0x7C66E6)
+        static let primaryLip = Color(rgb: 0x4A36B0)
+        /// A command on a pro card's slip (the mockups' `.pslip`).
+        static let slipInk = Color(rgb: 0xE9D7BC)
     }
 }
 

@@ -294,6 +294,48 @@ struct TouchWatch: UIViewRepresentable {
     }
 }
 
+/// The window's safe area, told whenever it changes (a SwiftUI view that ignores the safe area reads none of it).
+struct SafeAreaReader: UIViewRepresentable {
+    let onChange: (UIEdgeInsets) -> Void
+
+    func makeUIView(context: Context) -> ReaderView {
+        let view = ReaderView()
+        view.isUserInteractionEnabled = false
+        return view
+    }
+
+    func updateUIView(_ view: ReaderView, context: Context) {
+        view.onChange = onChange
+    }
+
+    final class ReaderView: UIView {
+        var onChange: (UIEdgeInsets) -> Void = { _ in }
+        private var told: UIEdgeInsets?
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            tell()
+        }
+
+        override func safeAreaInsetsDidChange() {
+            super.safeAreaInsetsDidChange()
+            tell()
+        }
+
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            tell()
+        }
+
+        /// Outside SwiftUI's update: the new insets change its state.
+        private func tell() {
+            guard let insets = window?.safeAreaInsets, insets != told else { return }
+            told = insets
+            DispatchQueue.main.async { [weak self] in self?.onChange(insets) }
+        }
+    }
+}
+
 /// `-critterBoardLog` (DEBUG builds): one line on standard output for each thing the board does to the screen and
 /// each sound it plays (`BoardLog`). Nothing in a release build.
 func boardLog(_ message: @autoclosure () -> String) {

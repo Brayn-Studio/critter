@@ -15,8 +15,9 @@ import UIKit
 /// again; every other way out is the closer's to report (`BoardScreenKeeper.leave`). A request is answered on the
 /// answer card, over the board and in landscape.
 ///
-/// The content keeps clear of the sides' safe area (the Dynamic Island sits on one of them in landscape) and uses the
-/// whole height.
+/// The content uses the whole height, and keeps clear of the Dynamic Island on the side it is on in landscape, but not
+/// of the whole of the sides' safe area (62 pt on each side of an iPhone 17 Pro): the island reaches 49 pt in from the
+/// edge, and the board needs the width (the mockups' board is 800 pt wide).
 struct BoardView: View {
     let store: BridgeStore
     let drafts: AnswerDrafts
@@ -36,28 +37,33 @@ struct BoardView: View {
     @State private var presentedRequestId: String?
     /// The burn-in shift, re-rolled every 3 minutes while the app is in front.
     @State private var shift = CGSize.zero
+    /// The window's safe area on its wider side (62 pt on an iPhone 17 Pro in landscape).
+    @State private var safeSide: CGFloat = 0
 
     private struct Target: Identifiable {
         let id: String
     }
 
+    /// How far in from each side the content keeps, at most (the safe area's side, when it is narrower).
+    private static let sideInset: CGFloat = 50
+
     var body: some View {
         let data = BoardData(snapshot: store.snapshot, connected: store.conn.isConnected, updatedAt: store.snapshotAt)
         ZStack(alignment: .topTrailing) {
-            Theme.Board.bg
-                .ignoresSafeArea()
             content(data)
                 .offset(shift)
-                .ignoresSafeArea(.container, edges: .vertical)
             buttons
                 .padding(.top, 18)
                 .padding(.trailing, 20)
-                .ignoresSafeArea(.container, edges: .vertical)
         }
+        .padding(.horizontal, min(safeSide, Self.sideInset))
+        .background(Theme.Board.bg)
+        .ignoresSafeArea()
         // The board is always dark (design §5), whatever the phone's appearance; the answer card is not.
         .environment(\.colorScheme, .dark)
         .background {
             TouchWatch { screen.touched() }
+            SafeAreaReader { insets in safeSide = max(insets.left, insets.right) }
         }
         .sheetShell(item: answerTarget) { target in
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
@@ -108,11 +114,14 @@ struct BoardView: View {
         if settings.boardCritterMode {
             CritterBoard(data: data, skins: skins.library, dim: skins.idleDim, onTap: tap)
         } else {
-            // The pro board comes with Task 16.
-            Text("专业模式")
-                .font(.nunito(size: 14, weight: .bold))
-                .foregroundStyle(Theme.Board.dim)
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ProBoard(
+                data: data, skins: skins.library, dim: skins.idleDim, canAct: store.canAct, answers: inline,
+                onAnswer: { card, allow in
+                    let row = RowRequest(request: card.request, what: card.what, command: card.detail, more: card.more)
+                    onAnswer(row, allow)
+                },
+                onOpen: { presentedRequestId = $0 }
+            )
         }
     }
 
