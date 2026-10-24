@@ -6,21 +6,25 @@ struct OnboardingStepsTests {
         #expect(OnboardingSteps.all == [.welcome, .pair, .notifications, .liveActivity, .board])
     }
 
-    /// "n / 5": the welcome page is the first of the five (it shows no seeds), so pairing is the second.
-    @Test func eachStepHasItsNumberOutOfFive() {
-        #expect(OnboardingSteps.all.map { OnboardingSteps.position(of: $0) } == [
-            StepPosition(number: 1, total: 5), StepPosition(number: 2, total: 5), StepPosition(number: 3, total: 5),
-            StepPosition(number: 4, total: 5), StepPosition(number: 5, total: 5),
+    /// "n / 4": the welcome page is not counted (it has no seeds), so pairing is the first of four.
+    @Test func eachStepAfterTheWelcomePageHasItsNumberOutOfFour() {
+        #expect(OnboardingSteps.position(of: .welcome) == nil)
+        #expect(OnboardingSteps.numbered.map { OnboardingSteps.position(of: $0) } == [
+            StepPosition(number: 1, total: 4), StepPosition(number: 2, total: 4), StepPosition(number: 3, total: 4),
+            StepPosition(number: 4, total: 4),
         ])
-        #expect(OnboardingSteps.position(of: .notifications).text == "3 / 5")
+        #expect(OnboardingSteps.numbered == [.pair, .notifications, .liveActivity, .board])
+        #expect(OnboardingSteps.position(of: .pair)?.text == "1 / 4")
+        #expect(OnboardingSteps.position(of: .notifications)?.text == "2 / 4")
     }
 
-    /// Sprouts behind, the bud for this step, seeds ahead.
+    /// Sprouts behind, the bud for this step, seeds ahead: four seeds, the first a bud on the pairing step.
     @Test func theSeedsSproutBehindAndBudAtTheStep() {
-        #expect(OnboardingSteps.seeds(StepPosition(number: 1, total: 5)) == [.bud, .seed, .seed, .seed, .seed])
-        #expect(OnboardingSteps.seeds(StepPosition(number: 3, total: 5)) == [.sprout, .sprout, .bud, .seed, .seed])
-        #expect(OnboardingSteps.seeds(StepPosition(number: 5, total: 5)) == [.sprout, .sprout, .sprout, .sprout, .bud])
-        #expect(OnboardingSteps.seeds(OnboardingSteps.position(of: .pair)) == [.sprout, .bud, .seed, .seed, .seed])
+        #expect(OnboardingSteps.seeds(StepPosition(number: 1, total: 4)) == [.bud, .seed, .seed, .seed])
+        #expect(OnboardingSteps.seeds(StepPosition(number: 3, total: 4)) == [.sprout, .sprout, .bud, .seed])
+        #expect(OnboardingSteps.seeds(StepPosition(number: 4, total: 4)) == [.sprout, .sprout, .sprout, .bud])
+        #expect(OnboardingSteps.position(of: .pair).map(OnboardingSteps.seeds) == [.bud, .seed, .seed, .seed])
+        #expect(OnboardingSteps.position(of: .board).map(OnboardingSteps.seeds) == [.sprout, .sprout, .sprout, .bud])
     }
 
     /// Skipping a step goes where its main button goes: the next one; past the last the guide is done.

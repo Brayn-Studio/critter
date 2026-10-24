@@ -6,9 +6,9 @@ import UserNotifications
 
 /// The first-run guide (spec §8.8, visual design §8.2, Android `OnboardingActivity`): the welcome page, pairing, the
 /// permission to show notifications, what the Live Activity is, and the Shortcuts automation that brings the board up
-/// on the charger. Every step can be skipped and says what that costs; the seeds over each step show "n / 5". Done
-/// (the last step's button, or skipping it), the settings remember it (`onboardingDone`) and `onFinish` hands the
-/// screen back: the home screen when paired, the pairing screen otherwise.
+/// on the charger. Every step can be skipped and says what that costs; the seeds over each step after the welcome page
+/// show "n / 4". Done (the last step's button, or skipping it), the settings remember it (`onboardingDone`) and
+/// `onFinish` hands the screen back: the home screen when paired, the pairing screen otherwise.
 struct OnboardingView: View {
     let store: BridgeStore
     /// `pair.deviceName`.
@@ -85,7 +85,8 @@ private struct PairStep: View {
     let store: BridgeStore
     let deviceName: String
     @Binding var link: IncomingPairLink?
-    let position: StepPosition
+    /// The seeds' "n / 4" (`OnboardingSteps.position`).
+    let position: StepPosition?
     let next: () -> Void
     let back: () -> Void
 
@@ -93,7 +94,7 @@ private struct PairStep: View {
     @State private var pairedAlready: Bool
 
     init(
-        store: BridgeStore, deviceName: String, link: Binding<IncomingPairLink?>, position: StepPosition,
+        store: BridgeStore, deviceName: String, link: Binding<IncomingPairLink?>, position: StepPosition?,
         next: @escaping () -> Void, back: @escaping () -> Void
     ) {
         self.store = store
@@ -128,7 +129,8 @@ private struct PairStep: View {
 /// notification it will bring floating over its meadow. Not asked yet (or only quietly, provisionally): 「允许通知」 asks;
 /// refused: 「去打开」 opens the app's notification settings; allowed: done, 「下一步」.
 private struct NotificationsStep: View {
-    let position: StepPosition
+    /// The seeds' "n / 4" (`OnboardingSteps.position`).
+    let position: StepPosition?
     let next: () -> Void
 
     @Environment(\.openURL) private var openURL
@@ -211,7 +213,8 @@ private struct AppMark: View {
 /// Off already (the guide run again): 「打开实时活动」 switches it on, 「跳过」 leaves it off. Either way the settings can
 /// change it later.
 private struct LiveActivityStep: View {
-    let position: StepPosition
+    /// The seeds' "n / 4" (`OnboardingSteps.position`).
+    let position: StepPosition?
     let next: () -> Void
 
     @Environment(PhoneSettings.self) private var settings
@@ -336,7 +339,8 @@ private struct LockScreenPicture: View {
 /// board when the phone lies in landscape. A picture of the automation, the three steps to make it, and 「打开快捷指令」.
 /// Back from Shortcuts the button reads 「完成引导」 (whether the automation was made cannot be read back).
 private struct BoardStep: View {
-    let position: StepPosition
+    /// The seeds' "n / 4" (`OnboardingSteps.position`).
+    let position: StepPosition?
     let finish: () -> Void
 
     @Environment(\.openURL) private var openURL

@@ -32,7 +32,7 @@ public struct StepPosition: Equatable, Sendable {
         self.total = total
     }
 
-    /// "3 / 5".
+    /// "2 / 4".
     public var text: String { "\(number) / \(total)" }
 }
 
@@ -41,10 +41,13 @@ public enum OnboardingSteps {
     /// The pages in order: every one of them, on every phone (iOS asks for nothing else up front).
     public static let all: [OnboardingStep] = OnboardingStep.allCases
 
-    /// Where `step` is, "n / 5" (spec §8.8): the welcome page is the first of the five, though it shows no seeds (the
-    /// mockups' welcome page has none), so the pairing step reads "2 / 5" with the welcome page's seed sprouted.
-    public static func position(of step: OnboardingStep) -> StepPosition {
-        StepPosition(number: (all.firstIndex(of: step) ?? 0) + 1, total: all.count)
+    /// The pages the seeds count: every one after the welcome page, which has no number and no seeds (visual design
+    /// §8.2, the mockups; Android `stepPosition`).
+    public static let numbered: [OnboardingStep] = all.filter { $0 != .welcome }
+
+    /// Where `step` is, "n / 4", not counting the welcome page: pairing is "1 / 4". Nil for the welcome page.
+    public static func position(of step: OnboardingStep) -> StepPosition? {
+        numbered.firstIndex(of: step).map { StepPosition(number: $0 + 1, total: numbered.count) }
     }
 
     /// The row for `position`: sprouts for the steps behind it, the bud for it, seeds for the steps ahead.

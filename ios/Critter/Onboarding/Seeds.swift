@@ -1,9 +1,9 @@
 import CritterClient
 import SwiftUI
 
-/// The five seeds over a step (visual design §8.2, Android `SeedRow`): sprouted (green) for the steps behind, a bud
-/// (brand) for this one, seeds (grey) for the steps ahead, 3 pt a cell, and "n / 5" beside them in Silkscreen. Read
-/// out as one line, "第 n 步，共 5 步". On the dark scanner page the colours come from its dark theme.
+/// The four seeds over a step after the welcome page (visual design §8.2, Android `SeedRow`): sprouted (green) for the
+/// steps behind, a bud (brand) for this one, seeds (grey) for the steps ahead, 3 pt a cell, and "n / 4" beside them in
+/// Silkscreen. Read out as one line, "第 n 步，共 4 步". On the dark scanner page the colours come from its dark theme.
 struct SeedRow: View {
     let position: StepPosition
 
