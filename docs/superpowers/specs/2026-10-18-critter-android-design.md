@@ -259,10 +259,10 @@
 | kind | 回答 | hook 输出 |
 |---|---|---|
 | permission | `{"decision":"allow"}` | `decision.behavior = "allow"` |
-| permission | `{"decision":"deny","message":"…"}` | `behavior = "deny"`，`message` 为用户写的理由；没写就用 "用户在手机上拒绝了" |
+| permission | `{"decision":"deny","message":"…"}` | `behavior = "deny"`，`message` 为 "用户在手机上拒绝了，没有执行。用户的理由：<理由>"；没写理由就用 "用户在手机上拒绝了"（2026-10-24 真机上发现只给理由原文时，Claude 当成命令报错去重试） |
 | question | `{"answers":{"<问题原文>":"<label 或自由文本>"}}` | `behavior = "allow"`，`updatedInput` = 原 `tool_input` 加上 `answers`；只接受原 `questions` 里出现过的问题原文 |
 | plan | `{"decision":"approve"}` | `behavior = "allow"`，`updatedInput` = 原 `tool_input` |
-| plan | `{"decision":"revise","message":"…"}` | `behavior = "deny"`，`message` = 修改意见 |
+| plan | `{"decision":"revise","message":"…"}` | `behavior = "deny"`，`message` = "用户在手机上没有批准这个计划，要求修改：<修改意见>" |
 
 - **撤销已了结的请求**：pending 文件被删，等待中的 hook 就会退出，手机上的卡片也跟着消失。
   - `critter-hook event` 处理这些事件时顺带删除：

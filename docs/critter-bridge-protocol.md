@@ -83,7 +83,7 @@ Permission, allow:
 {"id":"c1","payload":{"decision":"allow"},"requestId":"req-1","type":"answer"}
 ```
 
-Permission, deny (`message` optional; the Mac substitutes a default):
+Permission, deny (`message` optional). The Mac does not pass the reason to Claude on its own: Claude reads "用户在手机上拒绝了，没有执行。用户的理由：<message>", or "用户在手机上拒绝了" without one (with the reason alone, Claude took it for the command's own error and retried). A plan's `revise` reaches Claude as "用户在手机上没有批准这个计划，要求修改：<message>":
 
 ```json
 {"id":"c2","payload":{"decision":"deny","message":"Not now"},"requestId":"req-2","type":"answer"}

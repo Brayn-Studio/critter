@@ -23,6 +23,14 @@ private func decision(_ data: Data) -> JSONValue { json(data)["hookSpecificOutpu
     #expect(decision(out)["message"] == .string("用户在手机上拒绝了"))
 }
 
+/// Measured on an iPhone: with the reason alone as the message ("等会"), Claude took it for the command's own error and
+/// retried. The message says it is the user's refusal, that nothing ran, and gives the reason as theirs.
+@Test func permissionDenyGivesTheReasonAsTheUsers() {
+    let out = AskDecision.output(kind: .permission, toolInput: bashInput, answer: AnswerPayload(decision: "deny", message: "  等会 \n"))!
+    #expect(decision(out)["behavior"] == .string("deny"))
+    #expect(decision(out)["message"] == .string("用户在手机上拒绝了，没有执行。用户的理由：等会"))
+}
+
 @Test func questionOutputEchoesInputPlusAnswers() {
     let out = AskDecision.output(kind: .question, toolInput: questionInput, answer: AnswerPayload(answers: ["Pick a number": "Two"]))!
     let d = decision(out)
@@ -90,7 +98,7 @@ nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSeria
     #expect(AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "revise", message: " ")) == nil)
     let out = AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "revise", message: "改名为 x"))!
     #expect(decision(out)["behavior"] == .string("deny"))
-    #expect(decision(out)["message"] == .string("改名为 x"))
+    #expect(decision(out)["message"] == .string("用户在手机上没有批准这个计划，要求修改：改名为 x"))
 }
 
 /// What is checked is what goes out: answers are trimmed in the output too, so padding can't
@@ -108,7 +116,7 @@ nonisolated(unsafe) private let twoQuestionInput: [String: Any] = try! JSONSeria
 
 @Test func planReviseMessageIsTrimmed() throws {
     let out = try #require(AskDecision.output(kind: .plan, toolInput: planInput, answer: AnswerPayload(decision: "revise", message: "  改一下  \n")))
-    #expect(decision(out)["message"] == .string("改一下"))
+    #expect(decision(out)["message"] == .string("用户在手机上没有批准这个计划，要求修改：改一下"))
 }
 
 @Test func wrongDecisionForKindIsRejected() {

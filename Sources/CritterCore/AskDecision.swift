@@ -4,6 +4,17 @@ import Foundation
 /// an answer is one Claude Code could act on before it is used.
 public enum AskDecision {
     public static let defaultDenyMessage = "用户在手机上拒绝了"
+
+    /// What Claude reads for a refusal with a reason. The reason alone ("等会") reads like the command's own error (on an
+    /// iPhone Claude retried it), so the message says the user refused, that nothing ran, and gives the reason as theirs.
+    public static func denyMessage(reason: String) -> String {
+        reason.isEmpty ? defaultDenyMessage : "用户在手机上拒绝了，没有执行。用户的理由：\(reason)"
+    }
+
+    /// What Claude reads when a plan is sent back: the user's changes, said to be theirs.
+    public static func reviseMessage(_ changes: String) -> String {
+        "用户在手机上没有批准这个计划，要求修改：\(changes)"
+    }
     /// Keys whose strings are shown in full; everything else is cut at `displayLimit`.
     public static let untruncatedKeys: Set<String> = ["command", "plan", "question", "file_path", "notebook_path", "url"]
     /// How a multi-select question's chosen option labels are joined into its one answer
@@ -62,8 +73,7 @@ public enum AskDecision {
             if answer.decision == "allow" {
                 decision = ["behavior": "allow"]
             } else {
-                let message = (answer.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-                decision = ["behavior": "deny", "message": message.isEmpty ? defaultDenyMessage : message]
+                decision = ["behavior": "deny", "message": denyMessage(reason: (answer.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines))]
             }
         case .question:
             // Trimmed, as they were checked: what goes out is what was measured.
@@ -74,7 +84,7 @@ public enum AskDecision {
             if answer.decision == "approve" {
                 decision = ["behavior": "allow", "updatedInput": toolInput]
             } else {
-                decision = ["behavior": "deny", "message": (answer.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines)]
+                decision = ["behavior": "deny", "message": reviseMessage((answer.message ?? "").trimmingCharacters(in: .whitespacesAndNewlines))]
             }
         }
         let root: [String: Any] = ["hookSpecificOutput": ["hookEventName": "PermissionRequest", "decision": decision]]
