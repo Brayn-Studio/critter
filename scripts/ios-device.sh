@@ -3,8 +3,10 @@
 # registered with the developer account, nothing is installed.
 #
 #   scripts/ios-device.sh profiles   # the installed provisioning profile for the app and each extension, as
-#                                    # CRITTER_PROFILE_APP=<uuid> CRITTER_PROFILE_NOTIFY=<uuid> CRITTER_PROFILE_WIDGETS=<uuid>
-#                                    # (xcodebuild settings); exits 1, saying what is missing, if one is not there
+#                                    # xcodebuild settings: CRITTER_PROFILE_APP=<uuid> CRITTER_PROFILE_NOTIFY=<uuid>
+#                                    # CRITTER_PROFILE_WIDGETS=<uuid> for profiles made by hand, CODE_SIGN_STYLE=Automatic
+#                                    # when they are the ones Xcode made (see below); exits 1, saying what is missing,
+#                                    # if one is not there
 #   scripts/ios-device.sh iphone     # the identifier of the one iPhone connected to this Mac; exits 1 if there is
 #                                    # none or more than one
 #
@@ -13,6 +15,11 @@
 # `development`, as the build run from Xcode gets its token from the development APNs). Looked for where Xcode
 # keeps them: ~/Library/Developer/Xcode/UserData/Provisioning Profiles and ~/Library/MobileDevice/Provisioning
 # Profiles (CRITTER_PROFILE_DIRS, colon-separated, instead).
+#
+# Profiles Xcode made itself (`ALLOW_PROVISIONING=1 make ios`, or Xcode's automatic signing) can only be used by
+# automatic signing. When every target has one, the build signs automatically but without -allowProvisioningUpdates,
+# so Xcode takes the profiles already on this Mac and never asks the developer account for anything. Profiles made by
+# hand win when every target has one of those; a mix of the two kinds is refused.
 #
 # An iPhone counts when it is a real one (not a simulator), paired with this Mac, and reachable (connected, or
 # available over the cable or the network: devicectl connects to it to install). CRITTER_DEVICES_JSON names a
@@ -91,7 +98,11 @@ def missing(p, wanted):
             gaps.append(f'aps-environment "{value}" (this profile has "{have[key]}")')
     return gaps
 
-found, problems = [], []
+def describe(bundle, p):
+    managed = " (Xcode managed)" if p.get("IsXcodeManaged") else ""
+    return f"{bundle}: {p.get('Name', '?')}{managed} ({p['UUID']}, until {expires(p):%Y-%m-%d})"
+
+chosen, problems = [], []
 for variable, bundle, entitlements in targets:
     with open(os.path.join(config, entitlements), "rb") as f:
         wanted = plistlib.load(f)
@@ -99,9 +110,11 @@ for variable, bundle, entitlements in targets:
     mine = [p for p in profiles if p.get("Entitlements", {}).get("application-identifier") == app_id]
     good = [p for p in mine if expires(p) > now and not missing(p, wanted)]
     if good:
-        best = max(good, key=expires)
-        found.append(f"{variable}={best['UUID']}")
-        print(f"{bundle}: {best.get('Name', '?')} ({best['UUID']}, until {expires(best):%Y-%m-%d})", file=sys.stderr)
+        by_hand = [p for p in good if not p.get("IsXcodeManaged")]
+        by_xcode = [p for p in good if p.get("IsXcodeManaged")]
+        chosen.append((variable, bundle,
+                       max(by_hand, key=expires) if by_hand else None,
+                       max(by_xcode, key=expires) if by_xcode else None))
     elif not mine:
         problems.append(f"{bundle}: no provisioning profile for {app_id}")
     else:
@@ -115,7 +128,24 @@ if problems:
     print("先把能力和描述文件备好：在开发者账号里给 App ID 打开能力、生成描述文件、装进 Xcode（README「装到 iPhone 上」）。"
           "或者经账号主人同意，这一次用 ALLOW_PROVISIONING=1 make ios 让 Xcode 自己登记。", file=sys.stderr)
     sys.exit(1)
-print(" ".join(found))
+if all(by_hand for _, _, by_hand, _ in chosen):
+    for _, bundle, p, _ in chosen:
+        print(describe(bundle, p), file=sys.stderr)
+    print(" ".join(f"{variable}={p['UUID']}" for variable, _, p, _ in chosen))
+elif all(by_xcode for _, _, _, by_xcode in chosen):
+    # Manual signing refuses a profile Xcode manages; automatic signing without -allowProvisioningUpdates only picks
+    # among the profiles already installed.
+    for _, bundle, _, p in chosen:
+        print(describe(bundle, p), file=sys.stderr)
+    print("CODE_SIGN_STYLE=Automatic")
+else:
+    print("make ios: some targets have only a profile Xcode made and the others only one made by hand; one build signs "
+          "them all the same way:", file=sys.stderr)
+    for _, bundle, by_hand, by_xcode in chosen:
+        print("  " + describe(bundle, by_hand or by_xcode), file=sys.stderr)
+    print("把三份描述文件统一成同一种：都在开发者网站手动生成，或者经账号主人同意用 ALLOW_PROVISIONING=1 make ios "
+          "让 Xcode 全部重新生成。", file=sys.stderr)
+    sys.exit(1)
 PY
 }
 

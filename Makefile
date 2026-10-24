@@ -62,9 +62,10 @@ ios-sim:
 # ios/Config/Base.xcconfig, so Xcode never registers anything with the developer account by itself. `make ios` first
 # finds the installed provisioning profile for the app and each extension (scripts/ios-device.sh profiles: this
 # team's App ID, not expired, with every entitlement in ios/Config/*.entitlements) and stops, saying what is missing,
-# when one is not there. ALLOW_PROVISIONING=1 instead lets Xcode register the App IDs' capabilities and the App Group
-# and make the profiles (-allowProvisioningUpdates, automatic signing for this one build): only with the account
-# owner's OK.
+# when one is not there; when the profiles are the ones Xcode made, it signs automatically but without
+# -allowProvisioningUpdates (only the installed profiles, no account). ALLOW_PROVISIONING=1 instead lets Xcode register
+# the App IDs' capabilities and the App Group and make the profiles (-allowProvisioningUpdates, automatic signing for
+# this one build): only with the account owner's OK.
 IOS_DEVICE_BUILD = xcodebuild -project ios/Critter.xcodeproj -scheme Critter -configuration Release \
 	-destination 'generic/platform=iOS' -derivedDataPath ios/build
 IOS_DEVICE_APP = ios/build/Build/Products/Release-iphoneos/Critter.app
