@@ -123,14 +123,14 @@ struct SettingsView: View {
     }
 
     /// Whether this phone is registered with the Mac, in the Mac's words when it said any (`BridgeStore.pushStatus`);
-    /// notifications switched off in the system instead, on an orange line with 「去打开」 (never asked: 「允许通知」
-    /// asks). The Mac sends the test notification: the phone has no message to make it (spec §8.8). A Mac left without
+    /// notifications switched off in the system instead: an orange line saying just that, with 「去打开」, whatever the
+    /// registration says (the Live Activity may still be registered); never asked: 「允许通知」 asks. The Mac sends the test notification: the phone has no message to make it (spec §8.8). A Mac left without
     /// being told keeps its line until dismissed.
     @ViewBuilder
     private func pushRows(_ settings: PhoneSettings) -> some View {
         switch authorization {
         case .denied:
-            NoticeRow(text: store.pushStatus, action: "去打开") {
+            NoticeRow(text: PushRegistrar.notificationsOffLine, action: "去打开") {
                 if let url = URL(string: UIApplication.openNotificationSettingsURLString) { openURL(url) }
             }
         case .notDetermined:
