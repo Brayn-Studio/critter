@@ -5,11 +5,13 @@ public struct CritterPaths: Sendable {
     public let critterHome: URL
     public let claudeHome: URL
     public let codexHome: URL
+    public let kimiHome: URL
 
-    public init(critterHome: URL, claudeHome: URL, codexHome: URL? = nil) {
+    public init(critterHome: URL, claudeHome: URL, codexHome: URL? = nil, kimiHome: URL? = nil) {
         self.critterHome = critterHome
         self.claudeHome = claudeHome
         self.codexHome = codexHome ?? claudeHome.deletingLastPathComponent().appendingPathComponent(".codex")
+        self.kimiHome = kimiHome ?? claudeHome.deletingLastPathComponent().appendingPathComponent(".kimi-code")
     }
 
     public var sessionsDir: URL { critterHome.appendingPathComponent("sessions") }
@@ -30,8 +32,13 @@ public struct CritterPaths: Sendable {
     public var claudeIDEDir: URL { claudeHome.appendingPathComponent("ide") }
     public var claudeSettingsFile: URL { claudeHome.appendingPathComponent("settings.json") }
     public var codexSessionsDir: URL { codexHome.appendingPathComponent("sessions") }
+    /// Kimi Code's local server announces itself here, one `<server_id>.json` per running server.
+    public var kimiInstancesDir: URL { kimiHome.appendingPathComponent("server/instances") }
+    /// The bearer token for Kimi Code's local server; read fresh on every connect, never logged.
+    public var kimiTokenFile: URL { kimiHome.appendingPathComponent("server.token") }
 
-    /// `~/.critter`, overridable with `CRITTER_HOME`; `~/.claude`, overridable with `CLAUDE_CONFIG_DIR`.
+    /// `~/.critter`, overridable with `CRITTER_HOME`; `~/.claude`, overridable with `CLAUDE_CONFIG_DIR`;
+    /// `~/.kimi-code`, overridable with `KIMI_CODE_HOME`.
     public static func fromEnvironment(_ env: [String: String] = ProcessInfo.processInfo.environment) -> CritterPaths {
         let home = env["HOME"] ?? NSHomeDirectory()
         let critterHome = env["CRITTER_HOME"].map { URL(fileURLWithPath: $0) }
@@ -40,11 +47,14 @@ public struct CritterPaths: Sendable {
             ?? URL(fileURLWithPath: home).appendingPathComponent(".claude")
         let codexHome = env["CODEX_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
             ?? URL(fileURLWithPath: home).appendingPathComponent(".codex")
-        return CritterPaths(critterHome: critterHome, claudeHome: claudeHome, codexHome: codexHome)
+        let kimiHome = env["KIMI_CODE_HOME"].flatMap { $0.isEmpty ? nil : URL(fileURLWithPath: $0) }
+            ?? URL(fileURLWithPath: home).appendingPathComponent(".kimi-code")
+        return CritterPaths(critterHome: critterHome, claudeHome: claudeHome, codexHome: codexHome, kimiHome: kimiHome)
     }
 
-    // Pattern is a fixed, valid literal, so force-try is safe here.
-    private static let sessionIdPattern: NSRegularExpression = try! NSRegularExpression(pattern: "^[A-Za-z0-9-]{1,128}$")
+    // Pattern is a fixed, valid literal, so force-try is safe here. Underscores are allowed for
+    // Kimi Code's ids (`kimi-session_<uuid>`, `kimi-approval_…`); neither `/` nor `.` ever is.
+    private static let sessionIdPattern: NSRegularExpression = try! NSRegularExpression(pattern: "^[A-Za-z0-9_-]{1,128}$")
 
     /// The state file for a given session id, or nil if the id does not match the
     /// expected shape (guards against path traversal / injection via untrusted hook input).
