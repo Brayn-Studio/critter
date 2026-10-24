@@ -139,7 +139,7 @@ elif all(by_xcode for _, _, _, by_xcode in chosen):
         print(describe(bundle, p), file=sys.stderr)
     print("CODE_SIGN_STYLE=Automatic")
 else:
-    print("make ios: some targets have only a profile Xcode made and the others only one made by hand; one build signs "
+    print("make ios: not every target has a profile of the same kind (made by hand, or made by Xcode); one build signs "
           "them all the same way:", file=sys.stderr)
     for _, bundle, by_hand, by_xcode in chosen:
         print("  " + describe(bundle, by_hand or by_xcode), file=sys.stderr)

@@ -51,11 +51,17 @@ PY
 }
 
 failures=0
-# check <name> <folder> <expected exit> <expected stdout pattern (grep -E); empty: no stdout at all>
+# check <name> <folder> <expected exit> <expected stdout: exactly one line, all of it matching (grep -Ex); empty: no
+# stdout at all>. Whatever `profiles` prints goes to xcodebuild's command line, so one more word or line must fail.
 check() {
-  local name="$1" folder="$2" want_status="$3" want_out="$4" out status=0
+  local name="$1" folder="$2" want_status="$3" want_out="$4" out status=0 ok=0
   out="$(PATH="$WORK/bin:$PATH" CRITTER_PROFILE_DIRS="$folder" "$REPO/scripts/ios-device.sh" profiles 2>"$WORK/err")" || status=$?
-  if [ "$status" = "$want_status" ] && { [ -z "$want_out" ] && [ -z "$out" ] || { [ -n "$want_out" ] && printf '%s\n' "$out" | grep -Eq "$want_out"; }; }; then
+  if [ -z "$want_out" ]; then
+    [ -z "$out" ] && ok=1
+  elif [ "$(printf '%s\n' "$out" | wc -l | tr -d ' ')" = 1 ] && printf '%s\n' "$out" | grep -Eqx "$want_out"; then
+    ok=1
+  fi
+  if [ "$status" = "$want_status" ] && [ "$ok" = 1 ]; then
     echo "ok   $name"
   else
     echo "FAIL $name: exit $status, stdout \"$out\""
@@ -65,20 +71,29 @@ check() {
 }
 
 for t in app notify widgets; do make_profile "$WORK/hand" "$t" hand; done
-check "profiles made by hand are named by uuid" "$WORK/hand" 0 \
-  '^CRITTER_PROFILE_APP=[0-9a-f-]+ CRITTER_PROFILE_NOTIFY=[0-9a-f-]+ CRITTER_PROFILE_WIDGETS=[0-9a-f-]+$'
+hand_out='CRITTER_PROFILE_APP=[0-9a-f-]+ CRITTER_PROFILE_NOTIFY=[0-9a-f-]+ CRITTER_PROFILE_WIDGETS=[0-9a-f-]+'
+check "profiles made by hand are named by uuid" "$WORK/hand" 0 "$hand_out"
 
 for t in app notify widgets; do make_profile "$WORK/xcode" "$t" xcode; done
-check "profiles Xcode made sign automatically" "$WORK/xcode" 0 '^CODE_SIGN_STYLE=Automatic$'
+check "profiles Xcode made sign automatically" "$WORK/xcode" 0 'CODE_SIGN_STYLE=Automatic'
 
 for t in app notify widgets; do make_profile "$WORK/both" "$t" hand; make_profile "$WORK/both" "$t" xcode; done
-check "with both kinds for every target, the ones made by hand win" "$WORK/both" 0 '^CRITTER_PROFILE_APP='
+check "with both kinds for every target, the ones made by hand win" "$WORK/both" 0 "$hand_out"
 
 make_profile "$WORK/mixed" app hand
 make_profile "$WORK/mixed" notify xcode
 make_profile "$WORK/mixed" widgets xcode
 check "a mix of the two kinds is refused" "$WORK/mixed" 1 ""
+grep -q "not every target has a profile of the same kind" "$WORK/err" || { echo "FAIL the mix is not explained"; failures=$((failures + 1)); }
 grep -q "one build signs them all the same way" "$WORK/err" || { echo "FAIL the mix is not explained"; failures=$((failures + 1)); }
+
+# A target with both kinds is no "only": no single kind is on all three, and the message is still true.
+make_profile "$WORK/mixed-both" app hand
+make_profile "$WORK/mixed-both" app xcode
+make_profile "$WORK/mixed-both" notify xcode
+make_profile "$WORK/mixed-both" widgets hand
+check "a mix where one target has both kinds is refused" "$WORK/mixed-both" 1 ""
+grep -q "not every target has a profile of the same kind" "$WORK/err" || { echo "FAIL the mix is not explained"; failures=$((failures + 1)); }
 
 make_profile "$WORK/production" app xcode production
 make_profile "$WORK/production" notify xcode
