@@ -166,3 +166,29 @@ private final class FakeFiles: @unchecked Sendable {
     #expect(body.sessions.first?.capabilities == capabilities)
     #expect(files.tailReads.isEmpty)
 }
+
+/// Kimi's approvals are remote pending requests (never files): the bridge hands them in beside
+/// the hook-written ones, with `KimiClient`'s capabilities for the session.
+@Test func kimiRemotePendingAndCapabilities() throws {
+    let files = FakeFiles()
+    var kimi = session("kimi-session_1", cwd: "/Users/me/app")
+    kimi.source = .kimiDesktop
+    let request = try #require(KimiPhoneRequest(frame: KimiFrame(type: "event.approval.requested", sessionId: "session_1", payload: .object([
+        "approval_id": .string("approval_1"), "tool_name": .string("Bash"),
+        "tool_input_display": .object(["kind": .string("command"), "command": .string("rm -rf x")]),
+    ])), now: 5_000, ownerPid: 4242))
+    let capabilities = BridgeCapabilities(canSay: false, canAnswer: true, canInterrupt: false, readOnlyReason: "Kimi Code 会话暂不支持从手机发消息")
+    let assembler = SnapshotAssembler(home: home, dependencies: files.dependencies)
+    let body = assembler.build(
+        sessions: [kimi], skins: [:], statuses: [], pending: [request.pending], prefs: prefs,
+        capabilities: ["codex-x": BridgeCapabilities(canSay: true)].merging(["kimi-session_1": capabilities]) { $1 }
+    )
+    #expect(body.pending.map(\.requestId) == ["kimi-approval_1"])
+    #expect(body.pending.first?.sessionId == "kimi-session_1")
+    #expect(body.pending.first?.expiresAt == nil)
+    #expect(body.sessions.first?.capabilities == capabilities)
+    // Before the client has reported, a Kimi session is read-only with the reason.
+    let unreported = assembler.build(sessions: [kimi], skins: [:], statuses: [], pending: [], prefs: prefs)
+    #expect(unreported.sessions.first?.capabilities == BridgeCapabilities(readOnlyReason: "尚未连接 Kimi Code"))
+    #expect(files.tailReads.isEmpty)
+}

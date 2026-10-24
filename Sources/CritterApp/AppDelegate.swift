@@ -9,7 +9,8 @@ import os
 /// stale -- see `ToggleDecision`). It assembles the controllers: `SessionMonitor` (the data
 /// layer) feeds `PetController` (the always-on-top pet panel and its visibility), whose
 /// clicks go to `JumpBackService` (bringing the session's window forward). The same sessions
-/// go to `BridgeController` (the phone bridge) while it is switched on. `SettingsStore`
+/// go to `BridgeController` (the phone bridge) while it is switched on. `KimiClient` turns
+/// Kimi Code's sessions into pets whenever Critter runs, phone or not. `SettingsStore`
 /// changes are routed here to the pet, the global `HotKey`, the login item and the bridge.
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -23,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private let jumpBackService: JumpBackService
     private let settings: SettingsStore
     private let bridge: BridgeController
+    private let kimi: KimiClient
     private let soundPlayer = ThemedSoundPlayer()
     private let hotKey = HotKey()
     private let loginItemQueue = DispatchQueue(label: "local.critter.pet.login-item", qos: .utility)
@@ -60,9 +62,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         jumpBackService = JumpBackService(paths: paths)
         // The settings' "iPhone 推送" keeps the APNs setup in ~/.critter/bridge/apns/.
         let pushSetup = APNsConfigStore(paths: paths)
+        // Kimi's changes reach the bridge (made just below) and the monitor, from Kimi's queue.
+        let kimiRelay = KimiRelay(monitor: sessionMonitor)
+        kimi = KimiClient(paths: paths, onChange: { kimiRelay.changed() })
         bridge = BridgeController(
-            paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor, loadPushSetup: { pushSetup.load() }
+            paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor, loadPushSetup: { pushSetup.load() },
+            kimi: kimi
         )
+        kimiRelay.bridge = bridge
         super.init()
 
         // Visibility lives in `PetController`; the menu title follows it immediately, even
@@ -127,6 +134,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         buildStatusItem()
         startHeartbeat()
         sessionMonitor.start()
+        kimi.start()
         if settings.bridgeEnabled { bridge.setEnabled(true) }
         refreshHotKey()
         applyLaunchAtLogin()
@@ -143,6 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         heartbeatTimer?.invalidate()
         heartbeatTimer = nil
         isTerminating = true
+        kimi.stop()
         let store = appStatusStore
         let removed = DispatchSemaphore(value: 0)
         heartbeatQueue.async {
@@ -550,4 +559,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 private enum OwnProcess {
     static let pid = ProcessInfo.processInfo.processIdentifier
     static let startTime = ProcessTools.startTime(of: ProcessInfo.processInfo.processIdentifier)
+}
+
+/// Hands `KimiClient`'s changes (on its queue) to the bridge and the session monitor. The
+/// bridge is set right after it is made, before the client starts.
+private final class KimiRelay: @unchecked Sendable {
+    private let lock = NSLock()
+    private weak var bridgeRef: BridgeController?
+    private let monitor: SessionMonitor
+
+    init(monitor: SessionMonitor) {
+        self.monitor = monitor
+    }
+
+    var bridge: BridgeController? {
+        get { lock.withLock { bridgeRef } }
+        set { lock.withLock { bridgeRef = newValue } }
+    }
+
+    func changed() {
+        bridge?.kimiChanged()
+        monitor.refresh()
+    }
 }

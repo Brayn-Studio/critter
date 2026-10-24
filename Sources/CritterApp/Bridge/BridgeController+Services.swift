@@ -27,7 +27,9 @@ extension BridgeController: BridgeServices {
     }
 
     func pendingRequest(_ requestId: String) -> PendingRequest? {
-        codexControl.requests.first { $0.pending.requestId == requestId }?.pending ?? pendingStore.read(requestId: requestId)
+        codexControl.requests.first { $0.pending.requestId == requestId }?.pending
+            ?? kimi.requests.first { $0.pending.requestId == requestId }?.pending
+            ?? pendingStore.read(requestId: requestId)
     }
 
     /// The request's input as published; question texts are never truncated in it.
@@ -39,6 +41,7 @@ extension BridgeController: BridgeServices {
 
     func submitAnswer(_ payload: AnswerPayload, requestId: String) -> AnswerOutcome {
         if requestId.hasPrefix("codex-") { return codexControl.answer(payload, requestID: requestId) }
+        if requestId.hasPrefix("kimi-") { return kimi.answer(payload, requestID: requestId) }
         do {
             return try pendingStore.writeAnswer(payload, requestId: requestId) ? .accepted : .alreadyAnswered
         } catch {
@@ -55,6 +58,8 @@ extension BridgeController: BridgeServices {
 
     func say(text: String, sessionId: String) -> SayOutcome {
         if sessionId.hasPrefix("codex-") { return codexControl.say(text: text, sessionID: sessionId) }
+        // Neither Kimi Code nor DeepSeek Harness takes typed input from outside its own window.
+        if sessionId.hasPrefix("kimi-") || sessionId.hasPrefix("deepseek-") { return .unavailable }
         guard let record = inboxStore.read(sessionId: sessionId) else { return .unavailable }
         do {
             try InboxSender.send(text: text.trimmingCharacters(in: .whitespacesAndNewlines), to: record)

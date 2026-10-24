@@ -34,6 +34,7 @@ final class PhoneSettingsModel {
     private(set) var statusLineNote: String?
     private(set) var hookInstalled = true
     private(set) var codexStatus = "尚未连接 Codex 控制通道"
+    private(set) var kimiStatus = KimiClient.notConnected
     /// The offer in the sheet; nil before the first one and while one is being made.
     private(set) var offer: PairingOffer?
     private(set) var offerFailed = false
@@ -63,6 +64,7 @@ final class PhoneSettingsModel {
     func refresh() {
         devices = bridge.devices().sorted { $0.pairedAt < $1.pairedAt }
         codexStatus = bridge.codexControlStatus()
+        kimiStatus = bridge.kimiStatus()
         push.refresh()
         refreshStatusLine()
     }
@@ -262,6 +264,13 @@ struct PhoneSettingsSection: View {
             } label: {
                 Text("Codex 手机操作")
                 Text(store.bridgeEnabled ? phone.codexStatus : "打开手机连接后，可操作已连接的 Codex 会话")
+            }
+
+            LabeledContent {
+                EmptyView()
+            } label: {
+                Text("Kimi Code：\(phone.kimiStatus)")
+                Text("Kimi Code 的会话显示为宠物；打开手机连接后，可在手机上回答它的权限和提问")
             }
 
             if phone.confirmingReset {

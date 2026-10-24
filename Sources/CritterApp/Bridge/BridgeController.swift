@@ -5,7 +5,8 @@ import Foundation
 /// snapshots `SnapshotAssembler` makes (sessions from `SessionMonitor` plus branch, context,
 /// status-line data, skins and pending requests), carries out what phones ask for
 /// (`BridgeServices`, in `BridgeController+Services.swift`), and runs pairing. The same
-/// snapshots go to `PushCoordinator` for the iPhones that registered for push.
+/// snapshots go to `PushCoordinator` for the iPhones that registered for push. Kimi Code's
+/// approvals and questions come from `KimiClient` (run by the app, on or off), like Codex's.
 ///
 /// All of it runs on its own serial queue, `local.critter.pet.bridge`, so nothing it does --
 /// or fails to do -- touches the pet's UI or the hooks. The main thread only hands it
@@ -36,6 +37,8 @@ final class BridgeController: @unchecked Sendable {
     let inboxStore: InboxStore
     /// Pushes to registered iPhones; bridge queue only, but for `status()`.
     let push: PushCoordinator
+    /// Kimi Code's sessions and phone requests; the app starts and stops it.
+    let kimi: KimiClient
     lazy var codexControl: CodexIPCClient = CodexIPCClient(socketPath: paths.codexHome.appendingPathComponent("ipc/ipc.sock").path) { [weak self] in
         self?.queue.async { [weak self] in
             guard let self else { return }
@@ -54,6 +57,7 @@ final class BridgeController: @unchecked Sendable {
     private var lastSeen: Int64?
     private var deviceList: [DeviceRecord] = []
     private var codexStatus = "尚未连接 Codex 控制通道"
+    private var kimiStatusText = KimiClient.notConnected
 
     // Bridge queue only.
     private var enabled = false
@@ -96,12 +100,13 @@ final class BridgeController: @unchecked Sendable {
 
     /// - Parameter loadPushSetup: reads the settings' APNs setup; called on the bridge queue, and only once
     ///   an iPhone has registered for push.
-    init(paths: CritterPaths, skinSearchDirs: [URL], monitor: SessionMonitor, loadPushSetup: @escaping () -> APNsSetup) {
+    init(paths: CritterPaths, skinSearchDirs: [URL], monitor: SessionMonitor, loadPushSetup: @escaping () -> APNsSetup, kimi: KimiClient) {
         let queue = DispatchQueue(label: "local.critter.pet.bridge", qos: .utility)
         self.queue = queue
         self.paths = paths
         self.skinSearchDirs = skinSearchDirs
         self.monitor = monitor
+        self.kimi = kimi
         let registry = DeviceRegistry(file: paths.bridgeDir.appendingPathComponent("devices.json"), log: { DiagnosticLog.shared.log($0) })
         self.registry = registry
         pendingStore = PendingStore(paths: paths)
@@ -393,7 +398,7 @@ final class BridgeController: @unchecked Sendable {
 
     func buildSnapshot() -> SnapshotBody {
         pendingStore.sweep(now: Self.nowMs(), isAlive: ProcessTools.isAlive)
-        let remote = codexControl.requests.map(\.pending)
+        let remote = codexControl.requests.map(\.pending) + kimi.requests.map(\.pending)
         let telemetry = codexControl.telemetry
         let waiting = codexControl.waitingSessionIDs
         let bySession = Dictionary(grouping: remote, by: \.sessionId)
@@ -415,11 +420,22 @@ final class BridgeController: @unchecked Sendable {
         }
         return snapshots.build(
             sessions: phoneSessions, skins: skins, statuses: statusStore.readAll(),
-            pending: pendingStore.readAll() + remote, prefs: prefs, capabilities: codexControl.capabilities
+            pending: pendingStore.readAll() + remote, prefs: prefs,
+            capabilities: codexControl.capabilities.merging(kimi.capabilities) { $1 }
         )
     }
 
     func codexControlStatus() -> String { lock.withLock { codexStatus } }
+    func kimiStatus() -> String { lock.withLock { kimiStatusText } }
+
+    /// `KimiClient` changed (any thread): its status for the settings, and a new snapshot.
+    func kimiChanged() {
+        queue.async { [self] in
+            let status = kimi.statusText
+            lock.withLock { kimiStatusText = status }
+            changed()
+        }
+    }
     func reconnectCodexControl() { queue.async { [self] in codexControl.reconnect() } }
 
     // MARK: - Pairing

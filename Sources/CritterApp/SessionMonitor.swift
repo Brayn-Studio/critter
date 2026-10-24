@@ -41,6 +41,11 @@ final class SessionMonitor {
         engine.markSeen(id)
     }
 
+    /// Scans again soon; callable from any thread (the engine hops onto its queue).
+    nonisolated func refresh() {
+        engine.refresh()
+    }
+
     /// Hides a session until its next event: records its current `eventTime`, which
     /// `SessionCatalog.build` compares against later events.
     func dismiss(_ id: String) {
