@@ -81,7 +81,7 @@ public enum LocalNetworkDenial {
 /// Bonjour lookup or a connection was refused for it (`LocalNetworkDenial`); allowed again once a Mac was found, a
 /// connection opened, a Bonjour browser was let browse (`.ready`) or a browse window ended without any refusal -- so
 /// the permission given while the Mac is away (or answered slowly to the first-run prompt) is noticed too. Fed by
-/// `BonjourBrowser` and `URLSessionTransport` (`shared`, unless they are given another).
+/// `BonjourBrowser`, `BonjourLocalNetworkGate` and `URLSessionTransport` (`shared`, unless they are given another).
 public final class LocalNetworkAccess: Sendable {
     public static let shared = LocalNetworkAccess()
 

@@ -308,6 +308,63 @@ private final class FakePairer: PairingLink {
     }
 }
 
+/// The local network as a pairing waits for it (`LocalNetworkGate`): the wait goes on until the test says what iOS
+/// answers -- refused (`refuse()`: the first-run prompt is up, or 本地网络 is off), then allowed (`allow()`) -- or the
+/// task is cancelled. Allowed once, every later wait goes on at once.
+private final class FakeLocalNetworkGate: LocalNetworkGate {
+    private struct State {
+        var allowed = false
+        var cancelled = false
+        var waiter: CheckedContinuation<Bool, Never>?
+        /// The last wait's, kept once it has ended (for a late refusal).
+        var onRefused: (@Sendable () -> Void)?
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// A pairing waits here.
+    var waiting: Bool { state.withLock { $0.waiter != nil } }
+
+    /// iOS refuses the local network: the last wait hears it, also one that has ended.
+    func refuse() {
+        state.withLock { $0.onRefused }?()
+    }
+
+    func allow() {
+        let waiter = state.withLock { s in
+            s.allowed = true
+            defer { s.waiter = nil }
+            return s.waiter
+        }
+        waiter?.resume(returning: true)
+    }
+
+    func waitUntilUsable(onRefused: @escaping @Sendable () -> Void) async -> Bool {
+        state.withLock { s in
+            s.onRefused = onRefused
+            s.cancelled = false
+        }
+        return await withTaskCancellationHandler {
+            await withCheckedContinuation { continuation in
+                let ended: Bool? = state.withLock { s in
+                    if s.allowed { return true }
+                    if s.cancelled { return false }
+                    s.waiter = continuation
+                    return nil
+                }
+                if let ended { continuation.resume(returning: ended) }
+            }
+        } onCancel: {
+            let waiter = state.withLock { s in
+                s.cancelled = true
+                defer { s.waiter = nil }
+                return s.waiter
+            }
+            waiter?.resume(returning: false)
+        }
+    }
+}
+
 /// The network, changing when the test says so.
 private final class FakeNetwork: NetworkWatching {
     private let stream: AsyncStream<Void>
@@ -376,7 +433,9 @@ private final class FakePushAcks: PushAckStorage {
         pairer = FakePairer(journal: journal, outcome: .paired(deviceId: "d2", token: "t2", macName: "New Mac"), slow: slowPairing)
     }
 
-    func makeStore(grace: Duration = .seconds(10)) -> BridgeStore {
+    func makeStore(
+        grace: Duration = .seconds(10), localNetworkGate: any LocalNetworkGate = OpenLocalNetworkGate()
+    ) -> BridgeStore {
         BridgeStore(
             storage: storage,
             makeLink: { _, onEvent in
@@ -384,7 +443,8 @@ private final class FakePushAcks: PushAckStorage {
                 self.links.append(link)
                 return link
             },
-            pairer: pairer, background: runner, network: network, backgroundGrace: grace, now: { [clock] in clock.now },
+            pairer: pairer, background: runner, network: network, localNetworkGate: localNetworkGate,
+            backgroundGrace: grace, now: { [clock] in clock.now },
             pushAcks: pushAcks, sleep: timer.sleep,
             onUntoldMac: { pairing in
                 self.journal.add("untold \(pairing.macName)")
@@ -1061,6 +1121,93 @@ struct BridgeStoreTests {
         #expect(store.pairingPhase == nil)
         rig.pairer.answer(with: .failed(.noAnswer))
         #expect(await store.pair(target, deviceName: "iPhone") == .failed(.noAnswer))
+        await settle()
+        #expect(store.pairingPhase == nil)
+    }
+
+    /// Device bug D2: the pairing's connection is the app's first touch of the local network, so iOS asks for 本地网络
+    /// then, and the connection fails while it asks. The pairing waits at the gate first: refused (the prompt is up, or
+    /// the permission is off), it says so, and the Mac is tried once the user allows, with no second scan.
+    @Test func aPairingWaitsForTheLocalNetwork() async {
+        let rig = Rig(paired: false, slowPairing: true)
+        let gate = FakeLocalNetworkGate()
+        let store = rig.makeStore(localNetworkGate: gate)
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { gate.waiting })
+        #expect(store.pairingPhase == .connecting)
+        // iOS asks: waiting for the user, without a time limit; the Mac is not tried meanwhile.
+        gate.refuse()
+        #expect(await becomes { store.pairingPhase == .waitingForLocalNetwork })
+        await settle()
+        #expect(store.pairingPhase == .waitingForLocalNetwork)
+        #expect(store.isPairing)
+        #expect(rig.journal.all.isEmpty)
+        // Allowed: reaching the Mac.
+        gate.allow()
+        #expect(await becomes { rig.journal.all == ["pair K7M2QX9P iPhone"] })
+        #expect(store.pairingPhase == .connecting)
+        rig.pairer.reachMac.open()
+        #expect(await becomes { store.pairingPhase == .awaitingApproval })
+        rig.pairer.approval.open()
+        #expect(await pairing.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(store.pairingPhase == nil)
+        #expect(store.pairing?.deviceId == "d2")
+    }
+
+    /// 「取消」 while refused: the Mac is never tried, and the store is free for the next attempt.
+    @Test func aPairingCancelledAtTheGateNeverTriesTheMac() async {
+        let rig = Rig(paired: false)
+        let gate = FakeLocalNetworkGate()
+        let store = rig.makeStore(localNetworkGate: gate)
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { gate.waiting })
+        gate.refuse()
+        #expect(await becomes { store.pairingPhase == .waitingForLocalNetwork })
+        pairing.cancel()
+        #expect(await pairing.value == .failed(.unreachable))
+        #expect(store.pairingPhase == nil)
+        #expect(!store.isPairing)
+        #expect(store.pairing == nil)
+        #expect(rig.journal.all.isEmpty)
+        // Allowed later: a new attempt goes through.
+        gate.allow()
+        #expect(await store.pair(target, deviceName: "iPhone") == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+    }
+
+    /// Waiting at the gate is under way: a second scan is turned away.
+    @Test func aPairingAtTheGateIsUnderWay() async {
+        let rig = Rig(paired: false)
+        let gate = FakeLocalNetworkGate()
+        let store = rig.makeStore(localNetworkGate: gate)
+        let first = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { gate.waiting })
+        gate.refuse()
+        #expect(await becomes { store.pairingPhase == .waitingForLocalNetwork })
+        let other = PairingTarget(endpoint: moved, fingerprint: pin, code: "AAAA2222", macName: "Other Mac")
+        #expect(await store.pair(other, deviceName: "iPhone") == .failed(.busy))
+        #expect(store.pairingPhase == .waitingForLocalNetwork)
+        gate.allow()
+        #expect(await first.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.journal.all.filter { $0.hasPrefix("pair") } == ["pair K7M2QX9P iPhone"])
+    }
+
+    /// The refusal is passed on to the main actor; one that arrives once the gate has let the pairing through (or the
+    /// pairing has ended) leaves the phase as it is.
+    @Test func aLateRefusalNoticeLeavesThePhase() async {
+        let rig = Rig(paired: false, slowPairing: true)
+        let gate = FakeLocalNetworkGate()
+        let store = rig.makeStore(localNetworkGate: gate)
+        let pairing = Task { await store.pair(target, deviceName: "iPhone") }
+        #expect(await becomes { gate.waiting })
+        gate.allow()
+        #expect(await becomes { rig.journal.all == ["pair K7M2QX9P iPhone"] })
+        gate.refuse()
+        await settle()
+        #expect(store.pairingPhase == .connecting)
+        rig.pairer.reachMac.open()
+        rig.pairer.approval.open()
+        #expect(await pairing.value == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        gate.refuse()
         await settle()
         #expect(store.pairingPhase == nil)
     }

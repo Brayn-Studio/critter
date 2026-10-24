@@ -42,7 +42,7 @@ public final class BridgeStore {
     public private(set) var snapshotAt: Date?
     /// Whether `snapshot` came over the current connection (not from the cache or an earlier connection).
     public private(set) var isLive = false
-    /// Where a pairing attempt is while it waits for the Mac; nil once the Mac has answered.
+    /// Where a pairing attempt is while it waits for the local network or the Mac; nil once the Mac has answered.
     public private(set) var pairingPhase: PairingPhase?
     /// A `pair` call is under way, from its start until it has returned: past the Mac's answer, while the old
     /// connection is stopped and the new pairing saved.
@@ -72,6 +72,7 @@ public final class BridgeStore {
     @ObservationIgnored private let storage: any PairingStorage
     @ObservationIgnored private let makeLink: @MainActor (StoredPairing, @escaping @Sendable (BridgeEvent) -> Void) -> any BridgeLink
     @ObservationIgnored private let pairer: any PairingLink
+    @ObservationIgnored private let localNetworkGate: any LocalNetworkGate
     @ObservationIgnored private let background: any BackgroundRunner
     @ObservationIgnored private let backgroundGrace: Duration
     @ObservationIgnored private let now: () -> Date
@@ -119,6 +120,8 @@ public final class BridgeStore {
     @ObservationIgnored private var inFlight = 0
     @ObservationIgnored private var drainWaiters: [DrainWaiter] = []
     @ObservationIgnored private var pairAttempt = 0
+    /// The attempt under way waits at `localNetworkGate`.
+    @ObservationIgnored private var atLocalNetworkGate = false
     /// A push registration on its way to the Mac.
     @ObservationIgnored private var pushSending = false
     /// What went to the Mac on the current connection: the same registration goes once per connection.
@@ -137,6 +140,8 @@ public final class BridgeStore {
     ///   - makeLink: makes the connection for a pairing; it reports its events to the closure it is given.
     ///     Called when the store is created (if paired) and when pairing succeeds; the link is not started.
     ///   - network: tells when the network changed; the store reconnects at once, in the foreground.
+    ///   - localNetworkGate: waited on before a pairing reaches the Mac, while iOS asks for or refuses 本地网络; by
+    ///     default nothing is waited for.
     ///   - backgroundGrace: how long a move to the background waits for answers on their way.
     ///   - now: stamps the snapshots.
     ///   - pushAcks: keeps what the Mac confirmed of the push registration.
@@ -148,6 +153,7 @@ public final class BridgeStore {
         makeLink: @escaping @MainActor (StoredPairing, @escaping @Sendable (BridgeEvent) -> Void) -> any BridgeLink,
         pairer: any PairingLink, background: any BackgroundRunner,
         network: any NetworkWatching = NWPathNetworkWatcher(),
+        localNetworkGate: any LocalNetworkGate = OpenLocalNetworkGate(),
         backgroundGrace: Duration = .seconds(10), now: @escaping () -> Date = Date.init,
         pushAcks: any PushAckStorage = MemoryPushAckStorage(),
         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
@@ -156,6 +162,7 @@ public final class BridgeStore {
         self.storage = storage
         self.makeLink = makeLink
         self.pairer = pairer
+        self.localNetworkGate = localNetworkGate
         self.background = background
         self.backgroundGrace = backgroundGrace
         self.now = now
@@ -352,6 +359,10 @@ public final class BridgeStore {
     /// confirm is reported (`onUntoldMac`) before the new pairing connects -- unless it is the same Mac (the same
     /// certificate fingerprint), which takes the registration over from the old record itself. The attempt counts as
     /// under way (`isPairing`) until all of that is done.
+    ///
+    /// Before the Mac is tried, `localNetworkGate` is waited on: while iOS asks for 本地网络 or refuses it the phase is
+    /// `waitingForLocalNetwork`, for as long as it takes; cancelled there, the attempt fails as a cancelled connection
+    /// does (`unreachable`) and the Mac is never tried.
     public func pair(_ target: PairingTarget, deviceName: String) async -> PairResult {
         guard !isPairing else { return .failed(.busy) }
         isPairing = true
@@ -359,8 +370,19 @@ public final class BridgeStore {
         pairAttempt += 1
         let attempt = pairAttempt
         pairingPhase = .connecting
-        let result = await pairer.pair(target, deviceName: deviceName) { [weak self] in
-            Task { @MainActor in self?.markAwaitingApproval(attempt) }
+        atLocalNetworkGate = true
+        let usable = await localNetworkGate.waitUntilUsable { [weak self] in
+            Task { @MainActor in self?.markWaitingForLocalNetwork(attempt) }
+        }
+        atLocalNetworkGate = false
+        let result: PairResult
+        if usable {
+            pairingPhase = .connecting
+            result = await pairer.pair(target, deviceName: deviceName) { [weak self] in
+                Task { @MainActor in self?.markAwaitingApproval(attempt) }
+            }
+        } else {
+            result = .failed(.unreachable)
         }
         pairAttempt += 1
         pairingPhase = nil
@@ -407,6 +429,12 @@ public final class BridgeStore {
     /// Hears from the pairer, off the main actor, that the Mac is being waited for.
     private func markAwaitingApproval(_ attempt: Int) {
         if pairAttempt == attempt, pairingPhase != nil { pairingPhase = .awaitingApproval }
+    }
+
+    /// Hears from the gate, off the main actor, that the local network is refused; late (the gate has let the attempt
+    /// through, or it ended), it changes nothing.
+    private func markWaitingForLocalNetwork(_ attempt: Int) {
+        if pairAttempt == attempt, atLocalNetworkGate { pairingPhase = .waitingForLocalNetwork }
     }
 
     /// Forgets the Mac: stops the connection, deletes the pairing and the cached snapshot. Connected, the connection

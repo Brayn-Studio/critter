@@ -171,6 +171,81 @@ struct BonjourResolveTests {
     }
 }
 
+/// Before a pairing connects, a Bonjour browser says whether the local network can be tried (TN3179): the pairing's
+/// connection would otherwise be what brings up iOS's 本地网络 prompt, and it fails while the prompt is up (device bug
+/// D2).
+struct LocalNetworkGateTests {
+    private typealias Gate = BonjourLocalNetworkGate
+
+    /// Let browse: allowed, go on -- also after a refusal (allowed in the prompt, or turned on in Settings).
+    @Test func readyGoesOn() {
+        for refused in [false, true] {
+            for graceOver in [false, true] {
+                #expect(Gate.step(.ready, refused: refused, graceOver: graceOver) == .proceed)
+            }
+        }
+    }
+
+    /// The policy error: the prompt is up, or 本地网络 is off. Refused, whatever the grace.
+    @Test func thePolicyErrorIsARefusal() {
+        for state in [NWBrowser.State.waiting(policyDenied), .failed(policyDenied)] {
+            for refused in [false, true] {
+                for graceOver in [false, true] {
+                    #expect(Gate.step(state, refused: refused, graceOver: graceOver) == .refused, "\(state)")
+                }
+            }
+        }
+    }
+
+    /// Any other error (no Wi-Fi, …) says nothing about the permission: go on, and the connection fails as it would.
+    @Test func anotherErrorGoesOn() {
+        let others: [NWBrowser.State] = [
+            .waiting(.posix(.ENETDOWN)), .waiting(.dns(DNSServiceErrorType(-65563))), .failed(.posix(.ENETDOWN)),
+            .failed(.dns(DNSServiceErrorType(-65537))),
+        ]
+        for state in others {
+            #expect(Gate.step(state, refused: false, graceOver: false) == .proceed, "\(state)")
+        }
+    }
+
+    /// Nothing decisive: wait for the grace, then go on.
+    @Test func nothingDecisiveGoesOnAfterTheGrace() {
+        #expect(Gate.step(.setup, refused: false, graceOver: false) == .wait)
+        #expect(Gate.step(.setup, refused: false, graceOver: true) == .proceed)
+    }
+
+    /// Once refused, only `.ready` (or cancellation) ends the wait: not the grace, not another error.
+    @Test func onceRefusedOnlyReadyEndsTheWait() {
+        let others: [NWBrowser.State] = [.setup, .cancelled, .waiting(.posix(.ENETDOWN)), .failed(.posix(.ENETDOWN))]
+        for state in others {
+            for graceOver in [false, true] {
+                #expect(Gate.step(state, refused: true, graceOver: graceOver) == .wait, "\(state)")
+            }
+        }
+    }
+
+    /// Cancelled, the wait ends at once, and says it was cancelled.
+    @Test func theBonjourGateEndsWhenCancelled() async {
+        let gate = BonjourLocalNetworkGate(grace: .seconds(60), access: LocalNetworkAccess())
+        let refusals = Heard()
+        let wait = Task {
+            // Cancelled before it gets here.
+            try? await Task.sleep(for: .seconds(60))
+            return await gate.waitUntilUsable { refusals.add(true) }
+        }
+        wait.cancel()
+        #expect(await wait.value == false)
+        #expect(refusals.values.isEmpty)
+    }
+
+    /// The default (tests, and wherever there is no such permission) never waits.
+    @Test func theOpenGateGoesOnAtOnce() async {
+        let refusals = Heard()
+        #expect(await OpenLocalNetworkGate().waitUntilUsable { refusals.add(true) })
+        #expect(refusals.values.isEmpty)
+    }
+}
+
 private final class Heard: @unchecked Sendable {
     private let lock = NSLock()
     private var all: [Bool] = []
