@@ -19,10 +19,8 @@ struct CritterApp: App {
     init() {
         #if DEBUG
         let launch = DebugLaunch.current
-        _store = State(initialValue: launch.fixtureStore() ?? Self.makeStore())
-        _link = State(initialValue: launch.pairURI
-            .flatMap { PairingURI(string: $0.absoluteString) }
-            .map { IncomingPairLink(uri: $0, confirmed: true) })
+        _store = State(initialValue: launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore())
+        _link = State(initialValue: launch.launchLink)
         deviceName = launch.deviceName ?? UIDevice.current.name
         #else
         _store = State(initialValue: Self.makeStore())

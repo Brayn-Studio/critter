@@ -8,7 +8,7 @@ struct RootView: View {
     let deviceName: String
     @Binding var link: IncomingPairLink?
     /// Paired, and pairing again.
-    @State private var pairingAgain = false
+    @State private var pairingAgain = Self.startsPairingAgain
 
     var body: some View {
         Group {
@@ -24,5 +24,13 @@ struct RootView: View {
         .onChange(of: link, initial: true) { _, link in
             if link != nil, store.pairing != nil { pairingAgain = true }
         }
+    }
+
+    /// `-critterPairing scan|manual…` over a fixture (DEBUG): the pairing screen comes up over the home screen.
+    private static var startsPairingAgain: Bool {
+        #if DEBUG
+        if let demo = DebugLaunch.current.pairing, demo.launchLink == nil { return true }
+        #endif
+        return false
     }
 }

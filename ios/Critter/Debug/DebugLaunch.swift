@@ -45,6 +45,21 @@ import Foundation
 ///   the send button was tapped (the letter flies; `-critterFixtureResult` decides the receipt).
 /// - `-critterSkyHour <0-23>`: every meadow's sky is drawn as at this hour of the day (`SkyClock`), whatever the
 ///   clock says (the dark appearance is still night).
+/// - `-critterPairing <demo>`: the pairing screen in one of its states, on fakes (`PairingDemo.swift`): the pairer
+///   never touches the network, the Macs found and their certificates are made up ("MacBook Pro" and "Mac mini" on
+///   192.168.1.x). Without `-critterFixture` the app starts unpaired; with it, paired with "Fixture Mac", so the
+///   pairing screen comes over the home screen (「返回」 on the scanner, the replacement warning in the confirmation).
+///   - `scan`: the scanner (the simulator has no camera: the frame says so).
+///   - `manual`: 「手动输入」 tapped a second after launch; two Macs found, the first chosen, the code typed.
+///     `manual-searching`: none found yet. `manual-trust`: then 「连接」 tapped, the trust dialog asks.
+///     `manual-probe-failed`: 「连接」 tapped and the Mac could not be reached (the note on the page).
+///   - `confirm`: a link from outside, waiting in its confirmation.
+///   - `connecting`, `awaiting`: an attempt from a link, reaching the Mac or waiting there for 「允许」, until 「取消」.
+///   - `failed:<reason>[@<seconds>]`: the attempt fails (`badCode`, `rejected`, `protocol`, `cert`, `noAnswer`,
+///     `unreachable`), at once or after waiting that long at the Mac. With `-critterOpenURL <a critter-pair:// link>`
+///     the link comes in during the wait (queued, then confirmed on the failure page) or, at once, on the failure
+///     page (a link to a host off the local network shows its note there).
+///   - `paired@<seconds>`: the Mac says yes after that long (a link that came meanwhile is dropped).
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -81,6 +96,7 @@ struct DebugLaunch {
     var skyHour: Int?
     var sayDraft: String?
     var autoSay = false
+    var pairing: PairingDemo?
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -134,18 +150,54 @@ struct DebugLaunch {
         sayDraft = value("critterSayDraft")
         autoSay = arguments.contains("-critterAutoSay")
         skyHour = value("critterSkyHour").flatMap(Int.init).flatMap { (0...23).contains($0) ? $0 : nil }
+        pairing = value("critterPairing").flatMap(PairingDemo.init(argument:))
+    }
+
+    /// With `-critterPairing`: the fake Macs and certificates the pairing screen uses.
+    var fakePairingNetwork: PairingNetwork? {
+        pairing?.network
+    }
+
+    /// The link the app starts with: `-critterPairURI`'s, or the one `-critterPairing` hands in.
+    var launchLink: IncomingPairLink? {
+        pairURI.flatMap { PairingURI(string: $0.absoluteString) }.map { IncomingPairLink(uri: $0, confirmed: true) }
+            ?? pairing?.launchLink
+    }
+
+    /// With `-critterPairing` and no `-critterFixture`: an unpaired store on the demo's pairer; once a demo pairs, the
+    /// link sends the `empty` fixture. Nil otherwise.
+    @MainActor
+    func pairingStore() -> BridgeStore? {
+        guard let pairing, fixture == nil else { return nil }
+        let snapshot = Self.loadFixture("empty")
+        return BridgeStore(
+            storage: UnpairedStorage(),
+            makeLink: { _, onEvent in
+                FixtureLink(
+                    snapshot: snapshot, result: CommandResult(ok: true, reason: nil, message: nil), offline: false,
+                    onEvent: onEvent
+                )
+            },
+            pairer: pairing.pairer,
+            background: UIKitBackgroundRunner()
+        )
+    }
+
+    /// `Debug/Fixtures/<name>.json`, its times moved from `fixtureNow` to now.
+    private static func loadFixture(_ name: String) -> SnapshotBody {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "json"),
+              let data = try? Data(contentsOf: url),
+              let body = try? JSONDecoder().decode(SnapshotBody.self, from: data)
+        else { preconditionFailure("-critterFixture \(name): no such fixture, or it is not a SnapshotBody") }
+        let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
+        return moved(body, by: now - fixtureNow)
     }
 
     /// With `-critterFixture`: a store on the fake storage and link, already paired; nil without it.
     @MainActor
     func fixtureStore() -> BridgeStore? {
         guard let fixture else { return nil }
-        guard let url = Bundle.main.url(forResource: fixture, withExtension: "json"),
-              let data = try? Data(contentsOf: url),
-              let body = try? JSONDecoder().decode(SnapshotBody.self, from: data)
-        else { preconditionFailure("-critterFixture \(fixture): no such fixture, or it is not a SnapshotBody") }
-        let now = Int64((Date().timeIntervalSince1970 * 1000).rounded())
-        let snapshot = Self.moved(body, by: now - Self.fixtureNow)
+        let snapshot = Self.loadFixture(fixture)
         let result = fixtureResult
         let offline = fixtureOffline
         let cached = offline ? CachedSnapshot(body: snapshot, receivedAt: Date(timeIntervalSinceNow: -300)) : nil
@@ -154,7 +206,7 @@ struct DebugLaunch {
             makeLink: { _, onEvent in
                 FixtureLink(snapshot: snapshot, result: result, offline: offline, onEvent: onEvent)
             },
-            pairer: Pairer(transport: URLSessionTransport()),
+            pairer: pairing.map { $0.pairer as any PairingLink } ?? Pairer(transport: URLSessionTransport()),
             background: UIKitBackgroundRunner()
         )
     }
@@ -205,7 +257,7 @@ private struct FixtureStorage: PairingStorage {
 /// Connects at once and sends the fixture; answers every request with the same result after a moment. A request that
 /// is answered (`ok`) leaves the snapshot, as it does on the Mac: its session goes on running. `offline`, it never
 /// connects: offline since five minutes ago, retrying.
-private actor FixtureLink: BridgeLink {
+actor FixtureLink: BridgeLink {
     private var snapshot: SnapshotBody
     private let result: CommandResult
     private let offline: Bool

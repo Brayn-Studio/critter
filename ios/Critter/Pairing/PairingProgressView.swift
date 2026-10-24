@@ -1,119 +1,160 @@
 import CritterClient
+import CritterKit
 import SwiftUI
 
-/// A pairing attempt: reaching the Mac, waiting for 「允许」 there (over a drawing of the row the Mac's "添加手机"
-/// window shows now), or how it failed.
-struct PairingProgressView: View {
-    enum Step: Equatable {
-        case connecting
-        case awaitingApproval
-        case failed(PairFailure)
-    }
-
-    let step: Step
+/// An attempt under way (mockup "等 Mac 点允许", Android `WaitingPane`): Sprig waiting with its hand up on a patch of
+/// meadow, over a drawing of the row the Mac's "添加手机" window shows now with 「允许」 circled. Reaching the Mac and
+/// waiting for 「允许」 are the same page; only the row's status line changes.
+struct WaitingPage: View {
+    /// The request is with the Mac (rather than still reaching it).
+    let awaiting: Bool
     /// This phone's name, as the Mac shows it.
     let deviceName: String
-    /// 「取消」, while under way.
+    /// 「取消」: closes the attempt's connection (the Mac withdraws its request).
     let onCancel: () -> Void
-    /// 「重新扫码」, once failed.
-    let onRescan: () -> Void
 
     var body: some View {
-        VStack(spacing: 0) {
-            Spacer(minLength: 24)
-            content
-            Spacer(minLength: 24)
-            if case .failed = step {
-                Button(action: onRescan) {
-                    Label("重新扫码", systemImage: "qrcode.viewfinder").frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-            } else {
-                Button("取消", action: onCancel)
-                    .controlSize(.large)
-            }
-        }
-        .padding(.horizontal, 24)
-        .padding(.bottom, 16)
-    }
-
-    @ViewBuilder
-    private var content: some View {
-        switch step {
-        case .connecting:
-            VStack(spacing: 16) {
-                ProgressView()
-                    .controlSize(.large)
-                Text("连接中…")
-                    .font(.title3.weight(.semibold))
-            }
-        case .awaitingApproval:
-            VStack(spacing: 16) {
-                Text("在 Mac 上点「允许」")
-                    .font(.title2.bold())
-                    .multilineTextAlignment(.center)
-                Text("Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。")
-                    .multilineTextAlignment(.center)
-                    .foregroundStyle(.secondary)
-                MacRequestRow(deviceName: deviceName)
-                    .padding(.top, 8)
-            }
-        case .failed(let why):
-            VStack(spacing: 16) {
-                Image(systemName: "exclamationmark.triangle.fill")
-                    .font(.system(size: 44))
-                    .foregroundStyle(.red)
-                    .accessibilityHidden(true)
-                Text(verbatim: why.text)
-                    .font(.body.weight(.semibold))
-                    .multilineTextAlignment(.center)
-            }
+        StepColumn {
+            StepStage(state: .waiting)
+            StepTitle(text: "在 Mac 上点「允许」")
+                .padding(.top, 14)
+            StepBody(text: "Mac 的「添加手机」窗口里出现了下面这一行。点允许之后，这里会自己往下走。")
+            MacRequestRow(deviceName: deviceName, awaiting: awaiting)
+                .padding(.top, 6)
+        } bottom: {
+            PixelButton(title: "取消", style: .text, action: onCancel)
         }
     }
 }
 
-/// A drawing of the Mac's request row; its buttons are pictures, not buttons.
-private struct MacRequestRow: View {
-    let deviceName: String
+/// How the attempt failed: Sprig wilted on its patch of meadow, the reason on a red card under it (`PairFailure.text`,
+/// one per reason), and under that why a link that came meanwhile was not used (`note`). 「重新扫码」 goes back to
+/// the scanner.
+struct FailurePage: View {
+    let failure: PairFailure
+    let note: String?
+    let onRescan: () -> Void
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        StepColumn {
+            StepStage(state: .error)
+            ErrorNote(text: failure.text, pet: false, size: 14.5)
+                .padding(.top, 14)
+            if let note {
+                ErrorNote(text: note, pet: false)
+            }
+        } bottom: {
+            PixelButton(title: "重新扫码", size: .large, icon: .qr, wide: true, action: onRescan)
+        }
+    }
+}
+
+/// A pairing page's frame (Android `StepPage`): `content` from the top, scrolling when the type is large, and the
+/// `bottom` buttons held at the bottom; 24 pt side margins.
+struct StepColumn<Content: View, Bottom: View>: View {
+    @ViewBuilder let content: Content
+    @ViewBuilder let bottom: Bottom
+
+    var body: some View {
+        VStack(spacing: 0) {
+            ScrollView {
+                VStack(alignment: .leading, spacing: 10) { content }
+                    .padding(.top, 12)
+                    .padding(.bottom, 16)
+            }
+            .scrollBounceBehavior(.basedOnSize)
+            VStack(spacing: 8) { bottom }
+                .padding(.bottom, 16)
+        }
+        .padding(.horizontal, stepGutter)
+        .background(Theme.bg)
+    }
+}
+
+/// A drawing of the Mac's request row: the phone's name, where the attempt is, and the Mac's two buttons, which are
+/// pictures, not buttons.
+private struct MacRequestRow: View {
+    let deviceName: String
+    let awaiting: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 10) {
-                Image(systemName: "laptopcomputer")
-                    .foregroundStyle(Color.accentColor)
+                PixelIconView(.laptop, cell: 3)
+                    .foregroundStyle(Theme.brand)
                 Text(verbatim: "「\(deviceName)」请求连接")
-                    .font(.subheadline.weight(.bold))
+                    .font(.nunito(size: 14.5, weight: .heavy))
+                    .foregroundStyle(Theme.ink)
                     .lineLimit(2)
             }
-            HStack(spacing: 8) {
-                picture("拒绝", primary: false)
-                picture("允许", primary: true)
+            Text(awaiting ? "在 Mac 上点「允许」" : "连接中…")
+                .font(.nunito(size: 12.5, weight: .semibold))
+                .foregroundStyle(Theme.ink2)
+            WeightedRow(weights: [1, 1.4], spacing: 8) {
+                PictureButton(title: "拒绝", primary: false)
+                PictureButton(title: "允许", primary: true)
             }
+            .accessibilityHidden(true)
         }
-        .padding(16)
+        .padding(.horizontal, 16)
+        .padding(.top, 14)
+        .padding(.bottom, 18)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground), in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: "「\(deviceName)」请求连接"))
+        .pixelSurface(fill: Theme.surface, lip: Theme.shade, step: 5, lipHeight: 4)
+        .accessibilityElement(children: .combine)
     }
+}
 
-    /// The Mac's button; 「允许」 has a dashed ring around it.
-    private func picture(_ title: String, primary: Bool) -> some View {
+/// A small button as the Mac draws it; the primary one has the orange dashed ring around it, 2 pt out (the mockup's
+/// `outline: 3px dashed; outline-offset: 2px`).
+private struct PictureButton: View {
+    let title: String
+    let primary: Bool
+
+    var body: some View {
         Text(verbatim: title)
-            .font(.subheadline.weight(.heavy))
-            .foregroundStyle(primary ? Color.white : Color.primary)
-            .frame(maxWidth: .infinity, minHeight: 34)
-            .background(
-                primary ? Color.accentColor : Color(.tertiarySystemFill),
-                in: RoundedRectangle(cornerRadius: 8, style: .continuous)
+            .font(.nunito(size: 13.5, weight: .black))
+            .foregroundStyle(primary ? Theme.onBrand : Theme.ink)
+            .frame(maxWidth: .infinity)
+            .frame(height: 31)
+            .padding(.bottom, 3)
+            .pixelSurface(
+                fill: primary ? Theme.brand : Theme.surface2, lip: primary ? Theme.brandDeep : Theme.shade, step: 3,
+                lipHeight: 3, highlight: primary ? Color.white.opacity(0.45) : nil
             )
             .overlay {
                 if primary {
-                    RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .inset(by: -4)
-                        .stroke(Color.orange, style: StrokeStyle(lineWidth: 2, dash: [6, 4]))
+                    DashedRing(thickness: 3, dash: 6, gap: 4)
+                        .fill(Theme.wait)
+                        .padding(-5)
                 }
             }
+    }
+}
+
+/// Dashes of `thickness` along the edges of the rect, `dash` long and `gap` apart, square-ended.
+private struct DashedRing: Shape {
+    let thickness: CGFloat
+    let dash: CGFloat
+    let gap: CGFloat
+
+    func path(in rect: CGRect) -> Path {
+        var path = Path()
+        let t = thickness
+        var x: CGFloat = 0
+        while x < rect.width {
+            let w = min(dash, rect.width - x)
+            path.addRect(CGRect(x: rect.minX + x, y: rect.minY, width: w, height: t))
+            path.addRect(CGRect(x: rect.minX + x, y: rect.maxY - t, width: w, height: t))
+            x += dash + gap
+        }
+        var y: CGFloat = 0
+        while y < rect.height {
+            let h = min(dash, rect.height - y)
+            path.addRect(CGRect(x: rect.minX, y: rect.minY + y, width: t, height: h))
+            path.addRect(CGRect(x: rect.maxX - t, y: rect.minY + y, width: t, height: h))
+            y += dash + gap
+        }
+        return path
     }
 }
