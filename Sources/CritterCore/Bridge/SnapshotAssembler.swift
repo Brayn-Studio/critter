@@ -90,7 +90,7 @@ public final class SnapshotAssembler {
 
         var estimates: [String: ContextEstimate] = [:]
         var transcripts: Set<String> = []
-        for session in sessions where !session.source.isCodex && !reported.contains(session.id) {
+        for session in sessions where !session.source.isCodex && !session.source.isAgentApp && !reported.contains(session.id) {
             guard let path = session.transcriptPath, !path.isEmpty else { continue }
             transcripts.insert(path)
             if let estimate = estimate(transcript: path) { estimates[session.id] = estimate }

@@ -32,9 +32,9 @@ struct PlaceRow: View {
     /// Where a session runs, as an icon: a terminal, the editor, or the computer.
     static func icon(_ source: SessionSource) -> PixelIcon {
         switch source {
-        case .terminal, .codexTerminal: .term
+        case .terminal, .codexTerminal, .kimiTerminal: .term
         case .vscode, .codexVSCode: .editor
-        case .desktop, .other, .codex, .codexDesktop: .laptop
+        case .desktop, .other, .codex, .codexDesktop, .kimiDesktop, .deepseekDesktop: .laptop
         }
     }
 }

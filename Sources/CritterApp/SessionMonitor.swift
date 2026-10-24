@@ -277,7 +277,8 @@ private final class MonitorEngine: @unchecked Sendable {
     private func reconcileTranscriptWatchers(_ records: [SessionRecord]) {
         var wanted: [String: String] = [:]
         for record in records where record.state == .running || record.state == .waiting {
-            guard !SessionSource(entrypoint: record.entrypoint).isCodex else { continue }
+            let source = SessionSource(entrypoint: record.entrypoint)
+            guard !source.isCodex, !source.isAgentApp else { continue }
             if let path = record.transcriptPath, !path.isEmpty {
                 wanted[record.sessionId] = path
             }

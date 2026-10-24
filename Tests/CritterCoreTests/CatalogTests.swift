@@ -250,3 +250,36 @@ private func entry(
     let malformed = SessionCatalog.build(records: [rec("not-a-uuid", entrypoint: "codex"), rec("codex-not-a-uuid", entrypoint: "codex")], registry: [], dismissed: [:])
     #expect(malformed.count == 2)
 }
+
+@Test func agentAppSourcesAreRecognisedFromTheirEntrypoint() {
+    let cases: [(String, SessionSource, String, String)] = [
+        ("kimi-desktop", .kimiDesktop, "kimi_desktop", "Kimi · Desktop"),
+        ("kimi-cli", .kimiTerminal, "kimi_terminal", "Kimi · 终端"),
+        ("deepseek-desktop", .deepseekDesktop, "deepseek_desktop", "DeepSeek · Desktop"),
+    ]
+    for (entrypoint, source, raw, label) in cases {
+        #expect(SessionSource(entrypoint: entrypoint) == source)
+        #expect(source.rawValue == raw)
+        #expect(source.label == label)
+        #expect(!source.isCodex)
+        #expect(source.isAgentApp)
+        #expect(!SessionSource.isExcluded(entrypoint: entrypoint))
+    }
+    #expect(SessionSource.kimiDesktop.isKimi && !SessionSource.kimiDesktop.isDeepSeek)
+    #expect(SessionSource.kimiTerminal.isKimi)
+    #expect(SessionSource.deepseekDesktop.isDeepSeek && !SessionSource.deepseekDesktop.isKimi)
+    #expect(!SessionSource.terminal.isAgentApp && !SessionSource.codexDesktop.isAgentApp && !SessionSource.other.isAgentApp)
+    #expect(SessionSource.isExcluded(entrypoint: "sdk-cli"))
+}
+
+@Test func catalogNeverLetsAClaudeRegistryEntryOwnAnAgentAppRecord() {
+    let id = "kimi-session_x"
+    let record = rec(id, eventTime: 50, claudePid: 42, entrypoint: "kimi-desktop")
+    let result = SessionCatalog.build(records: [record], registry: [entry(id, pid: 999, name: "unrelated Claude")], dismissed: [:])
+    #expect(result.count == 1)
+    #expect(result.first?.source == .kimiDesktop)
+    #expect(result.first?.pid == 42)
+    #expect(result.first?.name == "x")
+    // An SDK registry entry with the same id must not hide the agent app's session.
+    #expect(SessionCatalog.build(records: [record], registry: [entry(id, entrypoint: "sdk-cli")], dismissed: [:]).count == 1)
+}

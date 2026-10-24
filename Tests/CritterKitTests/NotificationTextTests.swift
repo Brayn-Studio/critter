@@ -93,6 +93,9 @@ private func json(_ text: String) throws -> JSONValue {
     codex.id = "codex-thread"
     #expect(NotificationText.place(codex) == "proj · main · Codex")
     #expect(NotificationText.source(.desktop) == "桌面版")
+    #expect(NotificationText.source(.kimiDesktop) == "Kimi · Desktop")
+    #expect(NotificationText.source(.kimiTerminal) == "Kimi · 终端")
+    #expect(NotificationText.source(.deepseekDesktop) == "DeepSeek · Desktop")
     #expect(NotificationText.isCodex(codex))
     #expect(NotificationText.visibleSource(codex) == .codex)
 }

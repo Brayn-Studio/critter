@@ -97,14 +97,15 @@ public enum SessionCatalog {
                 continue
             }
             // Claude's registry cannot supply ownership or presentation for a confirmed
-            // Codex record, even if an old unprefixed UUID happens to collide.
-            let registryEntry = recordSource.isCodex ? nil : registryById[id]
-            let source = recordSource.isCodex ? recordSource : SessionSource(entrypoint: registryEntry?.entrypoint ?? record?.entrypoint)
+            // Codex, Kimi or DeepSeek record, even if an old unprefixed UUID happens to collide.
+            let foreign = recordSource.isCodex || recordSource.isAgentApp
+            let registryEntry = foreign ? nil : registryById[id]
+            let source = foreign ? recordSource : SessionSource(entrypoint: registryEntry?.entrypoint ?? record?.entrypoint)
 
             // A session that its registry entry *or* its state file identifies as SDK-driven
             // (`claude -p`, the Agent SDK) is never shown as a pet. One whose entrypoint
             // neither source knows is shown normally.
-            if !source.isCodex && (SessionSource.isExcluded(entrypoint: registryEntry?.entrypoint)
+            if !source.isCodex && !source.isAgentApp && (SessionSource.isExcluded(entrypoint: registryEntry?.entrypoint)
                 || SessionSource.isExcluded(entrypoint: record?.entrypoint)) {
                 continue
             }

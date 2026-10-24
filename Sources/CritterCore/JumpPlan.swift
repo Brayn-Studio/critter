@@ -41,6 +41,8 @@ public enum JumpPlanner {
         "com.exafunction.windsurf",
     ]
     public static let claudeDesktop = "com.anthropic.claudefordesktop"
+    public static let kimiDesktop = "com.kimi.code.desktop"
+    public static let deepseekDesktop = "com.deepseek.dsh"
     public static let terminal = "com.apple.Terminal"
     public static let iterm = "com.googlecode.iterm2"
     public static let vscode = "com.microsoft.VSCode"
@@ -58,9 +60,13 @@ public enum JumpPlanner {
                 return .activateBundle(claudeDesktop)
             case .codexDesktop:
                 return .activateBundle("com.openai.codex")
+            case .kimiDesktop:
+                return .activateBundle(kimiDesktop)
+            case .deepseekDesktop:
+                return .activateBundle(deepseekDesktop)
             case .vscode, .codexVSCode:
                 return folder.isEmpty ? .activateBundle(vscode) : .openFolder(bundleId: vscode, folder: folder)
-            case .terminal, .codexTerminal, .codex, .other:
+            case .terminal, .codexTerminal, .codex, .kimiTerminal, .other:
                 return .none
             }
         }

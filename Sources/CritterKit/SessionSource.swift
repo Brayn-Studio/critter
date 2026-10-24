@@ -10,6 +10,9 @@ public enum SessionSource: String, Codable, Sendable {
     case codexTerminal = "codex_terminal"
     case codexVSCode = "codex_vscode"
     case codexDesktop = "codex_desktop"
+    case kimiDesktop = "kimi_desktop"
+    case kimiTerminal = "kimi_terminal"
+    case deepseekDesktop = "deepseek_desktop"
 
     public init(entrypoint: String?, sessionId: String? = nil, transcriptPath: String? = nil) {
         switch entrypoint {
@@ -22,6 +25,9 @@ public enum SessionSource: String, Codable, Sendable {
             case "codex-vscode": self = .codexVSCode
             case "codex-desktop", "codex-app": self = .codexDesktop
             case "codex": self = .codex
+            case "kimi-desktop": self = .kimiDesktop
+            case "kimi-cli": self = .kimiTerminal
+            case "deepseek-desktop": self = .deepseekDesktop
             default: self = .other
             }
         }
@@ -40,6 +46,9 @@ public enum SessionSource: String, Codable, Sendable {
         case .codexTerminal: return "Codex · 终端"
         case .codexVSCode: return "Codex · VS Code"
         case .codexDesktop: return "Codex · Desktop"
+        case .kimiDesktop: return "Kimi · Desktop"
+        case .kimiTerminal: return "Kimi · 终端"
+        case .deepseekDesktop: return "DeepSeek · Desktop"
         }
     }
 
@@ -48,6 +57,19 @@ public enum SessionSource: String, Codable, Sendable {
         case .codex, .codexTerminal, .codexVSCode, .codexDesktop: return true
         default: return false
         }
+    }
+
+    public var isKimi: Bool {
+        self == .kimiDesktop || self == .kimiTerminal
+    }
+
+    public var isDeepSeek: Bool {
+        self == .deepseekDesktop
+    }
+
+    /// Kimi Code and DeepSeek Harness: not Claude, not Codex, and with no Claude registry entry to consult.
+    public var isAgentApp: Bool {
+        isKimi || isDeepSeek
     }
 
     /// A namespaced id is conclusive. Legacy bare UUIDs need a matching Codex rollout

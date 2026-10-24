@@ -79,3 +79,11 @@ import Testing
     #expect(JumpPlanner.guiAncestor(ancestors: [10, 20, 30, 40, 1], app: { apps[$0] }) == AppHit(pid: 30, bundleId: "com.microsoft.VSCode"))
     #expect(JumpPlanner.guiAncestor(ancestors: [10, 1], app: { apps[$0] }) == nil)
 }
+
+@Test func agentAppsWithoutAncestorActivateTheirOwnApp() {
+    #expect(JumpPlanner.plan(guiAncestor: nil, source: .kimiDesktop, cwd: "/a", tty: nil, ideLocks: []) == .activateBundle("com.kimi.code.desktop"))
+    #expect(JumpPlanner.plan(guiAncestor: nil, source: .deepseekDesktop, cwd: "/a", tty: nil, ideLocks: []) == .activateBundle("com.deepseek.dsh"))
+    #expect(JumpPlanner.plan(guiAncestor: nil, source: .kimiTerminal, cwd: "/a", tty: nil, ideLocks: []) == .none)
+    #expect(JumpPlanner.kimiDesktop == "com.kimi.code.desktop")
+    #expect(JumpPlanner.deepseekDesktop == "com.deepseek.dsh")
+}

@@ -102,6 +102,22 @@ private func request(_ id: String, session: String, createdAt: Int64) -> Pending
     #expect(body.limits == nil)
 }
 
+@Test func agentAppPhoneSnapshotDefaultsCapabilitiesAndNeverInventsTelemetry() {
+    var deepseek = session("deepseek-a")
+    deepseek.source = .deepseekDesktop
+    var kimi = session("kimi-a")
+    kimi.source = .kimiDesktop
+    let body = SnapshotBuilder.build(SnapshotInputs(sessions: [deepseek, kimi, session("claude")], prefs: prefs, home: "/"))
+    #expect(body.sessions[0].capabilities == BridgeCapabilities(canSay: false, canAnswer: true, canInterrupt: false, readOnlyReason: "DeepSeek Harness 会话暂不支持从手机发消息"))
+    #expect(body.sessions[1].capabilities == BridgeCapabilities(readOnlyReason: "尚未连接 Kimi Code"))
+    #expect(body.sessions[2].capabilities == nil)
+    for index in 0...1 {
+        #expect(body.sessions[index].model == nil)
+        #expect(body.sessions[index].context == nil)
+        #expect(body.sessions[index].limits == nil)
+    }
+}
+
 @Test func codexPhoneSnapshotUsesReportedControlCapabilities() {
     var codex = session("codex-a")
     codex.source = .codexDesktop

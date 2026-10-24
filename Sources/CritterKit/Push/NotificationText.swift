@@ -86,6 +86,9 @@ public enum NotificationText {
         case .codexTerminal: "Codex · 终端"
         case .codexVSCode: "Codex · VS Code"
         case .codexDesktop: "Codex · Desktop"
+        case .kimiDesktop: "Kimi · Desktop"
+        case .kimiTerminal: "Kimi · 终端"
+        case .deepseekDesktop: "DeepSeek · Desktop"
         }
     }
 

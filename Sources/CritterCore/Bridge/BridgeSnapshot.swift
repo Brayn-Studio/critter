@@ -55,8 +55,7 @@ public enum SnapshotBuilder {
                 skin: inputs.skins[session.id] ?? inputs.prefs.skin,
                 eventTime: session.eventTime, startedAt: session.sortKey, tracked: session.tracked,
                 limits: codex ? limits(telemetry: session.telemetry, eventTime: session.eventTime) : nil,
-                capabilities: inputs.capabilities[session.id] ?? (codex
-                    ? BridgeCapabilities(readOnlyReason: "尚未连接 Codex 控制通道") : nil)
+                capabilities: inputs.capabilities[session.id] ?? defaultCapabilities(for: session.source)
             )
         }
         let known = Set(inputs.sessions.map(\.id))
@@ -76,6 +75,18 @@ public enum SnapshotBuilder {
             .max { $0.updatedAt < $1.updatedAt }
             .map { BridgeLimits(fiveHour: $0.fiveHour, sevenDay: $0.sevenDay, updatedAt: $0.updatedAt) }
         return SnapshotBody(sessions: sessions, limits: limits, pending: pending, prefs: inputs.prefs)
+    }
+
+    /// What a phone may do with a session before its control channel has reported. Claude sessions
+    /// leave it nil (the bridge answers and says through hooks); the others start read-only.
+    private static func defaultCapabilities(for source: SessionSource) -> BridgeCapabilities? {
+        if source.isCodex { return BridgeCapabilities(readOnlyReason: "尚未连接 Codex 控制通道") }
+        if source.isKimi { return BridgeCapabilities(readOnlyReason: "尚未连接 Kimi Code") }
+        // DeepSeek's hooks can carry an answer back, but there is no way to type into the session.
+        if source.isDeepSeek {
+            return BridgeCapabilities(canSay: false, canAnswer: true, canInterrupt: false, readOnlyReason: "DeepSeek Harness 会话暂不支持从手机发消息")
+        }
+        return nil
     }
 
     private static func tilde(_ cwd: String, home: String) -> String {
