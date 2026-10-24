@@ -48,7 +48,11 @@ public protocol BridgeLink: Sendable {
     func start() async
     func stop() async
     func reconnectNow() async
+    /// How often a connected socket is pinged, in seconds, from now on.
+    func setPingInterval(_ seconds: TimeInterval) async
     func request(_ command: BridgeCommand) async -> CommandResult
+    /// A skin's manifest from the Mac; nil if it has no such skin or cannot be reached.
+    func requestSkin(_ name: String) async -> JSONValue?
 }
 
 extension BridgeClient: BridgeLink {}

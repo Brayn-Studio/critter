@@ -17,8 +17,10 @@ public actor BridgeClient {
     private let app: String
     private let onEvent: @Sendable (BridgeEvent) -> Void
     private let requestTimeout: Duration
-    private let pingInterval: Duration
+    /// How often a connected socket is pinged; `setPingInterval` changes it while running.
+    private var pingInterval: Duration
     private let sleep: @Sendable (Duration) async throws -> Void
+    private let pingSleep: @Sendable (Duration) async throws -> Void
 
     private var state = ConnState.idle
     private var backoff = ReconnectBackoff()
@@ -72,7 +74,7 @@ public actor BridgeClient {
 
     private var pause: Pause?
     private var pauseSerial = 0
-    /// `reconnectNow` while connected: the wait after this connection ends is skipped.
+    /// `reconnectNow` while the state is `.offline` but the wait has not begun: that wait is skipped.
     private var skipNextPause = false
 
     /// - Parameters:
@@ -83,12 +85,15 @@ public actor BridgeClient {
     ///   - requestTimeout: no reply within it means the connection is broken: it is dropped.
     ///   - pingInterval: how often a connected socket is pinged.
     ///   - sleep: waits out the backoff delay between rounds.
+    ///   - pingSleep: waits out the heartbeat: the time between pings and the time a pong may take. Must throw
+    ///     when its task is cancelled, as `Task.sleep` does.
     public init(
         transport: any BridgeTransport, endpoint: any EndpointResolver, fingerprint: String,
         credentials: @escaping @Sendable () -> Credentials?, app: String,
         onEvent: @escaping @Sendable (BridgeEvent) -> Void,
         requestTimeout: Duration = .seconds(10), pingInterval: Duration = .seconds(60),
-        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+        pingSleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.transport = transport
         self.endpoint = endpoint
@@ -99,6 +104,7 @@ public actor BridgeClient {
         self.requestTimeout = requestTimeout
         self.pingInterval = pingInterval
         self.sleep = sleep
+        self.pingSleep = pingSleep
     }
 
     // MARK: - Control
@@ -131,18 +137,23 @@ public actor BridgeClient {
         setState(.idle)
     }
 
-    /// Connects again without waiting: while offline it cuts the backoff wait short; while
-    /// connected it drops the connection and makes a new one at once. Otherwise it does nothing.
+    /// Connects again without waiting: while offline it cuts the backoff wait short (the wait that follows a
+    /// failure is still the next step up). Connected, connecting or stopped, it does nothing: it does not drop a
+    /// working connection, and the state does not flicker through `.offline`.
     public func reconnectNow() {
-        switch state {
-        case .offline:
-            if pause != nil { endPause() } else { skipNextPause = true }
-        case .connected:
-            skipNextPause = true
-            if let current { finish(current.serial) }
-        case .idle, .connecting, .awaitingApproval, .needsRepair:
-            break
-        }
+        guard case .offline = state else { return }
+        if pause != nil { endPause() } else { skipNextPause = true }
+    }
+
+    /// Pings every `seconds` from now on, also while connected: the wait for the next ping is replaced by one of
+    /// the new length, counted from now, and a pong is due before the ping after it. The setting outlasts the
+    /// connection. Not a positive number of seconds: ignored.
+    public func setPingInterval(_ seconds: TimeInterval) {
+        guard seconds.isFinite, seconds > 0 else { return }
+        let new = Duration.seconds(seconds)
+        guard new != pingInterval else { return }
+        pingInterval = new
+        if welcomed, let current { startHeartbeat(current) }
     }
 
     // MARK: - Requests
@@ -321,16 +332,20 @@ public actor BridgeClient {
         }
     }
 
-    /// Pings every `pingInterval`; a ping that fails, or gets no pong within `requestTimeout`,
+    /// Pings every `pingInterval` (read again before each wait, and the wait begun over when it changes); a
+    /// ping that fails, or gets no pong before the next one is due (within `requestTimeout`, if that is sooner),
     /// drops the connection.
     private func startHeartbeat(_ link: Link) {
-        let interval = pingInterval
-        let deadline = requestTimeout
+        heartbeat?.cancel()
+        let wait = pingSleep
         heartbeat = Task {
             while !Task.isCancelled {
-                do { try await Task.sleep(for: interval) } catch { return }
+                let interval = pingInterval
+                do { try await wait(interval) } catch { return }
+                guard !Task.isCancelled else { return }
+                let deadline = min(requestTimeout, interval)
                 let overdue = Task {
-                    try? await Task.sleep(for: deadline)
+                    try? await wait(deadline)
                     guard !Task.isCancelled else { return }
                     self.finish(link.serial)
                 }

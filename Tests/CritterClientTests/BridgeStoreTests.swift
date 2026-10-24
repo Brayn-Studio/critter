@@ -162,6 +162,9 @@ private final class FakeLink: BridgeLink {
         var stops = 0
         var reconnects = 0
         var requests: [BridgeCommand] = []
+        var pingIntervals: [TimeInterval] = []
+        var skins: [String: JSONValue] = [:]
+        var skinRequests: [String] = []
         var holdRequests = false
         var reply = CommandResult(ok: true, reason: nil, message: nil)
     }
@@ -180,6 +183,8 @@ private final class FakeLink: BridgeLink {
     var stops: Int { state.withLock { $0.stops } }
     var reconnects: Int { state.withLock { $0.reconnects } }
     var requests: [BridgeCommand] { state.withLock { $0.requests } }
+    var pingIntervals: [TimeInterval] { state.withLock { $0.pingIntervals } }
+    var skinRequests: [String] { state.withLock { $0.skinRequests } }
 
     /// The link reports `event`, as the client does.
     func emit(_ event: BridgeEvent) { onEvent(event) }
@@ -188,6 +193,9 @@ private final class FakeLink: BridgeLink {
     func holdRequests() { state.withLock { $0.holdRequests = true } }
 
     func reply(with result: CommandResult) { state.withLock { $0.reply = result } }
+
+    /// From now on the Mac has a skin of this name, with this manifest.
+    func serve(_ manifest: JSONValue, named name: String) { state.withLock { $0.skins[name] = manifest } }
 
     func start() async {
         journal.add("start \(index)")
@@ -202,6 +210,18 @@ private final class FakeLink: BridgeLink {
     func reconnectNow() async {
         journal.add("reconnectNow \(index)")
         state.withLock { $0.reconnects += 1 }
+    }
+
+    func setPingInterval(_ seconds: TimeInterval) async {
+        journal.add("ping \(index) \(seconds)")
+        state.withLock { $0.pingIntervals.append(seconds) }
+    }
+
+    func requestSkin(_ name: String) async -> JSONValue? {
+        state.withLock { s in
+            s.skinRequests.append(name)
+            return s.skins[name]
+        }
     }
 
     func request(_ command: BridgeCommand) async -> CommandResult {
@@ -242,6 +262,21 @@ private final class FakePairer: PairingLink {
     }
 }
 
+/// The network, changing when the test says so.
+private final class FakeNetwork: NetworkWatching {
+    private let stream: AsyncStream<Void>
+    private let continuation: AsyncStream<Void>.Continuation
+
+    init() {
+        (stream, continuation) = AsyncStream.makeStream(of: Void.self)
+    }
+
+    func changes() -> AsyncStream<Void> { stream }
+
+    /// The network changed (it came back, or moved to another Wi-Fi).
+    func fire() { continuation.yield() }
+}
+
 /// Runs the work at once, and lets a test wait for it.
 @MainActor private final class ImmediateRunner: BackgroundRunner {
     private var tasks: [Task<Void, Never>] = []
@@ -263,6 +298,7 @@ private final class FakePairer: PairingLink {
     let storage: FakeStorage
     let pairer: FakePairer
     let runner = ImmediateRunner()
+    let network = FakeNetwork()
     private(set) var links: [FakeLink] = []
 
     init(paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false) {
@@ -278,7 +314,7 @@ private final class FakePairer: PairingLink {
                 self.links.append(link)
                 return link
             },
-            pairer: pairer, background: runner, backgroundGrace: grace, now: { [clock] in clock.now }
+            pairer: pairer, background: runner, network: network, backgroundGrace: grace, now: { [clock] in clock.now }
         )
     }
 
@@ -507,6 +543,108 @@ struct BridgeStoreTests {
         #expect(unpaired.journal.all.isEmpty)
     }
 
+    // MARK: - The network, the board's heartbeat, skins
+
+    @Test func aNetworkChangeInTheForegroundReconnects() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.sceneBecameActive()
+        #expect(await becomes { rig.link.starts == 1 })
+        rig.network.fire()
+        #expect(await becomes { rig.link.reconnects == 1 })
+        rig.network.fire()
+        #expect(await becomes { rig.link.reconnects == 2 })
+        #expect(rig.journal.all == ["start 0", "reconnectNow 0", "reconnectNow 0"])
+    }
+
+    @Test func aNetworkChangeInTheBackgroundIsIgnored() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        // The app has not said where it is yet.
+        rig.network.fire()
+        await settle()
+        #expect(rig.link.reconnects == 0)
+
+        store.sceneBecameActive()
+        #expect(await becomes { rig.link.starts == 1 })
+        store.sceneEnteredBackground()
+        await rig.runner.finished()
+        rig.network.fire()
+        await settle()
+        #expect(rig.link.reconnects == 0)
+
+        // Back in the foreground the next change counts, and only that one.
+        store.sceneBecameActive()
+        rig.network.fire()
+        #expect(await becomes { rig.link.reconnects == 1 })
+        await settle()
+        #expect(rig.link.reconnects == 1)
+    }
+
+    @Test func aNetworkChangeWithNothingPairedDoesNothing() async {
+        let rig = Rig(paired: false)
+        let store = rig.makeStore()
+        store.sceneBecameActive()
+        rig.network.fire()
+        await settle()
+        #expect(rig.links.isEmpty)
+        #expect(rig.journal.all.isEmpty)
+    }
+
+    @Test func boardOpenSetsThePingTo30Seconds() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        #expect(!store.boardOpen)
+        store.boardOpen = true
+        #expect(await becomes { rig.link.pingIntervals == [30] })
+        // Opened again: nothing new to tell the link.
+        store.boardOpen = true
+        store.boardOpen = false
+        #expect(await becomes { rig.link.pingIntervals == [30, 60] })
+        await settle()
+        #expect(rig.link.pingIntervals == [30, 60])
+    }
+
+    @Test func aNewPairingKeepsTheBoardsPing() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.boardOpen = true
+        #expect(await becomes { rig.link.pingIntervals == [30] })
+        let result = await store.pair(target, deviceName: "iPhone")
+        #expect(result == .paired(deviceId: "d2", token: "t2", macName: "New Mac"))
+        #expect(rig.links.count == 2)
+        #expect(await becomes { rig.links[1].pingIntervals == [30] })
+    }
+
+    @Test func requestSkinReturnsTheManifestBytes() async throws {
+        let rig = Rig()
+        let store = rig.makeStore()
+        let manifest = JSONValue.object(["name": .string("sprig"), "frames": .array([.number(1), .number(2)])])
+        rig.link.serve(manifest, named: "sprig")
+
+        // Not connected: nil, and the link is not even asked.
+        #expect(await store.requestSkin("sprig") == nil)
+        #expect(rig.link.skinRequests.isEmpty)
+
+        rig.link.emit(.state(connected))
+        #expect(await becomes { store.conn == connected })
+        let data = try #require(await store.requestSkin("sprig"))
+        #expect(try JSONDecoder().decode(JSONValue.self, from: data) == manifest)
+        // The same bytes for the same manifest, whatever order the dictionary keeps its keys in: the phone
+        // compares them to tell whether a skin changed.
+        #expect(String(decoding: data, as: UTF8.self) == #"{"frames":[1,2],"name":"sprig"}"#)
+
+        // The Mac has no such skin.
+        #expect(await store.requestSkin("nope") == nil)
+        #expect(rig.link.skinRequests == ["sprig", "nope"])
+
+        // Offline again: nil.
+        rig.link.emit(.state(offline))
+        #expect(await becomes { store.conn == offline })
+        #expect(await store.requestSkin("sprig") == nil)
+        #expect(rig.link.skinRequests == ["sprig", "nope"])
+    }
+
     // MARK: - Sending
 
     @Test func sendWhileNotConnectedFails() async {
@@ -700,7 +838,7 @@ struct BridgeStoreWithTheClientTests {
                     credentials: { storage.load()?.1 }, app: "critter-ios/test", onEvent: onEvent
                 )
             },
-            pairer: Pairer(transport: mac), background: runner
+            pairer: Pairer(transport: mac), background: runner, network: FakeNetwork()
         )
 
         // Foreground: connects, says hello first, and is welcomed.
@@ -761,7 +899,7 @@ struct BridgeStoreWithTheClientTests {
                     onEvent: onEvent, sleep: Sleeper().sleep
                 )
             },
-            pairer: Pairer(transport: mac), background: ImmediateRunner()
+            pairer: Pairer(transport: mac), background: ImmediateRunner(), network: FakeNetwork()
         )
 
         // Nothing answers at the paired address any more; Bonjour finds the Mac at `moved`, which is remembered.

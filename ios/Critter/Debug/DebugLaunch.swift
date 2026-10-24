@@ -184,6 +184,11 @@ private actor FixtureLink: BridgeLink {
 
     func reconnectNow() {}
 
+    func setPingInterval(_ seconds: TimeInterval) {}
+
+    /// The fixture Mac has no skins to send: the phone shows what it has.
+    func requestSkin(_ name: String) -> JSONValue? { nil }
+
     func request(_ command: BridgeCommand) async -> CommandResult {
         // The Mac's snapshot without the request comes before its receipt more often than not.
         if result.ok, case .answer(let requestId, _) = command {

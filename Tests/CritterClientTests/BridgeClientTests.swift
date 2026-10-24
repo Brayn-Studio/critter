@@ -17,14 +17,16 @@ private struct Rig {
 
     init(
         sleeper: Sleeper = Sleeper(), credentials: Credentials? = credentials,
-        requestTimeout: Duration = .seconds(10), pingInterval: Duration = .seconds(60)
+        requestTimeout: Duration = .seconds(10), pingInterval: Duration = .seconds(60),
+        pingSleep: (@Sendable (Duration) async throws -> Void)? = nil
     ) {
         self.sleeper = sleeper
         client = BridgeClient(
             transport: mac, endpoint: resolver, fingerprint: pin,
             credentials: { credentials }, app: "critter-ios/test",
             onEvent: events.record,
-            requestTimeout: requestTimeout, pingInterval: pingInterval, sleep: sleeper.sleep
+            requestTimeout: requestTimeout, pingInterval: pingInterval, sleep: sleeper.sleep,
+            pingSleep: pingSleep ?? { try await Task.sleep(for: $0) }
         )
     }
 
@@ -188,24 +190,37 @@ struct BridgeClientTests {
         await rig.client.stop()
     }
 
-    @Test func reconnectNowCutsTheWaitShort() async throws {
+    @Test func reconnectNowWhileWaitingConnectsAtOnce() async throws {
         let rig = Rig(sleeper: Sleeper(.hold))
-        rig.mac.failNextConnects(.unreachable)
+        rig.mac.failNextConnects(.unreachable, times: 2)
         await rig.client.start()
         #expect(await rig.sleeper.waitForDelays(1))
         #expect(rig.mac.connects.count == 1)
         await rig.client.reconnectNow()
         #expect(await rig.mac.waitForConnects(2))
+        // The wait that was cut short stays spent: the next one is the next step up, not a skipped one.
+        #expect(await rig.sleeper.waitForDelays(2))
+        #expect(rig.sleeper.delays == [2, 4].map { Duration.seconds($0) })
+        await rig.client.reconnectNow()
+        try await rig.welcomeNextHello()
         await rig.client.stop()
     }
 
-    @Test func reconnectNowWhileConnectedMakesANewConnection() async throws {
+    @Test func reconnectNowWhileConnectedChangesNothing() async throws {
         let rig = Rig(sleeper: Sleeper(.hold))
         try await rig.connect()
+        let statesBefore = rig.events.states
         await rig.client.reconnectNow()
-        #expect(await rig.mac.waitForConnects(2))
-        try await rig.welcomeNextHello()
+        await settle()
+        // Not reconnected, no `offline` flicker, and the backoff was not asked for a wait.
+        #expect(rig.mac.connects.count == 1)
         #expect(rig.mac.openSockets == 1)
+        #expect(rig.events.states == statesBefore)
+        #expect(rig.sleeper.delays.isEmpty)
+        // The next drop begins at the shortest wait, as if `reconnectNow` had never been called.
+        rig.mac.drop()
+        #expect(await rig.sleeper.waitForDelays(1))
+        #expect(rig.sleeper.delays == [.seconds(2)])
         await rig.client.stop()
     }
 
@@ -274,6 +289,70 @@ struct BridgeClientTests {
         rig.mac.pingHangs = true
         try await rig.connect()
         #expect(await rig.mac.waitForConnects(2))
+        await rig.client.stop()
+    }
+
+    @Test func pingIntervalCanChangeWhileRunning() async throws {
+        let clock = ManualClock()
+        let rig = Rig(pingSleep: clock.sleep)
+        try await rig.connect()
+        // Connected with the usual 60 s: the first ping is a minute away.
+        #expect(await clock.waitForSleepers(1))
+        #expect(clock.asked == [.seconds(60)])
+        await rig.client.setPingInterval(30)
+        // The wait under way is replaced by one of the new length, from now.
+        #expect(await eventually { clock.asked == [.seconds(60), .seconds(30)] })
+        #expect(await clock.waitForSleepers(1))
+        clock.advance(by: .seconds(29))
+        await settle()
+        #expect(rig.mac.pings == 0)
+        clock.advance(by: .seconds(2))
+        #expect(await eventually { rig.mac.pings == 1 })
+        // The pong gets the request timeout (10 s, sooner than the next ping), then the next beat is 30 s as well.
+        #expect(await eventually { clock.asked == [.seconds(60), .seconds(30), .seconds(10), .seconds(30)] })
+        await rig.client.stop()
+    }
+
+    @Test func aChangedPingIntervalSurvivesAReconnect() async throws {
+        let clock = ManualClock()
+        let rig = Rig(sleeper: Sleeper(.returnAtOnce), pingSleep: clock.sleep)
+        try await rig.connect()
+        await rig.client.setPingInterval(30)
+        rig.mac.drop()
+        #expect(await rig.mac.waitForConnects(2))
+        try await rig.welcomeNextHello()
+        #expect(await eventually { clock.asked.last == .seconds(30) && clock.sleepers == 1 })
+        await rig.client.stop()
+    }
+
+    @Test func thePongIsDueBeforeTheNextPing() async throws {
+        // The request timeout is 10 s, but with a ping every 4 s a pong that is later than that is lost.
+        let clock = ManualClock()
+        let rig = Rig(requestTimeout: .seconds(10), pingSleep: clock.sleep)
+        rig.mac.pingHangs = true
+        try await rig.connect()
+        await rig.client.setPingInterval(4)
+        #expect(await eventually { clock.asked.last == .seconds(4) && clock.sleepers == 1 })
+        clock.advance(by: .seconds(4))
+        #expect(await eventually { rig.mac.pings == 1 && clock.asked.last == .seconds(4) && clock.sleepers == 1 })
+        clock.advance(by: .seconds(3))
+        await settle()
+        #expect(rig.mac.connects.count == 1)
+        clock.advance(by: .seconds(1))
+        #expect(await rig.mac.waitForConnects(2))
+        await rig.client.stop()
+    }
+
+    @Test func aPingIntervalThatIsNotPositiveIsIgnored() async throws {
+        let clock = ManualClock()
+        let rig = Rig(pingSleep: clock.sleep)
+        try await rig.connect()
+        #expect(await clock.waitForSleepers(1))
+        await rig.client.setPingInterval(0)
+        await rig.client.setPingInterval(-5)
+        await rig.client.setPingInterval(.nan)
+        await settle()
+        #expect(clock.asked == [.seconds(60)])
         await rig.client.stop()
     }
 

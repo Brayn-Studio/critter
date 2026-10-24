@@ -4,9 +4,6 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 ## 计划 2：宠物与看板
 
-- **网络变化时立刻重连一次**（spec §8.3）。现在没有 `NWPathMonitor`，Wi‑Fi 恢复后可能还在退避里等最多 60 秒，除非点「重试」。
-- `BridgeClient.reconnectNow()` 在已连接时会推进一级退避，并闪一下 `offline(2s)`。和上一条一起改。
-- 看板打开时心跳改成 30 秒：`BridgeClient` 的 ping 间隔现在只能在创建时设定，要能在运行中修改。
 - `BoardTrigger` 移植成 Swift；`SpriteAtlas`、`CritterSpriteLayer`、`MotionClock` 移进 `CritterKit`（计划 1 推迟的部分）。
 
 ## Mac 推送计划

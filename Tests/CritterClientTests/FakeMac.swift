@@ -25,6 +25,7 @@ final class FakeMac: BridgeTransport {
         var read = 0
         var pingError: TransportError?
         var pingHangs = false
+        var pings = 0
         var peerFingerprint: String?
         var autoWelcome: String?
         var connectDelay: Duration?
@@ -50,6 +51,9 @@ final class FakeMac: BridgeTransport {
         get { state.withLock { $0.pingError } }
         set { state.withLock { $0.pingError = newValue } }
     }
+
+    /// How many pings the phone has sent, on any socket.
+    var pings: Int { state.withLock { $0.pings } }
 
     /// While set, a ping gets no pong: `sendPing` waits until the socket ends.
     var pingHangs: Bool {
@@ -156,7 +160,10 @@ final class FakeMac: BridgeTransport {
     }
 
     fileprivate var pingBehaviour: (error: TransportError?, hangs: Bool) {
-        state.withLock { ($0.pingError, $0.pingHangs) }
+        state.withLock { s in
+            s.pings += 1
+            return (s.pingError, s.pingHangs)
+        }
     }
 }
 
@@ -305,6 +312,79 @@ final class Sleeper: Sendable {
 
     func waitForDelays(_ count: Int) async -> Bool {
         await eventually { self.delays.count >= count }
+    }
+}
+
+/// A clock the test moves by hand: `sleep` returns once `advance` has moved the clock to the time it waits for,
+/// and throws when its task is cancelled, as `Task.sleep` does.
+final class ManualClock: Sendable {
+    private struct Waiter {
+        let id: Int
+        let due: Duration
+        let continuation: CheckedContinuation<Void, any Error>
+    }
+
+    private struct State {
+        var now = Duration.zero
+        var lastId = 0
+        var waiters: [Waiter] = []
+        var cancelled: Set<Int> = []
+        var asked: [Duration] = []
+    }
+
+    private let state = OSAllocatedUnfairLock(initialState: State())
+
+    /// Every duration `sleep` was asked for, in order.
+    var asked: [Duration] { state.withLock { $0.asked } }
+
+    /// How many sleeps are waiting right now.
+    var sleepers: Int { state.withLock { $0.waiters.count } }
+
+    var sleep: @Sendable (Duration) async throws -> Void {
+        { [self] duration in try await sleep(for: duration) }
+    }
+
+    /// Moves the clock on; every sleep that is due by then returns.
+    func advance(by amount: Duration) {
+        let due = state.withLock { s in
+            s.now += amount
+            let due = s.waiters.filter { $0.due <= s.now }
+            s.waiters.removeAll { $0.due <= s.now }
+            return due
+        }
+        due.forEach { $0.continuation.resume() }
+    }
+
+    /// Waits (at most 2 s) until `count` sleeps are waiting.
+    func waitForSleepers(_ count: Int) async -> Bool {
+        await eventually { self.sleepers == count }
+    }
+
+    private func sleep(for duration: Duration) async throws {
+        let id = state.withLock { s in
+            s.lastId += 1
+            s.asked.append(duration)
+            return s.lastId
+        }
+        try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
+                let early: Result<Void, any Error>? = state.withLock { s in
+                    if s.cancelled.remove(id) != nil { return .failure(CancellationError()) }
+                    s.waiters.append(Waiter(id: id, due: s.now + duration, continuation: continuation))
+                    return nil
+                }
+                if let early { continuation.resume(with: early) }
+            }
+        } onCancel: {
+            let waiting: CheckedContinuation<Void, any Error>? = state.withLock { s in
+                guard let at = s.waiters.firstIndex(where: { $0.id == id }) else {
+                    s.cancelled.insert(id)
+                    return nil
+                }
+                return s.waiters.remove(at: at).continuation
+            }
+            waiting?.resume(throwing: CancellationError())
+        }
     }
 }
 

@@ -12,6 +12,8 @@ import Observation
 ///   not later than `backgroundGrace`).
 /// - A link the store replaces or drops is always `stop()`ped: the client's own loop keeps it alive
 ///   until then.
+/// - A change of the network (Wi-Fi back, another network) while the app is in the foreground connects at once,
+///   cutting a backoff wait short; in the background it is ignored.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -38,6 +40,20 @@ public final class BridgeStore {
     @ObservationIgnored private let background: any BackgroundRunner
     @ObservationIgnored private let backgroundGrace: Duration
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private var networkPump: Task<Void, Never>?
+
+    /// How often the Mac is pinged while the board is shut and while it is open, in seconds (spec §8.3).
+    public static let restPingInterval: TimeInterval = 60
+    public static let boardPingInterval: TimeInterval = 30
+
+    /// Whether the board is on screen. Set it when the board opens and shuts: the connection pings every 30
+    /// seconds while it is open (the phone sits on a charger, and a dead connection should show quickly), every
+    /// 60 otherwise. A new pairing's connection starts with the same.
+    @ObservationIgnored public var boardOpen = false {
+        didSet {
+            if boardOpen != oldValue { applyPingInterval() }
+        }
+    }
 
     /// The link to the paired Mac and what listens to it.
     private struct Connection {
@@ -63,12 +79,14 @@ public final class BridgeStore {
     /// - Parameters:
     ///   - makeLink: makes the connection for a pairing; it reports its events to the closure it is given.
     ///     Called when the store is created (if paired) and when pairing succeeds; the link is not started.
+    ///   - network: tells when the network changed; the store reconnects at once, in the foreground.
     ///   - backgroundGrace: how long a move to the background waits for answers on their way.
     ///   - now: stamps the snapshots.
     public init(
         storage: any PairingStorage,
         makeLink: @escaping @MainActor (StoredPairing, @escaping @Sendable (BridgeEvent) -> Void) -> any BridgeLink,
         pairer: any PairingLink, background: any BackgroundRunner,
+        network: any NetworkWatching = NWPathNetworkWatcher(),
         backgroundGrace: Duration = .seconds(10), now: @escaping () -> Date = Date.init
     ) {
         self.storage = storage
@@ -85,6 +103,16 @@ public final class BridgeStore {
             }
             connection = makeConnection(for: pairing)
         }
+        networkPump = Task { [weak self] in
+            for await _ in network.changes() {
+                guard let self else { return }
+                self.networkChanged()
+            }
+        }
+    }
+
+    deinit {
+        networkPump?.cancel()
     }
 
     // MARK: - The scene
@@ -115,6 +143,20 @@ public final class BridgeStore {
             await link.start()
             await link.reconnectNow()
         }
+    }
+
+    /// The network changed: in the foreground, connect again now (a link that is connected ignores it). In the
+    /// background there is no connection to mend, and `sceneBecameActive` makes a new one.
+    private func networkChanged() {
+        guard sceneActive == true, let link = connection?.link else { return }
+        callLink { await link.reconnectNow() }
+    }
+
+    /// Tells the link how often to ping, for `boardOpen`.
+    private func applyPingInterval() {
+        guard let link = connection?.link else { return }
+        let seconds = boardOpen ? Self.boardPingInterval : Self.restPingInterval
+        callLink { await link.setPingInterval(seconds) }
     }
 
     private func stopAfterInFlight(since change: Int) async {
@@ -169,6 +211,16 @@ public final class BridgeStore {
         return await link.request(command)
     }
 
+    /// A skin's manifest from the Mac, as JSON (keys in a fixed order, so the same manifest is the same bytes). nil
+    /// if the phone is not connected, the Mac has no such skin, or it does not answer.
+    public func requestSkin(_ name: String) async -> Data? {
+        guard let link = connection?.link, case .connected = conn else { return nil }
+        guard let manifest = await link.requestSkin(name) else { return nil }
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.sortedKeys]
+        return try? encoder.encode(manifest)
+    }
+
     // MARK: - Pairing
 
     /// Pairs with the Mac in `target`. On success the old pairing (if any) and its connection are replaced
@@ -197,6 +249,7 @@ public final class BridgeStore {
         clearLiveState()
         let connection = makeConnection(for: new)
         self.connection = connection
+        if boardOpen { applyPingInterval() }
         if sceneActive != false {
             callLink { await connection.link.start() }
         }
