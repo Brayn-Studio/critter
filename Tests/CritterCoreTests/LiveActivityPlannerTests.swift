@@ -268,9 +268,10 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(planner.nextDeadline() == nil)
     // Nothing more once it ended, even though the phone still reports the old token for a while.
     #expect(next(planner, none, at: gone + 6 * minute, phone).isEmpty)
-    // Sessions come back: a new activity, not an update of the dead one.
+    // Sessions come back: a new activity, not an update of the dead one -- ten minutes after the last start.
     let again = content(.running)
-    #expect(next(planner, again, at: gone + 7 * minute, phone) == [.start(stamped(again, gone + 7 * minute))])
+    #expect(next(planner, again, at: gone + 7 * minute, phone).isEmpty)
+    #expect(next(planner, again, at: gone + 9 * minute, phone) == [.start(stamped(again, gone + 9 * minute))])
 }
 
 @Test func sessionsBackWithinFiveMinutesKeepTheActivity() {
@@ -301,9 +302,10 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     #expect(next(planner, content(.running), at: t0 + minute, off) == [.end(dismissAt: t0 + minute)])
     #expect(next(planner, content(.running), at: t0 + 2 * minute, off).isEmpty)
     #expect(planner.nextDeadline() == nil)
-    // Turned back on, with the old token gone: it starts again.
+    // Turned back on, with the old token gone: it starts again, ten minutes after the last start.
     let c = content(.running)
-    #expect(next(planner, c, at: t0 + 3 * minute, Phone()) == [.start(stamped(c, t0 + 3 * minute))])
+    #expect(next(planner, c, at: t0 + 3 * minute, Phone()).isEmpty)
+    #expect(next(planner, c, at: t0 + 10 * minute, Phone()) == [.start(stamped(c, t0 + 10 * minute))])
 }
 
 @Test func turningItOffWithNoActivityKnownSendsNothing() {
@@ -318,9 +320,59 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     _ = next(planner, content(.running), at: t0)
     #expect(next(planner, content(), at: t0 + minute).isEmpty)
     #expect(next(planner, content(), at: t0 + 10 * minute).isEmpty)
-    // And a later session starts one.
+    // A later session does not start another while that one may still be on the screen: not until its token
+    // comes, or 8 hours have passed (the system ends an activity by then).
     let c = content(.waiting)
-    #expect(next(planner, c, at: t0 + 11 * minute) == [.start(stamped(c, t0 + 11 * minute))])
+    #expect(next(planner, c, at: t0 + 11 * minute).isEmpty)
+    #expect(planner.unconfirmedStartAt == t0)
+    #expect(next(planner, c, at: t0 + 8 * hour - 1).isEmpty)
+    #expect(next(planner, c, at: t0 + 8 * hour) == [.start(stamped(c, t0 + 8 * hour))])
+    #expect(planner.unconfirmedStartAt == t0 + 8 * hour)
+}
+
+@Test func aStartWhoseTokenNeverCameHoldsOffTheNextAcrossARestart() {
+    let before = LiveActivityPlanner()
+    _ = next(before, content(.running), at: t0)
+    #expect(before.unconfirmedStartAt == t0)
+    // Critter restarts; the device's record brought the start back.
+    let after = LiveActivityPlanner(unconfirmedStartAt: before.unconfirmedStartAt)
+    let c = content(.waiting)
+    #expect(next(after, c, at: t0 + hour).isEmpty)
+    #expect(next(after, c, at: t0 + 8 * hour) == [.start(stamped(c, t0 + 8 * hour))])
+    // Without one, a fresh planner starts at once.
+    #expect(next(LiveActivityPlanner(), c, at: t0 + hour) == [.start(stamped(c, t0 + hour))])
+}
+
+@Test func theTokenArrivingConfirmsTheStart() {
+    let planner = LiveActivityPlanner()
+    _ = next(planner, content(.running), at: t0)
+    _ = next(planner, content(.running), at: t0 + 5 * second, Phone(activityToken: "tok1"))
+    #expect(planner.unconfirmedStartAt == nil)
+}
+
+@Test func turningItOffDropsAStartWaitingForItsToken() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(planner, c, at: t0)
+    #expect(next(planner, c, at: t0 + minute, Phone(enabled: false)).isEmpty)
+    #expect(planner.unconfirmedStartAt == nil)
+    // On again: the usual ten minutes after the last start.
+    #expect(next(planner, c, at: t0 + 5 * minute).isEmpty)
+    #expect(next(planner, c, at: t0 + 10 * minute) == [.start(stamped(c, t0 + 10 * minute))])
+}
+
+@Test func aTokenTheMacEndedStaysEndedWhenItIsReportedAgainLater() {
+    let shown = content(.running)
+    let (planner, phone) = running(shown)
+    var off = phone
+    off.enabled = false
+    #expect(next(planner, shown, at: t0 + minute, off) == [.end(dismissAt: t0 + minute)])
+    // The Mac forgot the token in the registry; then an old registration brings it back.
+    #expect(next(planner, shown, at: t0 + 2 * minute, Phone()).isEmpty)
+    let waiting = content(.waiting)
+    #expect(next(planner, waiting, at: t0 + 3 * minute, phone).isEmpty)
+    // It stands for no activity: a new one is started in its place, in time.
+    #expect(next(planner, waiting, at: t0 + 10 * minute, phone) == [.start(stamped(waiting, t0 + 10 * minute))])
 }
 
 @Test func anActivityTheUserSwipedAwayIsStartedAgainButNotAtOnce() {
@@ -413,4 +465,14 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let message = try PushContent.liveActivity(.update(content(.running), priority: 5), now: t0)
     let aps = try #require((try JSONSerialization.jsonObject(with: message.payload) as? [String: Any])?["aps"] as? [String: Any])
     #expect(aps["stale-date"] as? Int == Int(t0 / 1000) + 15 * 60)
+}
+
+@Test func aRefusedStartHoldsNothingOff() {
+    let planner = LiveActivityPlanner()
+    let c = content(.running)
+    _ = next(planner, c, at: t0)
+    // APNs refused the push-to-start: there is no activity to wait for.
+    planner.startWasRefused()
+    #expect(planner.unconfirmedStartAt == nil)
+    #expect(next(planner, c, at: t0 + second) == [.start(stamped(c, t0 + second))])
 }

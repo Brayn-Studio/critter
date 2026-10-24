@@ -26,6 +26,13 @@ public final class LiveActivityPlanner {
     /// An activity is not started again sooner than this after the last start, so one the user swiped away does
     /// not come straight back, and a start whose token is slow does not turn into two.
     public static let minStartInterval: Int64 = 10 * 60 * 1000
+    /// A start whose token never came holds further starts off this long: by then the system has ended it.
+    public static let unconfirmedStartLimit: Int64 = 8 * 60 * 60 * 1000
+
+    /// When the Mac push-to-started an activity whose token has not arrived yet; nil when none. No new start
+    /// while it is set (for up to `unconfirmedStartLimit`): the activity may well be on the screen. The caller
+    /// keeps it across restarts (`devices.json`) and gives it back to `init`.
+    public private(set) var unconfirmedStartAt: Int64?
 
     /// What the phone was last sent to show.
     private var lastSent: LiveActivityContent?
@@ -45,7 +52,11 @@ public final class LiveActivityPlanner {
     /// again, or the caller's timer would fire on it over and over. It is still replaced once a start token comes.
     private var ageWaitsForStartToken = false
 
-    public init() {}
+    /// - Parameter unconfirmedStartAt: what an earlier planner for this device left in `unconfirmedStartAt`.
+    public init(unconfirmedStartAt: Int64? = nil) {
+        self.unconfirmedStartAt = unconfirmedStartAt
+        lastStartAt = unconfirmedStartAt
+    }
 
     /// The content to show for `snapshot`. The lead and the two behind it are the most urgent sessions, the
     /// earlier started first among equals: the same order as the flock (`FlockModel`, `PhoneFlock`).
@@ -71,12 +82,14 @@ public final class LiveActivityPlanner {
     public func next(
         content: LiveActivityContent, now: Int64, activityEnabled: Bool, hasStartToken: Bool, activityToken: String?
     ) -> [LiveActivityAction] {
-        // A token the Mac ended stands for no activity.
-        if activityToken != endedToken { endedToken = nil }
+        // A token the Mac ended stands for no activity, also when the phone reports it again after a while.
+        if let activityToken, activityToken != endedToken { endedToken = nil }
         let token = activityToken == endedToken ? nil : activityToken
         observe(token, now: now)
 
         guard activityEnabled else {
+            // The phone has no Live Activity now: no start of the Mac's is waiting for its token either.
+            unconfirmedStartAt = nil
             defer { forget() }
             guard let token else { return [] }
             endedToken = token
@@ -124,6 +137,7 @@ public final class LiveActivityPlanner {
             lastSent = started
             lastUpdateAt = now
             lastStartAt = now
+            unconfirmedStartAt = now
             activitySince = now
             ageWaitsForStartToken = false
             changeWaiting = false
@@ -152,6 +166,14 @@ public final class LiveActivityPlanner {
         return actions
     }
 
+    /// APNs refused the last push-to-start (its token is gone): no activity came of it, so it holds nothing off.
+    public func startWasRefused() {
+        guard unconfirmedStartAt != nil else { return }
+        forget()
+        unconfirmedStartAt = nil
+        lastStartAt = nil
+    }
+
     /// When `next` next has something to do without a new snapshot: the end of the throttle period, the end of
     /// the empty wait, or the 7.5 hours. Nil if none.
     public func nextDeadline() -> Int64? {
@@ -166,6 +188,8 @@ public final class LiveActivityPlanner {
 
     /// Takes in the token the phone reports.
     private func observe(_ token: String?, now: Int64) {
+        // Any activity's token: the start the Mac made has come up, or the app has one of its own.
+        if token != nil { unconfirmedStartAt = nil }
         guard token != trackedToken else { return }
         switch (trackedToken, token) {
         case (nil, nil):
@@ -201,17 +225,21 @@ public final class LiveActivityPlanner {
     }
 
     private func canStart(at now: Int64) -> Bool {
-        lastStartAt.map { now - $0 >= Self.minStartInterval } ?? true
+        if let unconfirmed = unconfirmedStartAt {
+            guard now - unconfirmed >= Self.unconfirmedStartLimit else { return false }
+            unconfirmedStartAt = nil
+        }
+        return lastStartAt.map { now - $0 >= Self.minStartInterval } ?? true
     }
 
-    /// No activity known, no start to hold off.
+    /// No activity known. The last start and one still waiting for its token are kept: they hold the next
+    /// start off.
     private func forget() {
         lastSent = nil
         lastUpdateAt = nil
         changeWaiting = false
         activitySince = nil
         ageWaitsForStartToken = false
-        lastStartAt = nil
         trackedToken = nil
         emptySince = nil
     }

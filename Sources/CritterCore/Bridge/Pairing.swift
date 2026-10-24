@@ -9,18 +9,26 @@ public struct DeviceRecord: Codable, Equatable, Sendable {
     public var lastSeen: Int64?
     /// How to push to this phone (an iPhone that registered). Added later: absent in older files.
     public var push: PushRegistration?
+    /// The Mac's own, not the phone's: when it push-to-started a Live Activity on this phone whose token has
+    /// not arrived yet (`LiveActivityPlanner.unconfirmedStartAt`), so a restart does not start a second one.
+    /// Goes with the registration.
+    public var unconfirmedActivityStart: Int64?
 
-    public init(id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil, push: PushRegistration? = nil) {
+    public init(
+        id: String, name: String, tokenHash: String, pairedAt: Int64, lastSeen: Int64? = nil, push: PushRegistration? = nil,
+        unconfirmedActivityStart: Int64? = nil
+    ) {
         self.id = id
         self.name = name
         self.tokenHash = tokenHash
         self.pairedAt = pairedAt
         self.lastSeen = lastSeen
         self.push = push
+        self.unconfirmedActivityStart = unconfirmedActivityStart
     }
 
     private enum CodingKeys: String, CodingKey {
-        case id, name, tokenHash, pairedAt, lastSeen, push
+        case id, name, tokenHash, pairedAt, lastSeen, push, unconfirmedActivityStart
     }
 
     /// A push registration this build cannot read (a value from a newer build, a field missing) is left out,
@@ -34,6 +42,7 @@ public struct DeviceRecord: Codable, Equatable, Sendable {
         pairedAt = try container.decode(Int64.self, forKey: .pairedAt)
         lastSeen = try container.decodeIfPresent(Int64.self, forKey: .lastSeen)
         push = (try? container.decodeIfPresent(PushRegistration.self, forKey: .push)) ?? nil
+        unconfirmedActivityStart = push == nil ? nil : (try? container.decodeIfPresent(Int64.self, forKey: .unconfirmedActivityStart)) ?? nil
     }
 }
 
@@ -109,11 +118,13 @@ public final class DeviceRegistry: @unchecked Sendable {
         guard var records = load(), let index = records.firstIndex(where: { $0.id == deviceId }) else { return false }
         let before = records
         records[index].push = registration.isEmpty ? nil : registration
+        if registration.isEmpty { records[index].unconfirmedActivityStart = nil }
         if !registration.isEmpty {
             let tokens = PushCoordinatorRules.tokens(of: registration)
             for other in records.indices where other != index {
                 guard let theirs = records[other].push, !PushCoordinatorRules.tokens(of: theirs).isDisjoint(with: tokens) else { continue }
                 records[other].push = nil
+                records[other].unconfirmedActivityStart = nil
                 log("bridge device \(records[other].id.prefix(8)): push registration taken over by \(deviceId.prefix(8))")
             }
         }
@@ -125,7 +136,19 @@ public final class DeviceRegistry: @unchecked Sendable {
     /// APNs said the device token is no good (the app was deleted): forgets the whole
     /// registration, for the phone to make a new one.
     public func dropPushToken(deviceId: String) {
-        change(deviceId) { $0.push = nil }
+        change(deviceId) {
+            $0.push = nil
+            $0.unconfirmedActivityStart = nil
+        }
+    }
+
+    /// Keeps (or, with nil, clears) when the Mac push-to-started a Live Activity whose token has not come yet.
+    /// Does nothing for a device without a registration.
+    public func setUnconfirmedActivityStart(deviceId: String, at time: Int64?) {
+        change(deviceId) {
+            guard $0.push != nil else { return }
+            $0.unconfirmedActivityStart = time
+        }
     }
 
     /// Sets (or, with nil, clears) the running Live Activity's id and push token. Does nothing

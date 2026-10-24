@@ -130,9 +130,11 @@ public enum PushContent {
     /// A Live Activity push. Times are milliseconds since the epoch; the payload has them in seconds. The
     /// content is numbers, skin names and states only (the system renders it as it comes), so nothing needs
     /// sealing. An `end` carries an empty content: the system decodes a content state for every event.
-    public static func liveActivity(_ action: LiveActivityAction, now: Int64) throws -> APNsMessage {
+    /// - Parameter timestamp: `aps.timestamp` in seconds, when not `now`'s: the system drops an update whose
+    ///   timestamp is not later than the last one's, so the caller keeps them increasing.
+    public static func liveActivity(_ action: LiveActivityAction, now: Int64, timestamp: Int64? = nil) throws -> APNsMessage {
         let seconds = now / 1000
-        var aps: [String: Any] = ["timestamp": seconds]
+        var aps: [String: Any] = ["timestamp": timestamp ?? seconds]
         let priority: Int
         switch action {
         case .start(let content):

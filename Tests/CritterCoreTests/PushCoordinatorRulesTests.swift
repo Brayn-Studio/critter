@@ -331,6 +331,8 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     let pushes = fanout([record("a", registration("aa", activity: start))])
     #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
     _ = pushes.tokenGone(target("a", .activityStart, "5151"))
+    // No activity came of it: nothing to wait for, and the record lets the start go.
+    #expect(pushes.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: t0), .unconfirmedActivityStart(deviceId: "a", at: nil)])
 
     // The sessions go and the 5 minutes pass: the Mac no longer believes in that activity.
     _ = pushes.snapshot(body([]), now: t0 + 1000)
@@ -362,4 +364,78 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     _ = pushes.snapshot(body([session("s1")]), now: t0)
     let sent = pushes.snapshot(body([session("s1", .waiting)], [pending("r1", "s1")]), now: t0 + 1)
     #expect(sent.map(\.target.deviceId) == ["c", "new"])
+}
+
+private func timestamps(_ pushes: [OutgoingPush]) -> [Int] {
+    pushes.filter { $0.message.pushType == .liveActivity }.compactMap { (json($0)["aps"] as? [String: Any])?["timestamp"] as? Int }
+}
+
+@Test func aStartWaitingForItsTokenIsKeptInTheRegistryAcrossARestart() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
+    #expect(pushes.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: t0)])
+    #expect(pushes.takeRegistryEdits().isEmpty)
+
+    // Critter restarts with the record that kept it: no second activity, even after the sessions go and come back.
+    var kept = record("a", registration("aa", activity: start))
+    kept.unconfirmedActivityStart = t0
+    let restarted = fanout([kept])
+    #expect(restarted.takeRegistryEdits().isEmpty)
+    #expect(liveEvents(restarted.snapshot(body([session("s1", .running)]), now: t0 + 30 * 60_000)).isEmpty)
+    _ = restarted.snapshot(body([]), now: t0 + 31 * 60_000)
+    _ = restarted.deadline(now: t0 + 37 * 60_000)
+    #expect(liveEvents(restarted.snapshot(body([session("s1", .running)]), now: t0 + 50 * 60_000)).isEmpty)
+
+    // Its token arrives: the start is confirmed, and the record lets it go.
+    let running = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    var reported = record("a", registration("aa", activity: running))
+    reported.unconfirmedActivityStart = t0
+    restarted.sync([reported])
+    #expect(liveEvents(restarted.snapshot(body([session("s1", .running)]), now: t0 + 51 * 60_000)) == ["update>activity:a1a1"])
+    #expect(restarted.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: nil)])
+
+    // A new destination starts from nothing, and the record forgets the start too.
+    kept.push = registration("bb", activity: start)
+    restarted.sync([kept])
+    #expect(restarted.takeRegistryEdits() == [.unconfirmedActivityStart(deviceId: "a", at: nil)])
+}
+
+@Test func anEndForgetsTheActivityTokenAndTheSameTokenAgainIsIgnored() {
+    let running = ActivityRegistration(enabled: true, startToken: "5151", activityId: "A1", activityToken: "a1a1")
+    let pushes = fanout([record("a", registration("aa", activity: running))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .running)]), now: t0)) == ["update>activity:a1a1"])
+    _ = pushes.snapshot(body([]), now: t0 + 1000)
+    #expect(liveEvents(pushes.deadline(now: t0 + 1000 + LiveActivityPlanner.endAfterEmpty)) == ["end>activity:a1a1"])
+    #expect(pushes.takeRegistryEdits() == [.clearActivity(deviceId: "a")])
+    #expect(pushes.registration("a")?.activity?.activityToken == nil)
+
+    // An old registration brings the token back: it stands for no activity, so a new one is started instead.
+    pushes.sync([record("a", registration("aa", activity: running))])
+    #expect(liveEvents(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 20 * 60_000)) == ["start>activityStart:5151"])
+
+    // Revoking: the record goes, nothing is asked to be kept for it.
+    _ = pushes.takeRegistryEdits()
+    pushes.sync([record("a", registration("aa", activity: ActivityRegistration(enabled: true, startToken: "5151", activityToken: "b2b2")))])
+    _ = pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 21 * 60_000)
+    _ = pushes.takeRegistryEdits()
+    #expect(liveEvents(pushes.remove("a", now: t0 + 22 * 60_000)) == ["end>activity:b2b2"])
+    #expect(pushes.takeRegistryEdits().isEmpty)
+}
+
+@Test func liveActivityTimestampsOnlyGoUp() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let pushes = fanout([record("a", registration("aa", activity: start))])
+    let second = Int(t0 / 1000)
+    #expect(timestamps(pushes.snapshot(body([session("s1", .running)]), now: t0)) == [second])
+    pushes.sync([record("a", registration("aa", activity: ActivityRegistration(enabled: true, startToken: "5151", activityToken: "a1a1")))])
+    // More waiting in the same second: sent at once, a second later on its stamp.
+    #expect(timestamps(pushes.snapshot(body([session("s1", .waiting)]), now: t0 + 300)) == [second + 1])
+    // A clock that steps back does not take it back either.
+    #expect(timestamps(pushes.snapshot(body([session("s1", .waiting), session("s2", .waiting)]), now: t0 - 5000)) == [second + 2])
+    // The end and the next start of the 7.5-hour restart get one each.
+    let restart = t0 + LiveActivityPlanner.maxAge
+    let pair = pushes.snapshot(body([session("s1", .waiting), session("s2", .waiting)]), now: restart)
+    #expect(liveEvents(pair) == ["end>activity:a1a1", "start>activityStart:5151"])
+    #expect(timestamps(pair) == [Int(restart / 1000), Int(restart / 1000) + 1])
 }

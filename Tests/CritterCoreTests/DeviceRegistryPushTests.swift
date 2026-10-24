@@ -253,3 +253,32 @@ private final class Lines: @unchecked Sendable {
     registry.setPush(deviceId: a.id, push(token: ""))
     #expect(registry.pushDevices().map(\.id) == [b.id, c.id])
 }
+
+@Test func anUnconfirmedActivityStartIsKeptWithTheRegistration() throws {
+    let file = tempFile()
+    defer { try? FileManager.default.removeItem(at: file.deletingLastPathComponent()) }
+    let registry = DeviceRegistry(file: file)
+    let (a, _) = try registry.add(name: "iPhone", now: 5)
+    let starting = ActivityRegistration(enabled: true, startToken: "5a5a")
+    registry.setPush(deviceId: a.id, push(activity: starting))
+    registry.setUnconfirmedActivityStart(deviceId: a.id, at: 42)
+    #expect(DeviceRegistry(file: file).list().first?.unconfirmedActivityStart == 42)
+    #expect(try permissions(file) == 0o600)
+
+    // It is the Mac's own: a new registration from the phone keeps it.
+    registry.setPush(deviceId: a.id, push(token: "bb22", activity: starting))
+    #expect(registry.list().first?.unconfirmedActivityStart == 42)
+    registry.setUnconfirmedActivityStart(deviceId: a.id, at: nil)
+    #expect(registry.list().first?.unconfirmedActivityStart == nil)
+
+    // It goes with the registration, and there is nothing to keep without one.
+    registry.setUnconfirmedActivityStart(deviceId: a.id, at: 43)
+    registry.dropPushToken(deviceId: a.id)
+    #expect(registry.list().first?.unconfirmedActivityStart == nil)
+    registry.setUnconfirmedActivityStart(deviceId: a.id, at: 44)
+    #expect(registry.list().first?.unconfirmedActivityStart == nil)
+    registry.setPush(deviceId: a.id, push(activity: starting))
+    registry.setUnconfirmedActivityStart(deviceId: a.id, at: 45)
+    registry.setPush(deviceId: a.id, push(token: ""))
+    #expect(registry.list().first?.unconfirmedActivityStart == nil)
+}

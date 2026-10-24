@@ -86,7 +86,10 @@ final class PushCoordinator: @unchecked Sendable {
             bridgeOn = true
             fanout.startOver()
         } else {
-            if isActive { send(fanout.endAll(now: Self.nowMs())) }
+            if isActive {
+                send(fanout.endAll(now: Self.nowMs()))
+                keepRegistryEdits()
+            }
             bridgeOn = false
             cancelTimer()
         }
@@ -96,6 +99,7 @@ final class PushCoordinator: @unchecked Sendable {
     /// The registry's list changed (pairing, a registration, a revoke, `lastSeen`).
     func devicesChanged(_ records: [DeviceRecord]) {
         fanout.sync(records)
+        keepRegistryEdits()
         publish()
         reschedule()
     }
@@ -118,6 +122,7 @@ final class PushCoordinator: @unchecked Sendable {
     func snapshotChanged(_ body: SnapshotBody) {
         guard isActive else { return }
         send(fanout.snapshot(body, now: Self.nowMs()))
+        keepRegistryEdits()
         reschedule()
     }
 
@@ -128,6 +133,7 @@ final class PushCoordinator: @unchecked Sendable {
         let active = isActive
         let pushes = fanout.remove(deviceId, now: Self.nowMs())
         if active { send(pushes) }
+        keepRegistryEdits()
         publish()
         reschedule()
     }
@@ -136,6 +142,8 @@ final class PushCoordinator: @unchecked Sendable {
     func allDevicesRevoked() {
         if isActive { send(fanout.endAll(now: Self.nowMs())) }
         fanout.sync([])
+        // Every record goes: nothing of theirs to keep.
+        _ = fanout.takeRegistryEdits()
         publish()
         reschedule()
     }
@@ -185,6 +193,22 @@ final class PushCoordinator: @unchecked Sendable {
                 self?.delivered(outcome, push: push, generation: generation)
             }
         }
+    }
+
+    /// Writes what the fan-out needs kept to `devices.json`: Live Activity tokens it ended, starts waiting for
+    /// their token.
+    private func keepRegistryEdits() {
+        let edits = fanout.takeRegistryEdits()
+        guard !edits.isEmpty else { return }
+        for edit in edits {
+            switch edit {
+            case .clearActivity(let deviceId):
+                registry.setActivity(deviceId: deviceId, activityId: nil, activityToken: nil)
+            case .unconfirmedActivityStart(let deviceId, let time):
+                registry.setUnconfirmedActivityStart(deviceId: deviceId, at: time)
+            }
+        }
+        onRegistryChanged?()
     }
 
     private func makeSender() -> PushSender {
@@ -246,7 +270,10 @@ final class PushCoordinator: @unchecked Sendable {
             timerDeadline = nil
             firedDeadline = next
             // The timer's clock and the wall clock can differ by a little: the deadline counts as reached.
-            if isActive { send(fanout.deadline(now: max(Self.nowMs(), next))) }
+            if isActive {
+                send(fanout.deadline(now: max(Self.nowMs(), next)))
+                keepRegistryEdits()
+            }
             reschedule()
         }
     }

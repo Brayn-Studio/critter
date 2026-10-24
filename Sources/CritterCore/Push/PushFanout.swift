@@ -47,6 +47,21 @@ public enum GoneToken: Equatable, Sendable {
     case ignore
 }
 
+/// A change the fan-out needs kept in `devices.json`; the caller makes it (`takeRegistryEdits()`).
+public enum RegistryEdit: Equatable, Sendable {
+    public var deviceId: String {
+        switch self {
+        case .clearActivity(let id), .unconfirmedActivityStart(let id, _): return id
+        }
+    }
+
+    /// The Mac ended the device's Live Activity: its token is forgotten (`DeviceRegistry.setActivity(nil, nil)`).
+    case clearActivity(deviceId: String)
+    /// When the Mac push-to-started an activity whose token has not come, or nil
+    /// (`DeviceRegistry.setUnconfirmedActivityStart`).
+    case unconfirmedActivityStart(deviceId: String, at: Int64?)
+}
+
 /// Turns each snapshot into the pushes every registered iPhone gets: its notifications (`PushTracker`) and its
 /// Live Activity (`LiveActivityPlanner`), one of each per device. Pure: the caller passes the time, sends what
 /// comes back, and sets a one-shot timer for `nextDeadline()`.
@@ -62,6 +77,8 @@ public final class PushFanout {
         let planner: LiveActivityPlanner
         /// A push-to-start token APNs refused: no start with it until the phone registers another.
         var refusedStartToken: String?
+        /// The record's `unconfirmedActivityStart` as last seen or asked for.
+        var keptStart: Int64?
     }
 
     /// The app the setup pushes to (its bundle id), nil without a setup: only devices registered for it get
@@ -71,6 +88,9 @@ public final class PushFanout {
     private var devices: [String: Device] = [:]
     /// What the last snapshot said, for the Live Activity work done at a deadline.
     private var lastSnapshot: SnapshotBody?
+    /// The last Live Activity push's `aps.timestamp` (seconds) per device: each one is later than the last.
+    private var lastTimestamp: [String: Int64] = [:]
+    private var edits: [RegistryEdit] = []
     private let log: (String) -> Void
 
     /// `log` hears about pushes that could not be made; it is never given text from a session.
@@ -95,15 +115,29 @@ public final class PushFanout {
                 device.registration = registration
                 device.tracker.prefs = PushCoordinatorRules.prefs(registration)
                 if device.refusedStartToken != registration.activity?.startToken { device.refusedStartToken = nil }
+                device.keptStart = record.unconfirmedActivityStart
                 next[record.id] = device
             } else {
+                // Seen for the first time (the Mac has just started): a start still waiting for its token holds the
+                // next one off. Pushes that now go elsewhere start from nothing.
+                let restored = devices[record.id] == nil ? record.unconfirmedActivityStart : nil
                 next[record.id] = Device(
                     registration: registration, tracker: PushTracker(prefs: PushCoordinatorRules.prefs(registration)),
-                    planner: LiveActivityPlanner(), refusedStartToken: nil
+                    planner: LiveActivityPlanner(unconfirmedStartAt: restored), refusedStartToken: nil,
+                    keptStart: record.unconfirmedActivityStart
                 )
             }
         }
         devices = next
+        lastTimestamp = lastTimestamp.filter { next[$0.key] != nil }
+        noteStarts()
+    }
+
+    /// The changes to keep in `devices.json` since the last call: Live Activity tokens the Mac ended, and starts
+    /// waiting for their token.
+    public func takeRegistryEdits() -> [RegistryEdit] {
+        defer { edits = [] }
+        return edits
     }
 
     /// Every device's next snapshot only records: the Mac has just started, the setup just changed, or the
@@ -153,15 +187,18 @@ public final class PushFanout {
             }
             pushes += activity(id, device, body, now: now)
         }
+        noteStarts()
         return pushes
     }
 
     /// The Live Activity work that was waiting for `now` (`nextDeadline()`), on the last snapshot.
     public func deadline(now: Int64) -> [OutgoingPush] {
         guard let body = lastSnapshot else { return [] }
-        return reachable()
+        let pushes = reachable()
             .filter { _, device in device.planner.nextDeadline().map { $0 <= now } ?? false }
             .flatMap { id, device in activity(id, device, body, now: now) }
+        noteStarts()
+        return pushes
     }
 
     /// The earliest time a planner has something to do without a new snapshot; nil if none does.
@@ -172,6 +209,11 @@ public final class PushFanout {
     /// A device is unpaired: its Live Activity is ended (if it has one the Mac knows how to reach), then the
     /// device is forgotten.
     public func remove(_ deviceId: String, now: Int64) -> [OutgoingPush] {
+        defer {
+            lastTimestamp[deviceId] = nil
+            // Its record goes too: nothing to keep for it.
+            edits.removeAll { $0.deviceId == deviceId }
+        }
         guard let device = devices.removeValue(forKey: deviceId),
               PushCoordinatorRules.canPush(device.registration, bundleId: bundleId) else { return [] }
         return end(deviceId, device, now: now)
@@ -179,7 +221,9 @@ public final class PushFanout {
 
     /// The bridge is switched off: every Live Activity is ended. The devices stay.
     public func endAll(now: Int64) -> [OutgoingPush] {
-        reachable().flatMap { id, device in end(id, device, now: now) }
+        let pushes = reachable().flatMap { id, device in end(id, device, now: now) }
+        noteStarts()
+        return pushes
     }
 
     /// The settings' "发送测试通知": one test notification for every device.
@@ -203,7 +247,12 @@ public final class PushFanout {
         case .activity:
             return registration.activity?.activityToken == target.token ? .clearActivity : .ignore
         case .activityStart:
-            if registration.activity?.startToken == target.token { devices[target.deviceId]?.refusedStartToken = target.token }
+            if registration.activity?.startToken == target.token {
+                devices[target.deviceId]?.refusedStartToken = target.token
+                // No activity came of that start.
+                device.planner.startWasRefused()
+                noteStarts()
+            }
             return .ignore
         }
     }
@@ -252,9 +301,28 @@ public final class PushFanout {
                 guard let token = device.registration.activity?.activityToken else { continue }
                 target = PushTarget(deviceId: id, kind: .activity, token: token, environment: environment)
             }
-            append(to: &pushes, target, "a Live Activity push") { try PushContent.liveActivity(action, now: now) }
+            // Later than the last one sent to this device, even within the same second.
+            let timestamp = lastTimestamp[id].map { max(now / 1000, $0 + 1) } ?? now / 1000
+            lastTimestamp[id] = timestamp
+            append(to: &pushes, target, "a Live Activity push") {
+                try PushContent.liveActivity(action, now: now, timestamp: timestamp)
+            }
+            if case .end = action {
+                // Ended: its token is forgotten, here and in the registry.
+                devices[id]?.registration.activity?.activityId = nil
+                devices[id]?.registration.activity?.activityToken = nil
+                edits.append(.clearActivity(deviceId: id))
+            }
         }
         return pushes
+    }
+
+    /// Asks for the planners' starts that wait for a token to be kept, where they changed.
+    private func noteStarts() {
+        for (id, device) in devices where device.planner.unconfirmedStartAt != device.keptStart {
+            devices[id]?.keptStart = device.planner.unconfirmedStartAt
+            edits.append(.unconfirmedActivityStart(deviceId: id, at: device.planner.unconfirmedStartAt))
+        }
     }
 
     private func append(to pushes: inout [OutgoingPush], _ target: PushTarget, _ what: String, _ make: () throws -> APNsMessage) {
