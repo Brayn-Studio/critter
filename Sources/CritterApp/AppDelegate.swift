@@ -58,9 +58,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settings = SettingsStore()
         petController = PetController(monitor: sessionMonitor, settings: settings, soundPlayer: soundPlayer)
         jumpBackService = JumpBackService(paths: paths)
-        // Nothing sets push up yet: no APNs setup, so the bridge never pushes.
+        // The settings' "iPhone 推送" keeps the APNs setup in ~/.critter/bridge/apns/.
+        let pushSetup = APNsConfigStore(paths: paths)
         bridge = BridgeController(
-            paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor, loadPushSetup: { .notConfigured }
+            paths: paths, skinSearchDirs: Self.skinSearchDirs(paths), monitor: sessionMonitor, loadPushSetup: { pushSetup.load() }
         )
         super.init()
 
