@@ -17,9 +17,13 @@ public final class URLSessionTransport: BridgeTransport {
     public static let connectTimeout: Duration = .seconds(6)
 
     private let connectTimeout: Duration
+    private let access: LocalNetworkAccess
 
-    public init(connectTimeout: Duration = URLSessionTransport.connectTimeout) {
+    /// - Parameter access: told when a connection opens (the local network is usable), and when one ends with an error
+    ///   that says the local network is denied (`LocalNetworkDenial`).
+    public init(connectTimeout: Duration = URLSessionTransport.connectTimeout, access: LocalNetworkAccess = .shared) {
         self.connectTimeout = connectTimeout
+        self.access = access
     }
 
     /// Each connection gets an ephemeral URLSession of its own; it counts as made once the
@@ -29,7 +33,7 @@ public final class URLSessionTransport: BridgeTransport {
     /// failure before the WebSocket opens -> `.unreachable`.
     public func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
         guard let url = Self.url(host: host, port: port) else { throw TransportError.unreachable }
-        let socket = URLSessionSocket(url: url, fingerprint: fingerprint)
+        let socket = URLSessionSocket(url: url, fingerprint: fingerprint, access: access)
         do {
             try await socket.open(within: connectTimeout)
         } catch {
@@ -74,11 +78,12 @@ final class URLSessionSocket: BridgeSocket {
     private let events: SocketEvents
 
     /// Sets the task up without starting it (`open` does).
-    init(url: URL, fingerprint: String?) {
+    init(url: URL, fingerprint: String?, access: LocalNetworkAccess = .shared) {
         let events = SocketEvents()
         self.events = events
         session = URLSession(
-            configuration: .ephemeral, delegate: PinningDelegate(fingerprint: fingerprint, events: events), delegateQueue: nil
+            configuration: .ephemeral,
+            delegate: PinningDelegate(fingerprint: fingerprint, events: events, access: access), delegateQueue: nil
         )
         task = session.webSocketTask(with: url)
         task.maximumMessageSize = URLSessionTransport.maxMessageBytes
@@ -127,6 +132,8 @@ final class URLSessionSocket: BridgeSocket {
         }
     }
 
+    /// The pong is read only while a `receive` waits (URLSessionWebSocketTask reads incoming frames only then);
+    /// `BridgeClient`'s receive loop always has one waiting.
     func sendPing() async throws {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
             task.sendPing { error in
@@ -223,14 +230,17 @@ private final class SocketEvents: Sendable {
 
 /// Trusts the server only if its leaf certificate's SHA-256 is the pinned fingerprint (any
 /// certificate without a pin), and records the fingerprint it saw. A pinned connection fails
-/// closed: a challenge with no certificate to check the pin against is refused too.
+/// closed: a challenge with no certificate to check the pin against is refused too. Tells `access`
+/// what the connection says of the local network.
 private final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Sendable {
     let fingerprint: String?
     let events: SocketEvents
+    let access: LocalNetworkAccess
 
-    init(fingerprint: String?, events: SocketEvents) {
+    init(fingerprint: String?, events: SocketEvents, access: LocalNetworkAccess) {
         self.fingerprint = fingerprint
         self.events = events
+        self.access = access
     }
 
     func urlSession(
@@ -256,6 +266,7 @@ private final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Send
     }
 
     func urlSession(_ session: URLSession, webSocketTask: URLSessionWebSocketTask, didOpenWithProtocol protocol: String?) {
+        access.sawAllowed()
         events.didOpen()
     }
 
@@ -267,6 +278,7 @@ private final class PinningDelegate: NSObject, URLSessionWebSocketDelegate, Send
     }
 
     func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
+        if let error { access.saw(error) }
         events.didFinish()
     }
 }

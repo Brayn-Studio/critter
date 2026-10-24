@@ -19,6 +19,8 @@ struct HomeView: View {
     @Environment(SkinStore.self) private var skins
     @Environment(BoardAutoOpen.self) private var autoOpen
     @Environment(NotificationRouter.self) private var router
+    @Environment(LocalNetworkStatus.self) private var localNetwork
+    @Environment(\.openURL) private var openURL
     @Environment(\.reduceMotion) private var reduceMotion
 
     /// The answers being composed, shared by the cards' buttons and the answer card.
@@ -345,7 +347,8 @@ struct HomeView: View {
         }
     }
 
-    /// "连不上 …", on top of the list, with the one thing to do about it.
+    /// "连不上 …", on top of the list, with the one thing to do about it: pair again, open the local network permission
+    /// (`LocalNetworkStatus`), or retry.
     private func statusCard(offline: Bool) -> StatusCard? {
         if case .needsRepair(let reason) = store.conn {
             // Retrying cannot help (wrong certificate, revoked on the Mac): the way out is right here.
@@ -354,6 +357,15 @@ struct HomeView: View {
             }
         }
         guard offline else { return nil }
+        if localNetwork.denied {
+            // Retrying cannot help until the permission is back: the way there instead.
+            return StatusCard(
+                title: "连不上 \(macName)", text: { _ in LocalNetworkDenial.line }, action: LocalNetworkDenial.action,
+                prominent: true
+            ) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+        }
         let at = store.snapshotAt
         let text = { (now: Date) -> String in
             guard let at else { return "正在重试。" }

@@ -6,7 +6,8 @@ import SwiftUI
 /// chosen one marked "已选", and the code in 4 + 4 cells. 「连接」 first reads the chosen Mac's certificate fingerprint
 /// and asks whether it is the one the Mac shows; only then does it pair, pinned to that fingerprint.
 ///
-/// Under the code, the line about a Mac left without being told (`LeftMacNotice`), while there is one.
+/// Under the list, that the local network is denied (`LocalNetworkNotice`), when it is; under the code, the line about a
+/// Mac left without being told (`LeftMacNotice`), while there is one.
 ///
 /// The fingerprint is read in a task this page keeps: leaving the page, choosing another Mac or connecting again
 /// cancels it, and an answer that comes after that is dropped (it never shows on another page).
@@ -47,6 +48,8 @@ struct ManualPairView: View {
                 VStack(alignment: .leading, spacing: 10) {
                     FieldLabel(text: "局域网里的 Mac")
                     macList
+                    // Denied the local network, the list stays "正在寻找…" for ever: why, and the way to Settings.
+                    LocalNetworkNotice(inset: 0)
                     FieldLabel(text: "Mac 上显示的 \(PairingCode.length) 位码")
                         .padding(.top, 8)
                     CodeCells(code: $code, focused: $typing, error: note != nil)

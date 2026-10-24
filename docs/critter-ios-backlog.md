@@ -21,12 +21,9 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 
 计划 1 留下的：
 
-- 扫码器 `startScanning()` 失败时没有任何提示（`try?`），相机开着却不识别。
-- 等 Mac 点允许的最多 120 秒里，屏幕可能自动锁定，配对因此失败。`.awaitingApproval` 期间设 `isIdleTimerDisabled`（计划 2 只在看板里用了它）。
-- 用户拒绝了本地网络权限时，App 一直显示"未连接，正在重试"，没有任何提示。
 - 6 秒连接时限可能把用户第一次回答本地网络权限弹窗的时间也算进去，第一次配对可能报"连不上"、要再试一次。真机上验证。
-- 证书固定、连接打开、关闭的判断没有不依赖真机的测试，只有联机测试覆盖。装真机前补上。
-- Bonjour 查找每次固定等 3 秒；查找窗口里进入 `.waiting` 的服务不会重试。
+- **本地网络权限被拒的提示**（计划 5 Task 3 加的）。真机上在系统设置里关掉 Critter 的"本地网络"，看首页的离线卡片、手动输入页、连不上的失败页是不是显示"没有本地网络权限，连不上 Mac…"和「去设置」，打开后连上时提示消失。判断依据是 Bonjour 报 `kDNSServiceErr_PolicyDenied`、连接的路径 `.localNetworkDenied`、URLSession 错误底下的同一个 DNS 错误（`LocalNetworkDenial`）；URLSession 被拒时实际报什么只读过文档，模拟器不管这个权限，只用 `-critterLocalNetworkDenied` 看过样子。扫码器启动失败的提示也只在模拟器里强行启动过（`-critterScannerForce`，报 `unsupported`），真机上相机被限制时的那句没见过。
+- Bonjour 查找每次固定等满 3 秒，找到了也要等完。
 
 计划 2 留下的，模拟器里做不到、只读过代码没试过的（`xcrun simctl` 发不了触摸、键盘、传感器，也不能改系统的减少动态效果）：
 

@@ -418,6 +418,26 @@ struct LeftMacNotice: View {
     }
 }
 
+/// The local network is denied (`LocalNetworkStatus`): it says so, with 「去设置」 opening the app's page in Settings, where
+/// its 本地网络 switch is. On the pairing screen's manual entry and on an unreachable pairing's failure page (the home
+/// screen's offline card says the same). Nothing when it is not denied.
+struct LocalNetworkNotice: View {
+    var inset: CGFloat = rowPadding
+    var above: CGFloat = 0
+
+    @Environment(LocalNetworkStatus.self) private var localNetwork
+    @Environment(\.openURL) private var openURL
+
+    var body: some View {
+        if localNetwork.denied {
+            NoticeRow(text: LocalNetworkDenial.line, action: LocalNetworkDenial.action, inset: inset) {
+                if let url = URL(string: UIApplication.openSettingsURLString) { openURL(url) }
+            }
+            .padding(.top, above)
+        }
+    }
+}
+
 /// Something the system or another device keeps from working, in orange with what to do about it (Android `NoticeRow`,
 /// the mockups' `.notice-row`): the bang, the words, and a small orange button.
 private struct NoticeRow: View {

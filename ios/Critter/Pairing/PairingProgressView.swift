@@ -1,11 +1,13 @@
 import CritterClient
 import CritterKit
 import SwiftUI
+import UIKit
 
 /// An attempt under way (mockup "等 Mac 点允许", Android `WaitingPane`): Sprig waiting with its hand up on a patch of
 /// meadow, over a drawing of the row the Mac's "添加手机" window shows now with 「允许」 circled. Reaching the Mac and
 /// waiting for 「允许」 are the same page; only the row's status line changes. Under the row, the line about a Mac left
-/// without being told (`LeftMacNotice`), while there is one.
+/// without being told (`LeftMacNotice`), while there is one. While the request is with the Mac the screen stays on
+/// (`ScreenAwakeHold`).
 struct WaitingPage: View {
     /// The seeds over it, in the first-run guide.
     var position: StepPosition?
@@ -16,7 +18,37 @@ struct WaitingPage: View {
     /// 「取消」: closes the attempt's connection (the Mac withdraws its request).
     let onCancel: () -> Void
 
+    /// The screen kept on while the request is with the Mac.
+    @State private var awake = ScreenAwakeHold()
+
     var body: some View {
+        column
+            // Up to 120 s for 「允许」: the screen must not lock meanwhile (the pairing would fail). Given back as it was
+            // when the wait ends, whichever way: paired, failed, cancelled, or the page gone.
+            .onChange(of: awaiting, initial: true) { _, waiting in
+                if waiting { keepAwake() } else { giveBack() }
+            }
+            .onDisappear { giveBack() }
+    }
+
+    private func keepAwake() {
+        let app = UIApplication.shared
+        let wasOn = app.isIdleTimerDisabled
+        app.isIdleTimerDisabled = awake.hold(current: wasOn)
+        #if DEBUG
+        TraceLog.pairing("waiting for 「允许」: isIdleTimerDisabled \(wasOn) → \(app.isIdleTimerDisabled)")
+        #endif
+    }
+
+    private func giveBack() {
+        guard let before = awake.release() else { return }
+        UIApplication.shared.isIdleTimerDisabled = before
+        #if DEBUG
+        TraceLog.pairing("the wait is over: isIdleTimerDisabled back to \(before)")
+        #endif
+    }
+
+    private var column: some View {
         StepColumn(position: position) {
             StepStage(state: .waiting)
             StepTitle(text: "在 Mac 上点「允许」")
@@ -33,7 +65,8 @@ struct WaitingPage: View {
 
 /// How the attempt failed: Sprig wilted on its patch of meadow, the reason on a red card under it (`PairFailure.text`,
 /// one per reason), and under that why a link that came meanwhile was not used (`note`). 「重新扫码」 goes back to
-/// the scanner. Under them, the line about a Mac left without being told (`LeftMacNotice`), while there is one.
+/// the scanner. Under them, for an unreachable Mac, that the local network is denied (`LocalNetworkNotice`), and the
+/// line about a Mac left without being told (`LeftMacNotice`), while there is one.
 struct FailurePage: View {
     /// The seeds over it, in the first-run guide.
     var position: StepPosition?
@@ -48,6 +81,10 @@ struct FailurePage: View {
                 .padding(.top, 14)
             if let note {
                 ErrorNote(text: note, pet: false)
+            }
+            // The Mac could not be reached: maybe the local network is denied (the pairing screen looks it up).
+            if failure == .unreachable {
+                LocalNetworkNotice(inset: 0, above: 4)
             }
             LeftMacNotice(inset: 0, above: 4)
         } bottom: {

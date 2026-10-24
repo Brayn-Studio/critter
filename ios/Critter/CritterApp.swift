@@ -65,6 +65,7 @@ struct CritterApp: App {
                 .environment(OrientationLock.shared)
                 .environment(autoOpen)
                 .environment(NotificationRouter.shared)
+                .environment(LocalNetworkStatus.shared)
                 .task { PushSetup.shared.attach(store: store, settings: settings) }
                 .onChange(of: [settings.notifyDone, settings.notifyError, settings.liveActivity]) {
                     PushSetup.shared.update()

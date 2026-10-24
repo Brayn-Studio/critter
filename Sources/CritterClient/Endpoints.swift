@@ -83,19 +83,57 @@ public protocol MacBrowser: Sendable {
 /// Finds Macs advertising the bridge (`_critter._tcp`) with Bonjour.
 public struct BonjourBrowser: MacBrowser {
     private let window: Duration
+    private let access: LocalNetworkAccess
 
-    /// - Parameter window: how long to browse; what was found and resolved by then is the result.
-    public init(window: Duration = .seconds(3)) {
+    /// - Parameters:
+    ///   - window: how long to browse; what was found and resolved by then is the result.
+    ///   - access: told when the local network is denied (the browser or a resolution says so), and when a Mac was
+    ///     found.
+    public init(window: Duration = .seconds(3), access: LocalNetworkAccess = .shared) {
         self.window = window
+        self.access = access
     }
 
     /// Each service found is resolved to an IP address and port by a plain TCP connection
-    /// (no TLS), cancelled as soon as it is up. Only addresses on private networks are kept.
+    /// (no TLS), cancelled as soon as it is up. Only addresses on private networks are kept. A
+    /// resolution that waits is tried once more with a new connection (`step`).
     public func discover() async -> [DiscoveredMac] {
-        let search = BonjourSearch()
+        let search = BonjourSearch(access: access)
         search.start()
         try? await Task.sleep(for: window)
         return search.finish()
+    }
+
+    /// How many connections resolve one service, at most.
+    static let maxResolveAttempts = 2
+    /// How long after a resolution waits the next one starts.
+    static let retryDelay: DispatchTimeInterval = .milliseconds(300)
+
+    /// What a service's resolving connection comes to.
+    enum ResolveStep: Equatable {
+        /// Not there yet.
+        case wait
+        /// Ready: its address is the Mac's.
+        case resolved
+        /// It waits (refused, no route yet): a new connection, once.
+        case retry
+        /// No address from it; `denied` when the local network is denied, which no retry changes.
+        case giveUp(denied: Bool)
+    }
+
+    /// The step for connection number `attempt` (from 1) in `state`, its path unsatisfied for `path`. Pure.
+    static func step(_ state: NWConnection.State, attempt: Int, path: NWPath.UnsatisfiedReason?) -> ResolveStep {
+        switch state {
+        case .ready:
+            return .resolved
+        case .waiting:
+            if LocalNetworkDenial.isDenied(state, path: path) { return .giveUp(denied: true) }
+            return attempt < maxResolveAttempts ? .retry : .giveUp(denied: false)
+        case .failed:
+            return .giveUp(denied: LocalNetworkDenial.isDenied(state, path: path))
+        default:
+            return .wait
+        }
     }
 
     /// A resolved address as a host to connect to: `192.168.1.20`, `fe80::1%en0`. Network adds the
@@ -122,7 +160,9 @@ private final class BonjourSearch: Sendable {
     private struct State {
         /// Service names in the order they were first seen.
         var order: [String] = []
-        var resolving: [String: NWConnection] = [:]
+        /// The connection resolving each service, and which attempt it is (`BonjourBrowser.step`). A service given up
+        /// stays here, so it is not tried again in this search.
+        var resolving: [String: (connection: NWConnection, attempt: Int)] = [:]
         var found: [String: Endpoint] = [:]
         var done = false
     }
@@ -130,10 +170,19 @@ private final class BonjourSearch: Sendable {
     private let queue = DispatchQueue(label: "local.critter.client.bonjour")
     private let browser = NWBrowser(for: .bonjour(type: BridgeProtocol.bonjourType, domain: nil), using: .tcp)
     private let state = OSAllocatedUnfairLock(initialState: State())
+    private let access: LocalNetworkAccess
+
+    init(access: LocalNetworkAccess) {
+        self.access = access
+    }
 
     func start() {
         browser.browseResultsChangedHandler = { [weak self] results, _ in
             for result in results { self?.resolve(result.endpoint) }
+        }
+        // Denied the local network, the browser waits with the policy error (and finds nothing).
+        browser.stateUpdateHandler = { [access] update in
+            if LocalNetworkDenial.isDenied(update) { access.sawDenied() }
         }
         browser.start(queue: queue)
     }
@@ -145,7 +194,7 @@ private final class BonjourSearch: Sendable {
             s.done = true
             defer { s.resolving = [:] }
             let macs = s.order.compactMap { name in s.found[name].map { DiscoveredMac(name: name, endpoint: $0) } }
-            return (Array(s.resolving.values), macs)
+            return (s.resolving.values.map(\.connection), macs)
         }
         connections.forEach { $0.cancel() }
         return macs
@@ -157,32 +206,58 @@ private final class BonjourSearch: Sendable {
         let isNew = state.withLock { s in
             guard !s.done, s.resolving[name] == nil, s.found[name] == nil else { return false }
             if !s.order.contains(name) { s.order.append(name) }
-            s.resolving[name] = connection
+            s.resolving[name] = (connection, 1)
             return true
         }
         guard isNew else { return }
+        start(connection, for: name, service: service, attempt: 1)
+    }
+
+    private func start(_ connection: NWConnection, for name: String, service: NWEndpoint, attempt: Int) {
         // Weak: `state` keeps the connection until `finish`, and neither handler may keep its owner.
         connection.stateUpdateHandler = { [weak self, weak connection] update in
-            switch update {
-            case .ready:
-                if case .hostPort(let host, let port)? = connection?.currentPath?.remoteEndpoint {
-                    self?.resolved(name, host: host, port: port.rawValue)
-                }
-                connection?.cancel()
-            case .waiting, .failed:
-                connection?.cancel()
-            default:
+            guard let self, let connection else { return }
+            switch BonjourBrowser.step(update, attempt: attempt, path: connection.currentPath?.unsatisfiedReason) {
+            case .wait:
                 break
+            case .resolved:
+                if case .hostPort(let host, let port)? = connection.currentPath?.remoteEndpoint {
+                    self.resolved(name, host: host, port: port.rawValue)
+                }
+                connection.cancel()
+            case .retry:
+                connection.cancel()
+                self.queue.asyncAfter(deadline: .now() + BonjourBrowser.retryDelay) { [weak self] in
+                    self?.retry(name, service: service, attempt: attempt + 1)
+                }
+            case .giveUp(let denied):
+                if denied { self.access.sawDenied() }
+                connection.cancel()
             }
         }
         connection.start(queue: queue)
     }
 
+    /// Connection number `attempt` for `name`, unless the search is over or the service was resolved meanwhile.
+    private func retry(_ name: String, service: NWEndpoint, attempt: Int) {
+        let connection = NWConnection(to: service, using: .tcp)
+        let goes = state.withLock { s in
+            guard !s.done, s.found[name] == nil else { return false }
+            s.resolving[name] = (connection, attempt)
+            return true
+        }
+        guard goes else { return }
+        start(connection, for: name, service: service, attempt: attempt)
+    }
+
     private func resolved(_ name: String, host: NWEndpoint.Host, port: UInt16) {
         guard let address = BonjourBrowser.address(host), PrivateNetwork.isAllowed(host: address) else { return }
-        state.withLock { s in
-            guard !s.done else { return }
+        let fresh = state.withLock { s in
+            guard !s.done else { return false }
             s.found[name] = Endpoint(host: address, port: port)
+            return true
         }
+        // A Mac was reached on the local network: whatever was refused before is not any more.
+        if fresh { access.sawAllowed() }
     }
 }

@@ -88,6 +88,7 @@ struct PairingView: View {
     private var content: some View {
         if let failure {
             FailurePage(position: position, failure: failure, note: note, onRescan: rescan)
+                .task(id: failure) { await lookUpLocalNetwork(after: failure) }
         } else if attempt != nil {
             WaitingPage(position: position, awaiting: awaiting, deviceName: shownDeviceName, onCancel: cancel)
         } else if page == .manual {
@@ -157,6 +158,13 @@ struct PairingView: View {
         attempt?.cancel()
         attempt = nil
         takeQueuedIfIdle()
+    }
+
+    /// The Mac could not be reached: a Bonjour lookup says whether the local network is denied (the failed connection
+    /// may not say so), for the failure page to show it (`LocalNetworkNotice`).
+    private func lookUpLocalNetwork(after failure: PairFailure) async {
+        guard failure == .unreachable, !LocalNetworkStatus.shared.denied else { return }
+        _ = await network.browser.discover()
     }
 
     private func rescan() {

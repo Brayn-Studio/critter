@@ -186,6 +186,11 @@ import UserNotifications
 ///   `manual`, `awaiting`, `failed:<reason>`; also the guide's pairing step: `-critterOnboarding pair -critterPairing
 ///   scan`). `-critterLeftMacKeyKept`: as when the new key could not be
 ///   written (the line does not say the notifications show only "有会话需要你").
+/// - `-critterLocalNetworkDenied`: the app takes the local network as denied (the simulator never asks for the 本地网络
+///   permission): the home screen's offline card, the manual entry and an unreachable pairing's failure page say so
+///   with 「去设置」 (`LocalNetworkDenial.line`). A Mac found or a connection opened afterwards clears it, as it would.
+/// - `-critterScannerForce`: the scanner page starts the camera even where scanning is not supported (the simulator):
+///   `startScanning()` throws, and the frame says why (`ScannerTrouble`) instead of a camera that reads nothing.
 /// - `-critterFixtureDrop offline|denied@<seconds>`: with `-critterFixture`, that long after its first connection the
 ///   fixture Mac drops it: `offline`, out of reach (the link says offline and stays so); `denied`, it turns this phone's
 ///   token away (`denied badToken`, "这台手机已不在电脑的配对列表里，请重新配对"), as after it revoked this phone. Its
@@ -315,6 +320,10 @@ struct DebugLaunch {
     /// `-critterLeftMac`.
     var leftMac: String?
     var leftMacKeyKept = false
+    /// `-critterLocalNetworkDenied`.
+    var localNetworkDenied = false
+    /// `-critterScannerForce`.
+    var scannerForce = false
     /// `-critterFixtureDrop`.
     var fixtureDrop: FixtureDrop?
     /// `-critterUnpair`: seconds after the settings are up.
@@ -442,6 +451,8 @@ struct DebugLaunch {
         }
         leftMac = value("critterLeftMac")
         leftMacKeyKept = arguments.contains("-critterLeftMacKeyKept")
+        localNetworkDenied = arguments.contains("-critterLocalNetworkDenied")
+        scannerForce = arguments.contains("-critterScannerForce")
         if let drop = value("critterFixtureDrop")?.split(separator: "@"), drop.count == 2,
            let kind = FixtureDrop.Kind(rawValue: String(drop[0])), let at = Double(drop[1]) {
             fixtureDrop = FixtureDrop(kind: kind, at: at)

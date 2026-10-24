@@ -147,14 +147,24 @@ private struct Viewfinder: View {
     let onCode: @MainActor (String) -> Bool
     /// nil while it is being found out (and the camera asked for).
     @State private var canScan: Bool?
+    /// The camera did not start scanning: why, in the frame instead of a camera that reads nothing.
+    @State private var trouble: ScannerTrouble?
 
     var body: some View {
         ZStack {
             switch canScan {
+            case true? where trouble != nil:
+                StepBody(text: trouble?.text ?? "", color: Theme.ink, alignment: .center)
+                    .padding(24)
             case true?:
-                QRScannerView(onCode: onCode)
+                QRScannerView(onCode: onCode) { why in
+                    #if DEBUG
+                    TraceLog.pairing("the scanner did not start: \(why)")
+                    #endif
+                    trouble = why
+                }
             case false?:
-                StepBody(text: "这台设备不能扫码，可以用系统相机扫，或者手动输入", color: Theme.ink, alignment: .center)
+                StepBody(text: ScannerTrouble.unsupported.text, color: Theme.ink, alignment: .center)
                     .padding(24)
             case nil:
                 Color.clear
@@ -164,7 +174,16 @@ private struct Viewfinder: View {
                 .accessibilityHidden(true)
         }
         .frame(width: ScanPage.side, height: ScanPage.side)
-        .task { canScan = await QRScannerView.canScan() }
+        .task {
+            #if DEBUG
+            // `-critterScannerForce`: the camera is started where it cannot scan, to see it say so.
+            if DebugLaunch.current.scannerForce {
+                canScan = true
+                return
+            }
+            #endif
+            canScan = await QRScannerView.canScan()
+        }
     }
 }
 
