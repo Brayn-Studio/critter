@@ -63,10 +63,17 @@ import Foundation
 ///     the link comes in during the wait (queued, then confirmed on the failure page) or, at once, on the failure
 ///     page (a link to a host off the local network shows its note there).
 ///   - `paired@<seconds>`: the Mac says yes after that long (a link that came meanwhile is dropped).
+///   - `scan-race`: 1.5 s after the scanner is up the camera "reads" a pairing code, and 100 ms into the green flash
+///     「返回」 is tapped (「手动输入」 when unpaired); a second later the log says whether anything is pairing.
+///     `scan-read`: the same read with nothing tapped, so the flash ends in an attempt (the control).
+///   With any demo, standard output gets "pairing [t s] …" lines (`TraceLog`): pair() starting an attempt, the scan
+///   flash cancelled, and `scan-race`'s steps.
 /// - `-critterPickSkin <skin>|follow`: with `-critterOpen settings`, a second after the settings are up, that skin's
 ///   tile is tapped ("follow" is 「跟着电脑」), and 1.5 s later the settings go back to the home screen. The choice is
 ///   saved like a real tap: `-critterPickSkin follow` undoes it.
 /// - `-critterSettingsAt skins|board|motion`: with `-critterOpen settings`, the settings open scrolled to that group.
+/// - `-critterNavLog`: standard output gets "nav [t s] …" lines (`TraceLog`) when the settings page takes over the
+///   left-edge swipe back and when it gives it back (`EdgeSwipeBack`), with what UIKit's own delegate would have said.
 /// - `-critterBoard critter|pro`: once launched, the board opens in that mode, as if 「打开看板」 had been tapped
 ///   (the mode is saved like the board's own switch). With `-critterOpen answer:<requestId>` the answer card opens on
 ///   the board (landscape) rather than on the home screen. Fixtures: `board` (six sessions, one waiting) and `many`.
@@ -142,6 +149,7 @@ struct DebugLaunch {
     /// `-critterPickSkin`: a bundled skin's name, or nil for 「跟着电脑」 ("follow"); unset when not asked for.
     var pickSkin: String??
     var settingsAt: String?
+    var navLog = false
     /// `-critterBoard`: true for the Critter mode, false for the pro board; nil when not asked for.
     var board: Bool?
     var boardScript: [BoardStep] = []
@@ -210,6 +218,7 @@ struct DebugLaunch {
         pairing = value("critterPairing").flatMap(PairingDemo.init(argument:))
         if let pick = value("critterPickSkin") { pickSkin = .some(pick == "follow" ? nil : pick) }
         settingsAt = value("critterSettingsAt")
+        navLog = arguments.contains("-critterNavLog")
         switch value("critterBoard") {
         case "critter": board = true
         case "pro": board = false

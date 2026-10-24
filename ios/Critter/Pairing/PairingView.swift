@@ -36,6 +36,8 @@ struct PairingView: View {
     @State private var queuedLink: IncomingPairLink?
     /// A scanned pairing code is being taken: the frame is green and Sprig hops, then pairing starts.
     @State private var flashing = false
+    /// The wait before that code is paired with: cancelled when the page is left or the screen closes during it.
+    @State private var flashTask: Task<Void, Never>?
     /// The scanner's Sprig.
     @State private var stage = CritterStageControl()
 
@@ -57,8 +59,13 @@ struct PairingView: View {
                 // A cancelled attempt is over only once the store has let go of it.
                 if phase == nil { takeQueuedIfIdle() }
             }
+            // Closed during a flash: the code that was read is not paired with behind the home screen.
+            .onDisappear { stopFlash() }
             #if DEBUG
-            .task { await debugOpenManual() }
+            .task {
+                await debugOpenManual()
+                await debugScanRace()
+            }
             #endif
     }
 
@@ -76,8 +83,8 @@ struct PairingView: View {
             )
         } else {
             ScanPage(
-                note: note, flash: flashing, onCode: read, onManual: { switchTo(.manual) }, onClose: onClose,
-                control: stage
+                note: note, flash: flashing, onCode: read, onManual: { switchTo(.manual) },
+                onClose: onClose.map { _ in close }, control: stage
             )
         }
     }
@@ -106,6 +113,9 @@ struct PairingView: View {
         note = nil
         failure = nil
         awaiting = false
+        #if DEBUG
+        TraceLog.pairing("pair() starts an attempt with \(target.macName)")
+        #endif
         attempt = Task {
             let result = await store.pair(target, deviceName: deviceName)
             // Cancelled: the screen has moved on already.
@@ -138,8 +148,27 @@ struct PairingView: View {
     }
 
     private func switchTo(_ next: Page) {
+        stopFlash()
         note = nil
         page = next
+        takeQueuedIfIdle()
+    }
+
+    /// 「返回」: back to the home screen, dropping a code that is still flashing.
+    private func close() {
+        stopFlash()
+        onClose?()
+    }
+
+    /// Drops a scanned code that has not been paired with yet.
+    private func stopFlash() {
+        guard let flashTask else { return }
+        flashTask.cancel()
+        self.flashTask = nil
+        flashing = false
+        #if DEBUG
+        TraceLog.pairing("the flash is cancelled")
+        #endif
     }
 
     private func notOnNetwork(_ host: String) -> String {
@@ -160,8 +189,16 @@ struct PairingView: View {
         }
         flashing = true
         stage.hop(LonePet.petId)
-        Task {
+        flashTask = Task {
             try? await Task.sleep(for: Self.flash)
+            // The page was left or the screen closed meanwhile: this code is not paired with.
+            guard !Task.isCancelled else {
+                #if DEBUG
+                TraceLog.pairing("the flash ended cancelled: pair() is not called")
+                #endif
+                return
+            }
+            flashTask = nil
             flashing = false
             pair(PairingTarget(uri: uri))
             takeQueuedIfIdle()
@@ -208,7 +245,7 @@ struct PairingView: View {
             },
             onDismiss: {
                 linkToConfirm = nil
-                onClose?()
+                close()
             }
         ) {
             Text(verbatim: "一个链接要让这台手机和「\(Theme.macName(uri.name))」配对。只在你刚在 Mac 上点了「添加手机」时才继续。")
@@ -233,6 +270,33 @@ struct PairingView: View {
         guard case .manual? = DebugLaunch.current.pairing else { return }
         try? await Task.sleep(for: .seconds(1))
         if page == .scan, !busy { switchTo(.manual) }
+    }
+
+    /// `-critterPairing scan-race`: a second and a half after the scanner is up, the camera reads a pairing code, and
+    /// 100 ms into the frame's green flash 「返回」 is tapped (「手动输入」 when there is no 返回). A second after that the
+    /// log says whether anything is pairing: it must be nil, with no screen left to show an attempt. `scan-read` taps
+    /// nothing: the flash ends in an attempt.
+    private func debugScanRace() async {
+        let demo = DebugLaunch.current.pairing
+        guard demo == .scanRace || demo == .scanRead else { return }
+        try? await Task.sleep(for: .seconds(1.5))
+        TraceLog.pairing("the camera reads a pairing code")
+        _ = read(PairingDemoFakes.uri.string)
+        try? await Task.sleep(for: .milliseconds(100))
+        let store = store
+        Task {
+            try? await Task.sleep(for: .seconds(1))
+            TraceLog.pairing("1 s later: store.pairingPhase = \(store.pairingPhase.map { "\($0)" } ?? "nil")")
+        }
+        if demo == .scanRead {
+            TraceLog.pairing("nothing tapped")
+        } else if onClose != nil {
+            TraceLog.pairing("「返回」 100 ms into the flash")
+            close()
+        } else {
+            TraceLog.pairing("「手动输入」 100 ms into the flash")
+            switchTo(.manual)
+        }
     }
     #endif
 }

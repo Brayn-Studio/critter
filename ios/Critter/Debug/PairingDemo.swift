@@ -9,6 +9,10 @@ import Foundation
 enum PairingDemo: Equatable {
     /// The scanner (in the simulator: no camera).
     case scan
+    /// The scanner reads a code and the page is left during the green flash (`PairingView.debugScanRace`).
+    case scanRace
+    /// The scanner reads a code and nothing interrupts the flash: pairing starts (the control for `scanRace`).
+    case scanRead
     /// The manual page, reached by tapping 「手动输入」 a second after launch.
     case manual(Manual)
     /// A link from outside, waiting for the user's yes.
@@ -38,13 +42,15 @@ enum PairingDemo: Equatable {
         case paired(after: Double)
     }
 
-    /// `scan`, `manual`, `manual-searching`, `manual-trust`, `manual-probe-failed`, `confirm`, `connecting`,
-    /// `awaiting`, `failed:<reason>[@<seconds>]` (reasons `badCode`, `rejected`, `protocol`, `cert`, `noAnswer`,
-    /// `unreachable`), `paired@<seconds>`.
+    /// `scan`, `scan-race`, `scan-read`, `manual`, `manual-searching`, `manual-trust`, `manual-probe-failed`,
+    /// `confirm`, `connecting`, `awaiting`, `failed:<reason>[@<seconds>]` (reasons `badCode`, `rejected`, `protocol`,
+    /// `cert`, `noAnswer`, `unreachable`), `paired@<seconds>`.
     init?(argument: String) {
         func seconds(_ text: Substring?) -> Double { text.flatMap { Double($0) } ?? 0 }
         switch argument {
         case "scan": self = .scan
+        case "scan-race": self = .scanRace
+        case "scan-read": self = .scanRead
         case "manual": self = .manual(.found)
         case "manual-searching": self = .manual(.searching)
         case "manual-trust": self = .manual(.trust)
@@ -74,7 +80,7 @@ enum PairingDemo: Equatable {
         switch self {
         case .confirm: IncomingPairLink(uri: PairingDemoFakes.uri, confirmed: false)
         case .attempt: IncomingPairLink(uri: PairingDemoFakes.uri, confirmed: true)
-        case .scan, .manual: nil
+        case .scan, .scanRace, .scanRead, .manual: nil
         }
     }
 

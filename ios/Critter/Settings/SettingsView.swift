@@ -67,7 +67,9 @@ struct SettingsView: View {
             }
         }
         .background(Theme.bg)
+        // The pixel header instead of the bar; the left-edge swipe still goes back.
         .toolbar(.hidden, for: .navigationBar)
+        .background(EdgeSwipeBack())
         .overlay {
             if confirmingUnpair { unpairDialog }
         }

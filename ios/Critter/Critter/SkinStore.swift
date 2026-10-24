@@ -30,21 +30,26 @@ final class SkinStore {
     @ObservationIgnored private var fetching: Set<String> = []
     @ObservationIgnored private let directory: URL?
 
-    /// The skins the app ships, as the app's `Skins` folder has them (every folder with a manifest that decodes), in
-    /// the order the settings show them: sprig first (the default), then the others by name.
+    /// The order the settings show the skins in (visual design §8.8, Android `SettingsScreen.SKINS`): sprig first, the
+    /// default.
+    nonisolated static let preferredOrder = ["sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet"]
+
+    /// The skins the app ships, as the app's `Skins` folder has them (every folder with a manifest that decodes): the
+    /// ones in `preferredOrder` in that order, then any other by name, so a skin added to the folder still shows.
     static let bundledNames: [String] = {
         guard let folder = Bundle.main.url(forResource: "Skins", withExtension: nil),
               let entries = try? FileManager.default.contentsOfDirectory(
                   at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
               )
         else { return [PhoneSkinLibrary.fallback] }
-        let names = entries.map(\.lastPathComponent).filter { bundled($0) != nil }
-        let first = PhoneSkinLibrary.fallback
-        return names.sorted { a, b in
-            if (a == first) != (b == first) { return a == first }
-            return a < b
-        }
+        return ordered(entries.map(\.lastPathComponent).filter { bundled($0) != nil })
     }()
+
+    /// `names` in `preferredOrder`, the ones it does not list after them by name.
+    nonisolated static func ordered(_ names: [String]) -> [String] {
+        let known = preferredOrder.filter(names.contains)
+        return known + names.filter { !preferredOrder.contains($0) }.sorted()
+    }
 
     /// - Parameter directory: where pushed skins are saved; nil keeps them in memory only. The default is
     ///   Application Support's `Skins`.
