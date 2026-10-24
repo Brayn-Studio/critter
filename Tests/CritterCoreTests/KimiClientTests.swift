@@ -82,6 +82,8 @@ private final class Counter: @unchecked Sendable {
 }
 
 private let sessionsPath = "/api/v1/sessions?busy=false&include_archive=false&exclude_empty=true&archived_only=false&page_size=100"
+/// Kimi's `busy` query parameter is a filter: the busy sessions only come back with `busy=true`.
+private let busySessionsPath = "/api/v1/sessions?busy=true&include_archive=false&exclude_empty=true&archived_only=false&page_size=100"
 private let approvalsPath = "/api/v1/sessions/session_1/approvals?status=pending"
 private let questionsPath = "/api/v1/sessions/session_1/questions?status=pending"
 private let messagesPath = "/api/v1/sessions/session_1/messages?role=assistant&page_size=20"
@@ -141,12 +143,16 @@ private struct Harness {
     }
 }
 
-private func respondWithSession(_ transport: FakeKimiTransport, approvals: [Any] = [], messages: [Any] = [], post: Data? = nil) {
-    let sessions = ok(items: [session1()]), approvals = ok(items: approvals), messages = ok(items: messages), empty = ok(items: [])
+/// Plays the server: the session list filtered by `busy` as Kimi Code filters it.
+private func respondWithSession(_ transport: FakeKimiTransport, sessions: [[String: Any]] = [session1()], approvals: [Any] = [],
+                                messages: [Any] = [], post: Data? = nil) {
+    let idle = ok(items: sessions.filter { $0["busy"] as? Bool != true }), working = ok(items: sessions.filter { $0["busy"] as? Bool == true })
+    let approvals = ok(items: approvals), messages = ok(items: messages), empty = ok(items: [])
     transport.respond = { method, path in
         if method == "POST" { return post }
         switch path {
-        case sessionsPath: return sessions
+        case sessionsPath: return idle
+        case busySessionsPath: return working
         case approvalsPath: return approvals
         case messagesPath: return messages
         default: return empty
@@ -384,4 +390,56 @@ private func respondWithSession(_ transport: FakeKimiTransport, approvals: [Any]
     h.transport.dropConnection()
     #expect(eventually { h.client.statusText == "尚未连接 Kimi Code" })
     #expect(eventually(4) { h.transport.connects.count == 2 })
+}
+
+/// A session in the middle of a turn, waiting on an approval: re-lists (a resync, a reconnect)
+/// must find it on the busy page and keep its pet and its phone request.
+@Test func kimiClientBusySessionSurvivesResyncAndReconnect() throws {
+    let h = try Harness()
+    defer { h.finish() }
+    var working = session1()
+    working["busy"] = true; working["main_turn_active"] = true; working["pending_interaction"] = "approval"
+    var other = session1()
+    other["id"] = "session_2"
+    respondWithSession(h.transport, sessions: [working, other], approvals: [approvalItem()])
+    h.client.start()
+    #expect(eventually { h.transport.connects.count == 1 })
+    h.transport.deliver(hello)
+    #expect(eventually { h.store.read(sessionId: "kimi-session_1")?.state == .waiting })
+    #expect(eventually { h.client.requests.map(\.pending.requestId) == ["kimi-approval_1"] })
+    #expect(h.client.trackedSessionIDs == ["session_1", "session_2"])
+    #expect(h.store.read(sessionId: "kimi-session_2") == nil)
+
+    func lists() -> Int { h.transport.requests.filter { $0.path == sessionsPath || $0.path == busySessionsPath }.count }
+    var before = lists()
+    h.transport.deliver(#"{"type":"resync_required","timestamp":"2026-10-24T17:55:00.000Z","payload":{"session_id":"session_1","reason":"buffer_overflow","current_seq":40}}"#)
+    #expect(eventually { lists() >= before + 2 })
+    _ = eventually(0.2) { false }
+    #expect(h.store.read(sessionId: "kimi-session_1")?.state == .waiting)
+    #expect(h.client.requests.map(\.pending.requestId) == ["kimi-approval_1"])
+
+    h.transport.dropConnection()
+    #expect(eventually(4) { h.transport.connects.count == 2 })
+    before = lists()
+    h.transport.deliver(hello)
+    #expect(eventually { lists() >= before + 2 })
+    #expect(eventually { h.client.requests.map(\.pending.requestId) == ["kimi-approval_1"] })
+    _ = eventually(0.2) { false }
+    #expect(h.store.read(sessionId: "kimi-session_1")?.state == .waiting)
+    #expect(h.client.trackedSessionIDs == ["session_1", "session_2"])
+}
+
+/// A failed page means the list isn't complete: nothing is forgotten for being missing from it.
+@Test func kimiClientFailedPageForgetsNothing() throws {
+    let h = try Harness()
+    defer { h.finish() }
+    respondWithSession(h.transport)
+    #expect(h.admitted())
+    let idle = ok(items: [])
+    h.transport.respond = { _, path in path == sessionsPath ? idle : nil }
+    h.transport.deliver(#"{"type":"resync_required","timestamp":"2026-10-24T17:55:00.000Z","payload":{"session_id":"session_1","reason":"buffer_overflow","current_seq":40}}"#)
+    #expect(eventually { h.transport.requests.filter { $0.path == busySessionsPath }.count >= 2 })
+    _ = eventually(0.2) { false }
+    #expect(h.store.read(sessionId: "kimi-session_1") != nil)
+    #expect(h.client.trackedSessionIDs.contains("session_1"))
 }

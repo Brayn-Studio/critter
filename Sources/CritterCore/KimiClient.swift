@@ -31,6 +31,8 @@ public final class URLSessionKimiTransport: KimiTransport, @unchecked Sendable {
         var request = URLRequest(url: url, timeoutInterval: 5)
         request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
         let next = session.webSocketTask(with: request)
+        // A big `tool.result` frame must not overflow the 1 MiB default and drop the socket.
+        next.maximumMessageSize = 32 * 1024 * 1024
         let old = lock.withLock { () -> URLSessionWebSocketTask? in
             defer { task = next }
             return task
@@ -103,7 +105,10 @@ public final class KimiClient: @unchecked Sendable {
     public static let notConnected = "尚未连接 Kimi Code"
     static let readOnlyReason = "Kimi Code 会话暂不支持从手机发消息"
     static let pageSize = 100
-    static let sessionsPath = "/api/v1/sessions?busy=false&include_archive=false&exclude_empty=true&archived_only=false&page_size=\(pageSize)"
+    /// Kimi's `busy` is a filter, not "include busy ones": the list takes a page of each.
+    static func sessionsPath(busy: Bool) -> String {
+        "/api/v1/sessions?busy=\(busy)&include_archive=false&exclude_empty=true&archived_only=false&page_size=\(pageSize)"
+    }
     /// Codes that mean the approval or question is no longer there to answer.
     static let goneCodes: Set<Int> = [40401, 40404, 40902]
 
@@ -419,16 +424,28 @@ public final class KimiClient: @unchecked Sendable {
         guard connected else { return }
         if listing { listAgain = true; return }
         listing = true
-        get(Self.sessionsPath) { [self] data in
-            listing = false
-            if let items = data?["items"]?.ipcArray { merge(items) }
-            if listAgain { listAgain = false; listSessions() }
+        get(Self.sessionsPath(busy: false)) { [self] idle in
+            get(Self.sessionsPath(busy: true)) { [self] busy in
+                listing = false
+                let pages = [idle, busy].map { $0?["items"]?.ipcArray }
+                // The same session on both pages (it changed in between): the later page wins.
+                var items: [String: JSONValue] = [:]
+                var order: [String] = []
+                for item in pages.compactMap({ $0 }).joined() {
+                    guard let id = item["id"]?.stringValue else { continue }
+                    if items.updateValue(item, forKey: id) == nil { order.append(id) }
+                }
+                let complete = pages.allSatisfy { ($0?.count ?? Self.pageSize) < Self.pageSize }
+                merge(order.compactMap { items[$0] }, complete: complete)
+                if listAgain { listAgain = false; listSessions() }
+            }
         }
     }
 
     /// New sessions join (a record of this server's from before makes them pets again); known
-    /// ones are corrected like `work_changed`. A complete list also drops what is gone.
-    private func merge(_ items: [JSONValue]) {
+    /// ones are corrected like `work_changed`. A `complete` list -- both pages came back, neither
+    /// full -- also drops what is gone; a partial one never does.
+    private func merge(_ items: [JSONValue], complete: Bool) {
         guard let instance else { return }
         let records = Dictionary(store.readAll().filter { SessionSource(entrypoint: $0.entrypoint).isKimi && $0.claudePid == instance.pid }
             .map { ($0.sessionId, $0) }, uniquingKeysWith: { first, _ in first })
@@ -454,7 +471,7 @@ public final class KimiClient: @unchecked Sendable {
             sessions[fresh.id] = fresh
             settle(fresh.id, previous: nil)
         }
-        guard items.count < Self.pageSize else { return }
+        guard complete else { return }
         for id in Array(sessions.keys) where !listed.contains(id) { forget(id) }
         removeRecords { record in !listed.contains(String(record.sessionId.dropFirst(5))) }
     }
