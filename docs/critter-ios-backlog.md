@@ -43,8 +43,10 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - **用手动做的描述文件签名。** 真机上只走过 Xcode 管理的描述文件（自动签名，不加 `-allowProvisioningUpdates`）。手动做的那条路（`CRITTER_PROFILE_APP`、`_NOTIFY`、`_WIDGETS` 按 UUID 填进 `PROVISIONING_PROFILE_SPECIFIER`）没在真机上构建过：Xcode 要是不认 UUID，就改成按描述文件的名字填。
 - **撤回推送没叫醒 App。** 在 Mac 上答掉以后，通知要等打开 App 才消失（回到前台的对账起作用）。后台推送的设置都对：`remote-notification`、`apns-push-type: background`、优先级 5。系统按自己的节奏送后台推送，App 被划掉时完全不送，所以这符合 spec 的"尽力而为"。想更快的话，可以改成用同一个 `apns-collapse-id` 发一条安静的可见通知，把原来的替换成"已在电脑上处理"。
 - **Codex**（Mac 端的问题，不只是 iOS）：
-  - Codex 用工具提的问题，桌面上和手机上都不显示；
-  - 这次也没能触发 Codex 的权限请求：默认的批准策略在工作目录里自动放行，可以用 `codex -a untrusted` 试，所以"Codex 的通知只有两个按钮"还没看到。
+  - Codex 用工具提的问题，桌面上和手机上都不显示：Codex 改用 `request_user_input_async`（立刻回 `{"accepted":true}`，这一轮随后就结束），Critter 当成了阻塞式提问。已修（`fix(codex): keep an async question waiting until the user answers`），等 Mac 上更新后再看一次。
+  - 手机上还不能直接回答这种提问：要用 Codex 桌面版没公开的回复格式（`<send_user_message_question_reply>`，经 start-turn / steer-turn 发），没做；现在在电脑上答，或者在手机上用"发一句"。
+  - 一直没人答的提问没有超时，也不能在宠物上关掉；Codex 把输出换个包装（不再是 `{"accepted":true}`）时，提问会又一次被漏掉。
+  - 权限请求一次也没触发：用户的 `~/.codex/config.toml` 是 `approvals_reviewer = "guardian_subagent"`，越权请求都由 Codex 自己的审查子代理批准或拒绝，不问用户。要看 Codex 的权限请求在宠物和手机上的样子（以及"只有两个按钮"），得临时把批准人改成用户，再让它往工作目录外写文件。Codex 桌面版跑不跑 Critter 插件的 `permission_request` hook，也还没确认。
 - **安静时实时活动会不会变灰**（spec §13.2）。Mac 每约 12 分钟刷新一次，等所有会话都安静 20 分钟以上时看一眼锁屏。更新多的时候有没有被系统压住，也还没专门看。
 - **push-to-start 之后 token 能不能在后台送回 Mac**（spec §13.1）。只看到首次配对时（前台）`startToken`、`activityToken` 都送到了 Mac。Mac 在手机不连着时用 push-to-start 启动、App 在后台被叫醒送回 token 的那条路，还没专门测。
 - **实时活动的几处边角。**
