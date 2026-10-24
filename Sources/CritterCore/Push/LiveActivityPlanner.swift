@@ -58,23 +58,10 @@ public final class LiveActivityPlanner {
         lastStartAt = unconfirmedStartAt
     }
 
-    /// The content to show for `snapshot`. The lead and the two behind it are the most urgent sessions, the
-    /// earlier started first among equals: the same order as the flock (`FlockModel`, `PhoneFlock`).
+    /// The content to show for `snapshot`: CritterKit's `LiveActivityContent(snapshot:updatedAt:)`, the rule the
+    /// phone uses for the activity it updates itself as well.
     public func content(from snapshot: SnapshotBody, updatedAt: Int64 = 0) -> LiveActivityContent {
-        let ordered = snapshot.sessions.sorted { a, b in
-            if a.state.priority != b.state.priority { return a.state.priority > b.state.priority }
-            if a.startedAt != b.startedAt { return a.startedAt < b.startedAt }
-            return a.id < b.id
-        }
-        let badges = ordered.prefix(1 + LiveActivityContent.maxBack).map { PetBadge(skin: $0.skin, state: $0.state) }
-        return LiveActivityContent(
-            counts: PetState.allCases.map { state in
-                StateCount(state: state, count: snapshot.sessions.filter { $0.state == state }.count)
-            },
-            lead: badges.first, back: Array(badges.dropFirst()), total: snapshot.sessions.count,
-            fiveHour: percent(snapshot.limits?.fiveHour), sevenDay: percent(snapshot.limits?.sevenDay),
-            updatedAt: updatedAt
-        )
+        LiveActivityContent(snapshot: snapshot, updatedAt: updatedAt)
     }
 
     /// What to send now. `content` is the current content (its `updatedAt` is replaced by `now` in what is sent);
@@ -269,11 +256,5 @@ public final class LiveActivityPlanner {
 
     private func waiting(_ content: LiveActivityContent) -> Int {
         content.counts.first { $0.state == .waiting }?.count ?? 0
-    }
-
-    /// A used percentage as a whole number; nil if there is none or it is not a number.
-    private func percent(_ window: RateWindow?) -> Int? {
-        guard let value = window?.usedPercentage, value.isFinite else { return nil }
-        return Int(min(max(value.rounded(), 0), 100))
     }
 }

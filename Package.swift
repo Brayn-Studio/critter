@@ -20,7 +20,7 @@ let package = Package(
         .executableTarget(name: "critter-bridge-client", dependencies: ["CritterCore"]),
         .testTarget(name: "CritterKitTests", dependencies: ["CritterKit"]),
         .testTarget(name: "CritterCoreTests", dependencies: ["CritterCore"]),
-        .testTarget(name: "CritterClientTests", dependencies: ["CritterClient"]),
+        .testTarget(name: "CritterClientTests", dependencies: ["CritterClient", "CritterCore"]),
         .testTarget(name: "CritterHookTests", dependencies: ["critter-hook", "CritterCore"]),
     ]
 )

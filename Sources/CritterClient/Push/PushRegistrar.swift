@@ -1,4 +1,5 @@
 import CritterKit
+import Foundation
 import os
 
 /// What the phone keeps of its push registration with the paired Mac, across launches (`PushAckStorage`). It
@@ -162,5 +163,67 @@ public struct PushRegistrar: Equatable, Sendable {
     private static func hex(_ token: String?) -> String? {
         guard let token, !token.isEmpty else { return nil }
         return token.lowercased()
+    }
+}
+
+/// The Live Activity's tokens as the system gives them to the app (spec §6.6, §8.5), for the registration's
+/// `activity`: the push-to-start token, and the running activity's id and push token. The app keeps one activity: the
+/// latest activity whose token came is the one named. Pure; the app's `LiveActivityManager` hands in what ActivityKit
+/// reports, and builds the registration from `registration(enabled:)`. Each change it reports (`true`) is a new
+/// registration, which goes to the Mac at once when connected (`PushRegistrar.shouldSend`).
+public struct ActivityTokens: Equatable, Sendable {
+    /// Lowercase hex, as the Mac takes them.
+    public private(set) var startToken: String?
+    public private(set) var activityId: String?
+    public private(set) var activityToken: String?
+
+    public init(startToken: String? = nil, activityId: String? = nil, activityToken: String? = nil) {
+        self.startToken = startToken
+        self.activityId = activityId
+        self.activityToken = activityToken
+    }
+
+    /// The push-to-start token (`Activity.pushToStartTokenUpdates`), new or the same again. Whether it changed.
+    @discardableResult
+    public mutating func startTokenArrived(_ token: Data) -> Bool {
+        let hex = Self.hex(token)
+        guard hex != startToken else { return false }
+        startToken = hex
+        return true
+    }
+
+    /// The push token of activity `activityId` (`Activity.pushTokenUpdates`): from now on the one the Mac updates.
+    /// Whether anything changed.
+    @discardableResult
+    public mutating func activityTokenArrived(_ token: Data, activityId: String) -> Bool {
+        let hex = Self.hex(token)
+        guard hex != activityToken || activityId != self.activityId else { return false }
+        self.activityId = activityId
+        activityToken = hex
+        return true
+    }
+
+    /// Activity `activityId` ended or was dismissed (`activityStateUpdates`): if it is the one named, its id and token
+    /// are taken out, so the Mac stops pushing to it. Whether anything changed.
+    @discardableResult
+    public mutating func activityEnded(_ activityId: String) -> Bool {
+        guard activityId == self.activityId else { return false }
+        self.activityId = nil
+        activityToken = nil
+        return true
+    }
+
+    /// The registration's Live Activity part. Off (the switch, or the system's setting for the app): `enabled = false`
+    /// and no tokens, so the Mac neither starts one nor pushes to one.
+    public func registration(enabled: Bool) -> ActivityRegistration {
+        guard enabled else { return ActivityRegistration(enabled: false) }
+        return ActivityRegistration(
+            enabled: true, startToken: startToken, activityId: activityId, activityToken: activityToken
+        )
+    }
+
+    /// An APNs token as lowercase hex.
+    public static func hex(_ token: Data) -> String {
+        token.map { String(format: "%02x", $0) }.joined()
     }
 }

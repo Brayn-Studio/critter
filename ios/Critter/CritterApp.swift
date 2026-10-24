@@ -46,6 +46,11 @@ struct CritterApp: App {
         #endif
         // What is on screen, for the notifications that arrive in the foreground and the withdrawals.
         NotificationCenterDelegate.shared.store = store
+        // The Live Activity's tokens there are already, before the first registration; then the system's as they come.
+        #if DEBUG
+        LiveActivityManager.shared.followsSnapshots = DebugLaunch.current.activityDemo == nil
+        #endif
+        LiveActivityManager.shared.start()
     }
 
     var body: some Scene {
@@ -60,12 +65,15 @@ struct CritterApp: App {
                 .task { PushSetup.shared.attach(store: store, settings: settings) }
                 .onChange(of: [settings.notifyDone, settings.notifyError, settings.liveActivity]) {
                     PushSetup.shared.update()
+                    syncActivity()
                 }
                 .onChange(of: settings.forcedSkin, initial: true) { _, name in skins.setForced(name) }
                 .onChange(of: settings.boardAutoOpen, initial: true) { _, on in autoOpen.setAutoOpen(on) }
                 .onChange(of: store.snapshot, initial: true) { _, snapshot in
                     if let snapshot { skins.update(from: snapshot, store: store) }
+                    syncActivity()
                 }
+                .onChange(of: store.canAct) { syncActivity() }
                 .onChange(of: store.isLive) {
                     // Skins are asked for once per connection: a new one asks again (even if its first snapshot is the
                     // same as the last one), and one that ends forgets what it asked.
@@ -95,6 +103,15 @@ struct CritterApp: App {
                     if let kind = DebugLaunch.current.activityDemo { await ActivityDemo.run(kind) }
                 }
                 .task {
+                    var elapsed = 0.0
+                    for step in DebugLaunch.current.liveActivitySwitch {
+                        try? await Task.sleep(for: .seconds(max(0, step.at - elapsed)))
+                        elapsed = step.at
+                        print("live activity switch: \(step.on ? "on" : "off") at \(step.at) s")
+                        settings.liveActivity = step.on
+                    }
+                }
+                .task {
                     if DebugLaunch.current.frameLog { FrameLog.start() }
                     guard let url = DebugLaunch.current.openURL else { return }
                     // Once the scene is up: the system hands the URL back through `onOpenURL`.
@@ -113,6 +130,7 @@ struct CritterApp: App {
             case .background: store.sceneEnteredBackground()
             default: break
             }
+            syncActivity()
         }
         .onChange(of: scenePhase, initial: true) { _, phase in
             autoOpen.sceneActive(phase == .active)
@@ -132,6 +150,14 @@ struct CritterApp: App {
         #else
         RootView(store: store, deviceName: deviceName, link: $link)
         #endif
+    }
+
+    /// The app's own Live Activity as things are now (spec §8.5): started and updated only in front while connected, ended
+    /// when switched off; the Mac's pushes do the rest.
+    private func syncActivity() {
+        LiveActivityManager.shared.sync(
+            snapshot: store.snapshot, inFront: scenePhase == .active, live: store.canAct, enabled: settings.liveActivity
+        )
     }
 
     /// `hello.app`.

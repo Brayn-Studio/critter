@@ -12,7 +12,8 @@ import UserNotifications
 ///   Live Activity is pushed to a token too) and kept in the shared keychain, as hex;
 /// - the push key, made the first time it is needed (`PushCrypto.makeKey`) and kept in the shared keychain, where the
 ///   notification service extension opens pushes with it; never logged, never in an App Group file (spec §10);
-/// - whether notifications may be shown, the done and error reminders and the Live Activity switch;
+/// - whether notifications may be shown, the done and error reminders, and the Live Activity: its switch and the tokens
+///   the system gave (`LiveActivityManager`, which calls `update` when they change);
 /// - the environment: `sandbox` in DEBUG builds, `production` otherwise.
 ///
 /// One for the app's life (`shared`): the app delegate hands it the token, possibly before the app has attached the
@@ -104,11 +105,11 @@ final class PushSetup {
             deviceToken: deviceToken, environment: Self.environment,
             bundleId: Bundle.main.bundleIdentifier ?? "com.braynlabs.critter", key: key,
             notificationsAllowed: notificationsAllowed, notifyDone: settings.notifyDone, notifyError: settings.notifyError,
-            liveActivity: ActivityRegistration(enabled: settings.liveActivity)
+            liveActivity: LiveActivityManager.shared.registration(enabled: settings.liveActivity)
         )
         if registrar != store.push {
             Self.log.notice(
-                "registration: token \(self.deviceToken.map { String($0.prefix(8)) + "…" } ?? "none", privacy: .public), \(Self.environment.rawValue, privacy: .public), notifications \(registrar.notificationsAllowed), done \(registrar.notifyDone), error \(registrar.notifyError), live activity \(registrar.liveActivity.enabled)"
+                "registration: token \(self.deviceToken.map { String($0.prefix(8)) + "…" } ?? "none", privacy: .public), \(Self.environment.rawValue, privacy: .public), notifications \(registrar.notificationsAllowed), done \(registrar.notifyDone), error \(registrar.notifyError), live activity \(registrar.liveActivity.enabled), start token \(registrar.liveActivity.startToken.map { String($0.prefix(8)) + "…" } ?? "none", privacy: .public), activity \(registrar.liveActivity.activityId ?? "none", privacy: .public) token \(registrar.liveActivity.activityToken.map { String($0.prefix(8)) + "…" } ?? "none", privacy: .public)"
             )
         }
         store.setPush(registrar)

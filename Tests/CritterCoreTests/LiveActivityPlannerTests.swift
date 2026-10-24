@@ -518,3 +518,24 @@ private func running(_ shown: LiveActivityContent, token: String = "tok1") -> (L
     let c = content(.waiting)
     #expect(next(planner, c, at: t0 + 9 * hour) == [.start(stamped(c, t0 + 9 * hour))])
 }
+
+// MARK: - One rule for the Mac and the phone
+
+/// The Mac's content is the assembly in CritterKit the phone uses as well (`LiveActivityContent(snapshot:)`).
+@Test func theMacsContentIsTheSharedAssembly() {
+    let snapshots = [
+        body([]),
+        body([session("a", .idle)], fiveHour: 12.5),
+        body([
+            session("a", .done, skin: "peep", startedAt: 5), session("b", .running, skin: "mochi", startedAt: 1),
+            session("c", .done, startedAt: 2), session("d", .error, skin: "bristle", startedAt: 9),
+            session("e", .error, startedAt: 3), session("f", .waiting, skin: "frill", startedAt: 7),
+        ], fiveHour: 99.5, sevenDay: 0.4),
+    ]
+    for snapshot in snapshots {
+        for updatedAt: Int64 in [0, 1_760_000_000_000] {
+            #expect(LiveActivityPlanner().content(from: snapshot, updatedAt: updatedAt)
+                == LiveActivityContent(snapshot: snapshot, updatedAt: updatedAt))
+        }
+    }
+}

@@ -146,6 +146,12 @@ import os
 ///   screen is changing: `xcrun simctl io <device> recordVideo` gets it every time. The app's own Live Activity rules (`LiveActivityManager`) stay
 ///   out of the way. The log (category `activity`) also has a decode check: the protocol doc's push-to-start
 ///   `attributes` (`{}`) as `CritterActivity`, and its start and end `content-state` as its `ContentState`.
+/// - `-critterLiveActivitySwitch <on|off>@<seconds>[,…]`: at those times after launch the settings' Live Activity switch
+///   is set as a tap would set it (`off@8,on@14`), until the settings page has the switch (it is saved like a tap: end
+///   with `on` to leave it on). With `-critterFixture` this shows the app's own activity (`LiveActivityManager`): started
+///   in front once connected, updated with each new snapshot, ended at once when switched off. The log (category
+///   `activity`) says what it did and which tokens the system gave; the registration's line (category `notifications`)
+///   which of them go to the Mac.
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -226,6 +232,8 @@ struct DebugLaunch {
     var withdrawPush: WithdrawPushDebug.Step?
     /// `-critterActivityDemo`.
     var activityDemo: ActivityDemo.Kind?
+    /// `-critterLiveActivitySwitch`: the switch's value and when, in seconds after launch.
+    var liveActivitySwitch: [(on: Bool, at: Double)] = []
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -322,6 +330,11 @@ struct DebugLaunch {
         fixtureMacAway = arguments.contains("-critterFixtureMacAway")
         withdrawPush = value("critterWithdrawPush").flatMap(WithdrawPushDebug.Step.init)
         activityDemo = value("critterActivityDemo").flatMap(ActivityDemo.Kind.init(rawValue:))
+        liveActivitySwitch = (value("critterLiveActivitySwitch") ?? "").split(separator: ",").compactMap { step in
+            let parts = step.split(separator: "@")
+            guard parts.count == 2, let at = Double(parts[1]), parts[0] == "on" || parts[0] == "off" else { return nil }
+            return (on: parts[0] == "on", at: at)
+        }
         if arguments.contains("-critterFakeDock") {
             switch value("critterFakeDock") {
             case "unplug": fakeDock = .unplug

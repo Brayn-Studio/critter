@@ -79,9 +79,10 @@ final class PhoneSettings {
         static let boardBrightness = "critter.settings.boardBrightness"
         static let boardSounds = "critter.settings.boardSounds"
         static let openingShownOn = "critter.settings.openingShownOn"
-        static let liveActivity = "critter.settings.liveActivity"
-        static let notifyDone = "critter.settings.notifyDone"
-        static let notifyError = "critter.settings.notifyError"
+        // The ones the extensions read too: their keys are shared (`SharedSettings`).
+        static let liveActivity = SharedSettings.liveActivity
+        static let notifyDone = SharedSettings.notifyDone
+        static let notifyError = SharedSettings.notifyError
     }
 
     init(defaults: UserDefaults = .standard, shared: UserDefaults = SharedContainer.defaults) {

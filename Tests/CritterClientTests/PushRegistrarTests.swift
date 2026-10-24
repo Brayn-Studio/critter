@@ -1,5 +1,6 @@
 import CritterClient
 import CritterKit
+import Foundation
 import Testing
 
 // When the phone registers for push with the Mac, what it sends, and what its settings say (spec §6.2, §8.3, §8.8).
@@ -136,4 +137,91 @@ private func registrar(
     #expect(registrar(notificationsAllowed: false).status(acked: quiet, macVersion: "1.5.0") == "通知被关掉了，去系统设置打开")
     // No device token yet.
     #expect(registrar(deviceToken: nil).status(acked: quiet, macVersion: "1.5.0") == "还没登记（要连上 Mac）")
+}
+
+// MARK: - The Live Activity's tokens (spec §6.6, §8.5)
+
+private func data(_ hex: String) -> Data {
+    Data(stride(from: 0, to: hex.count, by: 2).map { i in
+        let start = hex.index(hex.startIndex, offsetBy: i)
+        return UInt8(hex[start..<hex.index(start, offsetBy: 2)], radix: 16)!
+    })
+}
+
+private func confirmed(_ phone: PushRegistrar) -> PushAck {
+    phone.record(reply: .stored("已登记"), sent: phone.registration(), macVersion: "1.5.0", acked: PushAck())
+}
+
+@Test func theTokensAreLowercaseHex() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("AB01"))
+    tokens.activityTokenArrived(data("CD02"), activityId: "A1")
+    #expect(tokens.registration(enabled: true) == ActivityRegistration(
+        enabled: true, startToken: "ab01", activityId: "A1", activityToken: "cd02"
+    ))
+}
+
+@Test func aNewStartTokenIsSentAgain() {
+    var tokens = ActivityTokens()
+    let changed1 = tokens.startTokenArrived(data("5a5a"))
+    #expect(changed1)
+    let before = registrar(activity: tokens.registration(enabled: true))
+    let acked = confirmed(before)
+    // The same token again changes nothing: nothing to send.
+    let changed2 = tokens.startTokenArrived(data("5a5a"))
+    #expect(!changed2)
+    #expect(!registrar(activity: tokens.registration(enabled: true)).shouldSend(acked: acked, macVersion: "1.5.0"))
+    // A new one goes to the Mac at once.
+    let changed3 = tokens.startTokenArrived(data("6b6b"))
+    #expect(changed3)
+    let after = registrar(activity: tokens.registration(enabled: true))
+    #expect(after.registration().activity?.startToken == "6b6b")
+    #expect(after.shouldSend(acked: acked, macVersion: "1.5.0"))
+}
+
+@Test func anActivitysNewTokenIsSentAgain() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("5a5a"))
+    let changed4 = tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    #expect(changed4)
+    let acked = confirmed(registrar(activity: tokens.registration(enabled: true)))
+    let changed5 = tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    #expect(!changed5)
+    // The system gives the activity another token, or another activity takes its place.
+    let changed6 = tokens.activityTokenArrived(data("8e8e"), activityId: "A1")
+    #expect(changed6)
+    #expect(registrar(activity: tokens.registration(enabled: true)).shouldSend(acked: acked, macVersion: "1.5.0"))
+    let changed7 = tokens.activityTokenArrived(data("7d7d"), activityId: "A2")
+    #expect(changed7)
+    #expect(tokens.registration(enabled: true) == ActivityRegistration(
+        enabled: true, startToken: "5a5a", activityId: "A2", activityToken: "7d7d"
+    ))
+}
+
+@Test func anEndedActivityTakesItsIdAndTokenOut() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("5a5a"))
+    tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    let acked = confirmed(registrar(activity: tokens.registration(enabled: true)))
+    // Another activity ending (one the app ended in favour of this one) changes nothing.
+    let changed8 = tokens.activityEnded("A0")
+    #expect(!changed8)
+    #expect(tokens.activityId == "A1")
+    // Dismissed by the user or ended by the system: the Mac must not push to its token any more.
+    let changed9 = tokens.activityEnded("A1")
+    #expect(changed9)
+    #expect(tokens.registration(enabled: true) == ActivityRegistration(enabled: true, startToken: "5a5a"))
+    #expect(registrar(activity: tokens.registration(enabled: true)).shouldSend(acked: acked, macVersion: "1.5.0"))
+}
+
+@Test func switchingTheLiveActivityOffRegistersItOffWithoutTokens() {
+    var tokens = ActivityTokens()
+    tokens.startTokenArrived(data("5a5a"))
+    tokens.activityTokenArrived(data("9f9f"), activityId: "A1")
+    let acked = confirmed(registrar(activity: tokens.registration(enabled: true)))
+    let off = registrar(activity: tokens.registration(enabled: false))
+    #expect(off.registration().activity == ActivityRegistration(enabled: false))
+    #expect(off.shouldSend(acked: acked, macVersion: "1.5.0"))
+    // Notifications still allowed: the registration stays (a waiting session is always pushed).
+    #expect(off.registration().token == "aa11")
 }
