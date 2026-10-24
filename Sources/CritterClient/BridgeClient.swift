@@ -184,8 +184,8 @@ public actor BridgeClient {
     public func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply {
         let id = nextRequestId()
         switch await exchange(.push(id: id, registration: registration), id: id, dropsConnectionOnTimeout: false) {
-        case .reply(.result(_, true, _, _)):
-            return .stored
+        case .reply(.result(_, true, _, let message)):
+            return .stored(message)
         case .reply(.result(_, false, _, let message)):
             return .rejected(message)
         case .reply:
@@ -434,12 +434,12 @@ public actor BridgeClient {
         onEvent(.state(new))
     }
 
-    private static func text(_ message: ClientMessage) -> String {
+    static func text(_ message: ClientMessage) -> String {
         String(decoding: message.encode(), as: UTF8.self)
     }
 
-    /// What `.needsRepair` says after `denied` (Android `deniedText`).
-    private static func deniedText(_ reason: DenyReason) -> String {
+    /// What `.needsRepair` says after `denied` (Android `deniedText`); also what a background answer says then.
+    static func deniedText(_ reason: DenyReason) -> String {
         switch reason {
         case .badToken: "这台手机已不在电脑的配对列表里，请重新配对"
         case .protocolMismatch: "协议版本不匹配，请更新 Critter"

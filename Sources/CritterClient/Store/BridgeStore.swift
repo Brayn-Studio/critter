@@ -1,6 +1,7 @@
 import CritterKit
 import Foundation
 import Observation
+import os
 
 /// What the phone app knows and does about its Mac: the pairing, the connection's state, the latest
 /// snapshot, and the commands it sends. The app creates one and keeps it for as long as it runs.
@@ -14,6 +15,8 @@ import Observation
 ///   until then.
 /// - A change of the network (Wi-Fi back, another network) while the app is in the foreground connects at once,
 ///   cutting a backoff wait short; in the background it is ignored.
+/// - Push: once the app has said what to register (`setPush`), each connection hands it to the Mac after `welcome`
+///   when `PushRegistrar` says so; `pushStatus` is what the settings show.
 @MainActor @Observable
 public final class BridgeStore {
     /// The paired Mac; nil until the phone is paired.
@@ -31,6 +34,18 @@ public final class BridgeStore {
     /// nil until the Mac has welcomed this pairing.
     public private(set) var macVersion: String?
 
+    /// What the phone registers for push, as the app last set it (`setPush`); nil until then, and nothing is
+    /// registered.
+    public private(set) var push: PushRegistrar?
+    /// What the paired Mac last confirmed of it.
+    public private(set) var pushAck: PushAck
+
+    /// The settings' line about push (spec §8.8): registered (in the Mac's words), the Mac too old, not registered
+    /// yet, or notifications switched off.
+    public var pushStatus: String {
+        push?.status(acked: pushAck, macVersion: macVersion) ?? PushRegistrar.notRegisteredLine
+    }
+
     /// Whether the Mac can be told something and what is on screen is up to date: connected, and a
     /// snapshot has come since.
     public var canAct: Bool {
@@ -43,7 +58,12 @@ public final class BridgeStore {
     @ObservationIgnored private let background: any BackgroundRunner
     @ObservationIgnored private let backgroundGrace: Duration
     @ObservationIgnored private let now: () -> Date
+    @ObservationIgnored private let pushAcks: any PushAckStorage
+    @ObservationIgnored private let sleep: @Sendable (Duration) async throws -> Void
     @ObservationIgnored private var networkPump: Task<Void, Never>?
+
+    /// How long an unpairing waits for the Mac to take the push registration back.
+    public static let unregisterWait: Duration = .seconds(3)
 
     /// How often the Mac is pinged while the board is shut and while it is open, in seconds (spec §8.3).
     public static let restPingInterval: TimeInterval = 60
@@ -78,6 +98,10 @@ public final class BridgeStore {
     @ObservationIgnored private var inFlight = 0
     @ObservationIgnored private var drainWaiters: [DrainWaiter] = []
     @ObservationIgnored private var pairAttempt = 0
+    /// A push registration on its way to the Mac.
+    @ObservationIgnored private var pushSending = false
+    /// What went to the Mac on the current connection: the same registration goes once per connection.
+    @ObservationIgnored private var pushSentOnConnection: PushRegistration?
 
     /// - Parameters:
     ///   - makeLink: makes the connection for a pairing; it reports its events to the closure it is given.
@@ -85,12 +109,16 @@ public final class BridgeStore {
     ///   - network: tells when the network changed; the store reconnects at once, in the foreground.
     ///   - backgroundGrace: how long a move to the background waits for answers on their way.
     ///   - now: stamps the snapshots.
+    ///   - pushAcks: keeps what the Mac confirmed of the push registration.
+    ///   - sleep: waits out `unregisterWait`.
     public init(
         storage: any PairingStorage,
         makeLink: @escaping @MainActor (StoredPairing, @escaping @Sendable (BridgeEvent) -> Void) -> any BridgeLink,
         pairer: any PairingLink, background: any BackgroundRunner,
         network: any NetworkWatching = NWPathNetworkWatcher(),
-        backgroundGrace: Duration = .seconds(10), now: @escaping () -> Date = Date.init
+        backgroundGrace: Duration = .seconds(10), now: @escaping () -> Date = Date.init,
+        pushAcks: any PushAckStorage = MemoryPushAckStorage(),
+        sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
     ) {
         self.storage = storage
         self.makeLink = makeLink
@@ -98,8 +126,12 @@ public final class BridgeStore {
         self.background = background
         self.backgroundGrace = backgroundGrace
         self.now = now
+        self.pushAcks = pushAcks
+        self.sleep = sleep
+        pushAck = PushAck()
         if let (pairing, _) = storage.load() {
             self.pairing = pairing
+            pushAck = pushAcks.loadPushAck() ?? PushAck()
             if let cached = storage.loadSnapshot() {
                 snapshot = cached.body
                 snapshotAt = cached.receivedAt
@@ -220,6 +252,39 @@ public final class BridgeStore {
         return await link.registerPush(registration)
     }
 
+    /// What the phone registers for push changed (a device token, a switch, a Live Activity token): connected, it goes
+    /// to the Mac at once if `PushRegistrar` says so; otherwise on the next connection.
+    public func setPush(_ registrar: PushRegistrar) {
+        guard registrar != push else { return }
+        push = registrar
+        registerPushIfNeeded()
+    }
+
+    /// Hands the registration to the Mac if it needs it: connected (after `welcome`), not already on its way, and not
+    /// sent on this connection already. Another change that came meanwhile is sent after the reply.
+    private func registerPushIfNeeded() {
+        guard case .connected = conn, !pushSending, let registrar = push, let connectionId = connection?.id,
+              registrar.shouldSend(acked: pushAck, macVersion: macVersion)
+        else { return }
+        let sent = registrar.registration()
+        guard sent != pushSentOnConnection else { return }
+        pushSentOnConnection = sent
+        pushSending = true
+        let version = macVersion
+        Task {
+            let reply = await registerPush(sent)
+            pushSending = false
+            // From a link that was replaced meanwhile (unpaired, paired again): not this pairing's.
+            guard connection?.id == connectionId else { return }
+            let next = registrar.record(reply: reply, sent: sent, macVersion: version, acked: pushAck)
+            if next != pushAck {
+                pushAck = next
+                pushAcks.savePushAck(next)
+            }
+            registerPushIfNeeded()
+        }
+    }
+
     /// A command in flight has been answered.
     private func commandFinished() {
         inFlight -= 1
@@ -262,6 +327,7 @@ public final class BridgeStore {
         storage.save(new, token: token)
         pairing = new
         clearLiveState()
+        forgetPushAck()
         let connection = makeConnection(for: new)
         self.connection = connection
         if boardOpen { applyPingInterval() }
@@ -276,14 +342,63 @@ public final class BridgeStore {
         if pairAttempt == attempt, pairingPhase != nil { pairingPhase = .awaitingApproval }
     }
 
-    /// Forgets the Mac: stops the connection, deletes the pairing and the cached snapshot.
+    /// Forgets the Mac: stops the connection, deletes the pairing and the cached snapshot. Connected, the connection
+    /// first takes the push registration back (an empty token), waiting at most `unregisterWait` for the Mac, so that it
+    /// stops pushing (spec §8.8); the phone is unpaired at once all the same.
     public func unpair() {
+        let unregister: PushRegistration? = {
+            guard case .connected = conn, let push, push.shouldUnregister(acked: pushAck, macVersion: macVersion) else { return nil }
+            return push.unregistration()
+        }()
         if let old = detachConnection() {
-            callLink { await old.stop() }
+            let wait = Self.unregisterWait
+            let sleep = sleep
+            let call = callLink {
+                if let unregister {
+                    await Self.firstOf({ _ = await old.registerPush(unregister) }, orAfter: wait, sleep: sleep)
+                }
+                await old.stop()
+            }
+            // Let the system give it the time even if the app leaves the foreground meanwhile.
+            if unregister != nil { background.run { await call.value } }
         }
         storage.clear()
         pairing = nil
         clearLiveState()
+        forgetPushAck()
+    }
+
+    /// A new pairing, or none: nothing is confirmed by its Mac yet.
+    private func forgetPushAck() {
+        pushAck = PushAck()
+        pushAcks.savePushAck(nil)
+        pushSentOnConnection = nil
+    }
+
+    /// Runs `work` and returns when it has finished or `limit` has passed, whichever comes first (`work` goes on).
+    private static func firstOf(
+        _ work: @escaping @Sendable () async -> Void, orAfter limit: Duration,
+        sleep: @escaping @Sendable (Duration) async throws -> Void
+    ) async {
+        let done = OSAllocatedUnfairLock(initialState: false)
+        await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
+            let finish: @Sendable () -> Void = {
+                let first = done.withLock { done in
+                    defer { done = true }
+                    return !done
+                }
+                if first { continuation.resume() }
+            }
+            let timer = Task {
+                try? await sleep(limit)
+                finish()
+            }
+            Task {
+                await work()
+                timer.cancel()
+                finish()
+            }
+        }
     }
 
     /// Nothing is known of any Mac: no snapshot, no connection.
@@ -337,7 +452,13 @@ public final class BridgeStore {
         switch event {
         case .state(let state):
             conn = state
-            if case .connected = state {} else { isLive = false }
+            if case .connected = state {
+                // `welcome` came (and the Mac's version before it): a new connection, the registration may be due.
+                pushSentOnConnection = nil
+                registerPushIfNeeded()
+            } else {
+                isLive = false
+            }
         case .snapshot(_, _, let body):
             let receivedAt = now()
             snapshot = body

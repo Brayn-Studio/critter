@@ -55,8 +55,9 @@ public struct CommandResult: Equatable, Sendable {
 
 /// What came of registering for push with the Mac.
 public enum PushRegistrationReply: Equatable, Sendable {
-    /// The Mac keeps the registration.
-    case stored
+    /// The Mac keeps the registration, and says (in its `message`) whether it can push to it now: "已登记", or
+    /// "已登记；这台 Mac 还没配置推送". nil from a Mac that says nothing (or for an unregistration).
+    case stored(String?)
     /// The Mac answered no, with its words if it had any.
     case rejected(String?)
     /// Nothing came back in time: an older Mac that does not know the frame. The connection is as it was.

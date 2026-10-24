@@ -168,12 +168,15 @@ private final class FakeLink: BridgeLink {
         var holdRequests = false
         var reply = CommandResult(ok: true, reason: nil, message: nil)
         var pushes: [PushRegistration] = []
-        var pushReply = PushRegistrationReply.stored
+        var pushReply = PushRegistrationReply.stored(nil)
+        var holdPushes = false
     }
 
     private let state = OSAllocatedUnfairLock(initialState: State())
     /// Requests held by `holdRequests()` wait here.
     let release = Gate(open: false)
+    /// Push registrations held by `holdPushes()` wait here.
+    let releasePushes = Gate(open: false)
 
     init(index: Int, journal: Journal, onEvent: @escaping @Sendable (BridgeEvent) -> Void) {
         self.index = index
@@ -198,6 +201,9 @@ private final class FakeLink: BridgeLink {
     func reply(with result: CommandResult) { state.withLock { $0.reply = result } }
 
     func replyToPush(with reply: PushRegistrationReply) { state.withLock { $0.pushReply = reply } }
+
+    /// From now on a push registration does not return until `releasePushes` is opened.
+    func holdPushes() { state.withLock { $0.holdPushes = true } }
 
     /// From now on the Mac has a skin of this name, with this manifest.
     func serve(_ manifest: JSONValue, named name: String) { state.withLock { $0.skins[name] = manifest } }
@@ -230,10 +236,13 @@ private final class FakeLink: BridgeLink {
     }
 
     func registerPush(_ registration: PushRegistration) async -> PushRegistrationReply {
-        state.withLock { s in
+        journal.add("push \(index) \(registration.token.isEmpty ? "-" : registration.token)")
+        let hold = state.withLock { s in
             s.pushes.append(registration)
-            return s.pushReply
+            return s.holdPushes
         }
+        if hold { await releasePushes.wait() }
+        return state.withLock { $0.pushReply }
     }
 
     func request(_ command: BridgeCommand) async -> CommandResult {
@@ -289,6 +298,20 @@ private final class FakeNetwork: NetworkWatching {
     func fire() { continuation.yield() }
 }
 
+/// What the store keeps of its push registration, in memory.
+private final class FakePushAcks: PushAckStorage {
+    private let state: OSAllocatedUnfairLock<PushAck?>
+
+    init(_ ack: PushAck? = nil) {
+        state = OSAllocatedUnfairLock(initialState: ack)
+    }
+
+    var saved: PushAck? { state.withLock { $0 } }
+
+    func loadPushAck() -> PushAck? { state.withLock { $0 } }
+    func savePushAck(_ ack: PushAck?) { state.withLock { $0 = ack } }
+}
+
 /// Runs the work at once, and lets a test wait for it.
 @MainActor private final class ImmediateRunner: BackgroundRunner {
     private var tasks: [Task<Void, Never>] = []
@@ -311,9 +334,13 @@ private final class FakeNetwork: NetworkWatching {
     let pairer: FakePairer
     let runner = ImmediateRunner()
     let network = FakeNetwork()
+    let pushAcks: FakePushAcks
+    /// The store's own waits (the 3 s an unregistration may take).
+    let timer = ManualClock()
     private(set) var links: [FakeLink] = []
 
-    init(paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false) {
+    init(paired: Bool = true, cached: CachedSnapshot? = nil, slowPairing: Bool = false, pushAck: PushAck? = nil) {
+        pushAcks = FakePushAcks(pushAck)
         storage = FakeStorage(journal: journal, pairing: paired ? stored : nil, snapshot: cached)
         pairer = FakePairer(journal: journal, outcome: .paired(deviceId: "d2", token: "t2", macName: "New Mac"), slow: slowPairing)
     }
@@ -326,7 +353,8 @@ private final class FakeNetwork: NetworkWatching {
                 self.links.append(link)
                 return link
             },
-            pairer: pairer, background: runner, network: network, backgroundGrace: grace, now: { [clock] in clock.now }
+            pairer: pairer, background: runner, network: network, backgroundGrace: grace, now: { [clock] in clock.now },
+            pushAcks: pushAcks, sleep: timer.sleep
         )
     }
 
@@ -344,6 +372,15 @@ private let pushRegistration = PushRegistration(
 )
 
 private let answer = BridgeCommand.answer(requestId: "r1", payload: AnswerPayload(decision: "allow"))
+
+/// What this phone registers for push.
+private func phonePush(done: Bool = false, notificationsAllowed: Bool = true, activity: Bool = true) -> PushRegistrar {
+    PushRegistrar(
+        deviceToken: "aa11", environment: .sandbox, bundleId: "com.braynlabs.critter", key: pushRegistration.key,
+        notificationsAllowed: notificationsAllowed, notifyDone: done, notifyError: false,
+        liveActivity: ActivityRegistration(enabled: activity, startToken: "5a5a")
+    )
+}
 
 // MARK: - Tests
 
@@ -703,7 +740,7 @@ struct BridgeStoreTests {
 
         rig.link.emit(.state(connected))
         #expect(await becomes { store.conn == connected })
-        #expect(await store.registerPush(pushRegistration) == .stored)
+        #expect(await store.registerPush(pushRegistration) == .stored(nil))
         rig.link.replyToPush(with: .noReply)
         #expect(await store.registerPush(pushRegistration) == .noReply)
         rig.link.replyToPush(with: .rejected("推送登记无效"))
@@ -885,6 +922,175 @@ struct BridgeStoreTests {
         store.sceneBecameActive()
         await settle()
         #expect(rig.link.starts == 1)
+    }
+
+    // MARK: - Push registration
+
+    /// Connects the store's link: the Mac's version, then `welcome`.
+    private func connect(_ link: FakeLink, version: String = "1.5.0") {
+        link.emit(.macVersion(version))
+        link.emit(.state(connected))
+    }
+
+    @Test func registrationChangesAreSentOnce() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.setPush(phonePush())
+        #expect(store.pushStatus == "还没登记（要连上 Mac）")
+        // Not connected: nothing goes out.
+        await settle()
+        #expect(rig.link.pushes.isEmpty)
+        // After `welcome`: sent, and the Mac's word shown.
+        connect(rig.link)
+        #expect(await becomes { rig.link.pushes == [phonePush().registration()] })
+        #expect(await becomes { store.pushStatus == "已登记" })
+        #expect(rig.pushAcks.saved?.stored == phonePush().registration())
+        // The next connection: the Mac has it already.
+        rig.link.emit(.state(offline))
+        connect(rig.link)
+        await settle()
+        #expect(rig.link.pushes.count == 1)
+        // A change while connected goes out at once, once.
+        store.setPush(phonePush(done: true))
+        #expect(await becomes { rig.link.pushes.count == 2 })
+        store.setPush(phonePush(done: true))
+        await settle()
+        #expect(rig.link.pushes == [phonePush().registration(), phonePush(done: true).registration()])
+
+        // A launch later the confirmation is still there: nothing to send.
+        let relaunched = Rig(pushAck: rig.pushAcks.saved)
+        let again = relaunched.makeStore()
+        again.setPush(phonePush(done: true))
+        connect(relaunched.link)
+        await settle()
+        #expect(relaunched.link.pushes.isEmpty)
+        #expect(again.pushStatus == "已登记")
+
+        // A Mac without a push setup is asked again on each connection (it may have one by then), once each.
+        let unready = Rig()
+        let asking = unready.makeStore()
+        unready.link.replyToPush(with: .stored("已登记；这台 Mac 还没配置推送"))
+        asking.setPush(phonePush())
+        connect(unready.link)
+        #expect(await becomes { asking.pushStatus == "已登记；这台 Mac 还没配置推送" })
+        await settle()
+        #expect(unready.link.pushes.count == 1)
+        unready.link.replyToPush(with: .stored("已登记"))
+        unready.link.emit(.state(offline))
+        connect(unready.link)
+        #expect(await becomes { asking.pushStatus == "已登记" })
+        #expect(unready.link.pushes.count == 2)
+    }
+
+    @Test func everythingOffSendsAnEmptyToken() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.setPush(phonePush())
+        connect(rig.link)
+        #expect(await becomes { rig.link.pushes.count == 1 })
+        // Notifications switched off in the system's settings, and the Live Activity off.
+        store.setPush(phonePush(notificationsAllowed: false, activity: false))
+        #expect(await becomes { rig.link.pushes.count == 2 })
+        #expect(rig.link.pushes.last?.token == "")
+        #expect(store.pushStatus == "通知被关掉了，去系统设置打开")
+    }
+
+    @Test func anOldMacIsTriedOncePerVersion() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        rig.link.replyToPush(with: .noReply)
+        store.setPush(phonePush())
+        connect(rig.link, version: "1.3.0")
+        #expect(await becomes { store.pushStatus == "这台 Mac 上的 Critter 版本太旧，收不到推送" })
+        // The connection stays, and the next ones to that version do not try again, whatever changes.
+        rig.link.emit(.state(offline))
+        connect(rig.link, version: "1.3.0")
+        store.setPush(phonePush(done: true))
+        await settle()
+        #expect(rig.link.pushes.count == 1)
+        #expect(rig.link.stops == 0)
+        // An updated Mac is asked.
+        rig.link.replyToPush(with: .stored("已登记"))
+        rig.link.emit(.state(offline))
+        connect(rig.link, version: "1.5.0")
+        #expect(await becomes { store.pushStatus == "已登记" })
+        #expect(rig.link.pushes.count == 2)
+    }
+
+    @Test func theMacsStatusLineIsShown() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        rig.link.replyToPush(with: .stored("已登记；这台 Mac 还没配置推送"))
+        // Nothing to register with yet.
+        #expect(store.pushStatus == "还没登记（要连上 Mac）")
+        store.setPush(phonePush())
+        connect(rig.link)
+        #expect(await becomes { store.pushStatus == "已登记；这台 Mac 还没配置推送" })
+        // Refused, in the Mac's words.
+        rig.link.replyToPush(with: .rejected("保存失败"))
+        store.setPush(phonePush(done: true))
+        #expect(await becomes { store.pushStatus == "保存失败" })
+    }
+
+    @Test func unpairUnregistersFirstWhenOnline() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.setPush(phonePush())
+        connect(rig.link)
+        #expect(await becomes { rig.link.pushes.count == 1 })
+        #expect(await becomes { store.pushStatus == "已登记" })
+        // The Mac takes its time with the unregistration.
+        rig.link.holdPushes()
+        store.unpair()
+        // Unpaired on the phone at once, and nothing of the registration is kept.
+        #expect(store.pairing == nil)
+        #expect(store.pushStatus == "还没登记（要连上 Mac）")
+        #expect(rig.pushAcks.saved == nil)
+        // The old connection first takes the registration back (an empty token), then goes -- within 3 s.
+        #expect(await becomes { rig.link.pushes.count == 2 })
+        #expect(rig.link.pushes.last?.token == "")
+        #expect(await rig.timer.waitForSleepers(1))
+        #expect(rig.timer.asked == [.seconds(3)])
+        rig.timer.advance(by: .seconds(2))
+        await settle()
+        #expect(rig.link.stops == 0)
+        rig.timer.advance(by: .seconds(1))
+        #expect(await becomes { rig.link.stops == 1 })
+        #expect(Array(rig.journal.all.suffix(3)) == ["clear", "push 0 -", "stop 0"])
+        rig.link.releasePushes.open()
+
+        // A Mac that answers at once: stopped right after.
+        let quick = Rig()
+        let answered = quick.makeStore()
+        answered.setPush(phonePush())
+        connect(quick.link)
+        #expect(await becomes { quick.link.pushes.count == 1 })
+        answered.unpair()
+        #expect(await becomes { quick.link.stops == 1 })
+        #expect(quick.link.pushes.last?.token == "")
+
+        // Offline there is no one to tell: stopped at once, nothing sent.
+        let away = Rig()
+        let offlineStore = away.makeStore()
+        offlineStore.setPush(phonePush())
+        away.link.emit(.state(offline))
+        #expect(await becomes { offlineStore.conn == offline })
+        offlineStore.unpair()
+        #expect(await becomes { away.link.stops == 1 })
+        #expect(away.link.pushes.isEmpty)
+    }
+
+    @Test func aNewPairingRegistersAfresh() async {
+        let rig = Rig()
+        let store = rig.makeStore()
+        store.setPush(phonePush())
+        connect(rig.link)
+        #expect(await becomes { rig.link.pushes.count == 1 })
+        _ = await store.pair(target, deviceName: "iPhone")
+        // The new Mac has nothing of this phone's yet.
+        #expect(store.pushStatus == "还没登记（要连上 Mac）")
+        connect(rig.links[1])
+        #expect(await becomes { rig.links[1].pushes == [phonePush().registration()] })
     }
 }
 

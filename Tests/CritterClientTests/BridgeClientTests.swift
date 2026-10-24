@@ -186,7 +186,12 @@ struct BridgeClientTests {
         }
         #expect(sent == pushRegistration)
         rig.mac.send(.result(id: id, ok: true, reason: nil, message: nil))
-        #expect(await reply == .stored)
+        #expect(await reply == .stored(nil))
+        // The Mac's word on whether it can push comes along.
+        async let second = rig.client.registerPush(pushRegistration)
+        let secondId = try #require(await rig.mac.nextFrame()?.commandId)
+        rig.mac.send(.result(id: secondId, ok: true, reason: nil, message: "已登记；这台 Mac 还没配置推送"))
+        #expect(await second == .stored("已登记；这台 Mac 还没配置推送"))
         await rig.client.stop()
     }
 
