@@ -282,3 +282,28 @@ private final class Lines: @unchecked Sendable {
     registry.setPush(deviceId: a.id, push(token: ""))
     #expect(registry.list().first?.unconfirmedActivityStart == nil)
 }
+
+/// The writes push makes say whether the file took them (`PushRegistryEdits.keep` reads the list again only then).
+@Test func pushWritesSayWhetherTheFileTookThem() throws {
+    let file = tempFile()
+    let dir = file.deletingLastPathComponent()
+    defer {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+        try? FileManager.default.removeItem(at: dir)
+    }
+    let registry = DeviceRegistry(file: file)
+    let (a, _) = try registry.add(name: "iPhone", now: 5)
+    registry.setPush(deviceId: a.id, push(activity: activity))
+    #expect(registry.setUnconfirmedActivityStart(deviceId: a.id, at: 42))
+    #expect(registry.setActivity(deviceId: a.id, activityId: nil, activityToken: nil))
+
+    // The folder takes no new file: nothing can be written over the devices file.
+    try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: dir.path)
+    #expect(!registry.setUnconfirmedActivityStart(deviceId: a.id, at: 43))
+    #expect(!registry.setActivity(deviceId: a.id, activityId: "A2", activityToken: "8e8e"))
+    #expect(!registry.dropPushToken(deviceId: a.id))
+    #expect(registry.list().first?.unconfirmedActivityStart == 42)
+    #expect(registry.list().first?.push != nil)
+    // Nothing to change is not a failed write.
+    #expect(registry.setUnconfirmedActivityStart(deviceId: a.id, at: 42))
+}

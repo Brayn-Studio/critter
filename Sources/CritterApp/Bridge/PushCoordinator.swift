@@ -202,17 +202,7 @@ final class PushCoordinator: @unchecked Sendable {
     /// Writes what the fan-out needs kept to `devices.json`: Live Activity tokens it ended, starts waiting for
     /// their token.
     private func keepRegistryEdits() {
-        let edits = fanout.takeRegistryEdits()
-        guard !edits.isEmpty else { return }
-        for edit in edits {
-            switch edit {
-            case .clearActivity(let deviceId):
-                registry.setActivity(deviceId: deviceId, activityId: nil, activityToken: nil)
-            case .unconfirmedActivityStart(let deviceId, let time):
-                registry.setUnconfirmedActivityStart(deviceId: deviceId, at: time)
-            }
-        }
-        onRegistryChanged?()
+        PushRegistryEdits.keep(fanout.takeRegistryEdits(), in: registry, log: log) { onRegistryChanged?() }
     }
 
     private func makeSender() -> PushSender {

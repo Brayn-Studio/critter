@@ -134,8 +134,9 @@ public final class DeviceRegistry: @unchecked Sendable {
 
 
     /// APNs said the device token is no good (the app was deleted): forgets the whole
-    /// registration, for the phone to make a new one.
-    public func dropPushToken(deviceId: String) {
+    /// registration, for the phone to make a new one. False if the file could not be written.
+    @discardableResult
+    public func dropPushToken(deviceId: String) -> Bool {
         change(deviceId) {
             $0.push = nil
             $0.unconfirmedActivityStart = nil
@@ -143,8 +144,9 @@ public final class DeviceRegistry: @unchecked Sendable {
     }
 
     /// Keeps (or, with nil, clears) when the Mac push-to-started a Live Activity whose token has not come yet.
-    /// Does nothing for a device without a registration.
-    public func setUnconfirmedActivityStart(deviceId: String, at time: Int64?) {
+    /// Does nothing for a device without a registration. False if the file could not be written.
+    @discardableResult
+    public func setUnconfirmedActivityStart(deviceId: String, at time: Int64?) -> Bool {
         change(deviceId) {
             guard $0.push != nil else { return }
             $0.unconfirmedActivityStart = time
@@ -152,8 +154,10 @@ public final class DeviceRegistry: @unchecked Sendable {
     }
 
     /// Sets (or, with nil, clears) the running Live Activity's id and push token. Does nothing
-    /// for a device without a registration or without a Live Activity part.
-    public func setActivity(deviceId: String, activityId: String?, activityToken: String?) {
+    /// for a device without a registration or without a Live Activity part. False if the file could not be
+    /// written.
+    @discardableResult
+    public func setActivity(deviceId: String, activityId: String?, activityToken: String?) -> Bool {
         change(deviceId) {
             guard $0.push?.activity != nil else { return }
             $0.push?.activity?.activityId = activityId

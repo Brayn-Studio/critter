@@ -445,3 +445,107 @@ private func timestamps(_ pushes: [OutgoingPush]) -> [Int] {
     #expect(liveEvents(pair) == ["end>activity:a1a1", "start>activityStart:5151"])
     #expect(timestamps(pair) == [Int(restart / 1000), Int(restart / 1000) + 1])
 }
+
+// MARK: - Keeping the registry
+
+/// A devices file in memory. `writable` false: it never takes a write (the disk is full, say), says so, and stays
+/// as it was.
+private final class FakeRegistry: PushRegistryWriting {
+    private(set) var records: [DeviceRecord]
+    let writable: Bool
+    private(set) var writes = 0
+
+    init(_ records: [DeviceRecord], writable: Bool) {
+        self.records = records
+        self.writable = writable
+    }
+
+    func setActivity(deviceId: String, activityId: String?, activityToken: String?) -> Bool {
+        write(deviceId) {
+            $0.push?.activity?.activityId = activityId
+            $0.push?.activity?.activityToken = activityToken
+        }
+    }
+
+    func setUnconfirmedActivityStart(deviceId: String, at time: Int64?) -> Bool {
+        write(deviceId) { $0.unconfirmedActivityStart = time }
+    }
+
+    func dropPushToken(deviceId: String) -> Bool {
+        write(deviceId) {
+            $0.push = nil
+            $0.unconfirmedActivityStart = nil
+        }
+    }
+
+    private func write(_ deviceId: String, _ edit: (inout DeviceRecord) -> Void) -> Bool {
+        writes += 1
+        guard writable else { return false }
+        for i in records.indices where records[i].id == deviceId { edit(&records[i]) }
+        return true
+    }
+}
+
+/// `PushCoordinator` and `BridgeController` as they are wired: edits are kept with `PushRegistryEdits.keep`, and
+/// a registry that changed is read again (`refreshDevices`) and handed to the fan-out (`devicesChanged`), which
+/// keeps what that asks for in turn. `refreshes` counts the reads; past `limit` it stops, so a loop fails the test
+/// instead of overflowing the stack.
+private final class RegistryLoop {
+    let fanout: PushFanout
+    let registry: FakeRegistry
+    private(set) var refreshes = 0
+    private(set) var logs: [String] = []
+    let limit = 20
+
+    init(_ fanout: PushFanout, _ registry: FakeRegistry) {
+        self.fanout = fanout
+        self.registry = registry
+    }
+
+    func keepEdits() {
+        PushRegistryEdits.keep(fanout.takeRegistryEdits(), in: registry, log: { self.logs.append($0) }) { self.devicesChanged() }
+    }
+
+    func devicesChanged() {
+        refreshes += 1
+        guard refreshes <= limit else { return }
+        fanout.sync(registry.records)
+        keepEdits()
+    }
+}
+
+@Test func aDevicesFileThatCannotBeWrittenDoesNotLoop() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let records = [record("a", registration("aa", activity: start))]
+    let loop = RegistryLoop(fanout(records), FakeRegistry(records, writable: false))
+    // A push-to-start: the Mac asks to keep it while its token is on the way, and the write fails.
+    #expect(liveEvents(loop.fanout.snapshot(body([session("s1", .running)]), now: t0)) == ["start>activityStart:5151"])
+    loop.keepEdits()
+    #expect(loop.refreshes == 0)
+    #expect(loop.registry.writes == 1)
+    #expect(loop.logs.count == 1)
+
+    // The next change of the device list (a `lastSeen`, say) brings back what the file still says: the fan-out asks
+    // once more, the write fails once more, and that is all.
+    loop.devicesChanged()
+    #expect(loop.refreshes == 1)
+    #expect(loop.registry.writes == 2)
+    // The start is still held off meanwhile: no second activity.
+    #expect(liveEvents(loop.fanout.snapshot(body([session("s1", .waiting)]), now: t0 + 20 * 60_000)).isEmpty)
+}
+
+@Test func aWrittenEditReadsTheDevicesOnceMore() {
+    let start = ActivityRegistration(enabled: true, startToken: "5151")
+    let records = [record("a", registration("aa", activity: start))]
+    let loop = RegistryLoop(fanout(records), FakeRegistry(records, writable: true))
+    _ = loop.fanout.snapshot(body([session("s1", .running)]), now: t0)
+    loop.keepEdits()
+    // Written: the list is read again, and it now says what the fan-out asked for, so nothing more is asked.
+    #expect(loop.refreshes == 1)
+    #expect(loop.registry.writes == 1)
+    #expect(loop.registry.records.first?.unconfirmedActivityStart == t0)
+    #expect(loop.logs.isEmpty)
+    // Nothing to keep: nothing is read.
+    loop.keepEdits()
+    #expect(loop.refreshes == 1)
+}
