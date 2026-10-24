@@ -74,7 +74,7 @@ val LightCritterColors = CritterColors(
     ink = Color(0xFF2A2140), ink2 = Color(0xFF625A7A), ink3 = Color(0xFF8C85A3),
     brand = Color(0xFF6346D6), brandDeep = Color(0xFF4A30B0), brandSoft = Color(0xFFECE7FF), onBrand = Color(0xFFFFFFFF),
     knob = Color(0xFFFFFFFF), highlight = Color(0x80FFFFFF),
-    run = Color(0xFFA86B00), runBg = Color(0xFFFFF1CC), runGlyph = Color(0xFFE8A21E),
+    run = Color(0xFF965F00), runBg = Color(0xFFFFF1CC), runGlyph = Color(0xFFE8A21E),
     wait = Color(0xFFFF9F0A), waitDeep = Color(0xFFD97F00), waitInk = Color(0xFF9A5600), waitBg = Color(0xFFFFE9CC),
     done = Color(0xFF1E7A3A), doneBg = Color(0xFFDFF5E4), doneGlyph = Color(0xFF2FB457),
     err = Color(0xFFC42A20), errBg = Color(0xFFFFE3E0), errGlyph = Color(0xFFF0453A),

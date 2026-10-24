@@ -68,6 +68,39 @@ class BoardTriggerTest {
         assertEquals(close, t.onTick(9_000))
     }
 
+    /**
+     * Switched off in the middle of a hold, the hold is forgotten: its deadline would only come round to an open that
+     * can no longer happen (a caller that re-posts a tick for it would spin), and switched on again it must not
+     * open on the old stillness, without a fresh 3 s.
+     */
+    @Test fun switchingOffDuringTheHoldForgetsIt() {
+        val t = BoardTrigger()
+        t.onPower(true, 0)
+        t.onOrientation(landscape, true, 0)
+        assertEquals(3_000L, t.nextDeadline())
+        t.autoOpen = false
+        assertNull(t.nextDeadline())
+        assertEquals(none, t.onTick(3_000))
+        assertNull(t.nextDeadline())
+        // Switched on again: the hold starts afresh from the next still reading.
+        t.autoOpen = true
+        assertNull(t.nextDeadline())
+        assertEquals(none, t.onTick(3_500))
+        assertEquals(none, t.onOrientation(landscape, true, 4_000))
+        assertEquals(7_000L, t.nextDeadline())
+        assertEquals(none, t.onTick(6_999))
+        assertEquals(open, t.onTick(7_000))
+
+        // Off and on again before the old deadline: still no open at it.
+        val quick = BoardTrigger()
+        quick.onPower(true, 0)
+        quick.onOrientation(landscape, true, 0)
+        quick.autoOpen = false
+        quick.autoOpen = true
+        assertEquals(none, quick.onTick(3_000))
+        assertNull(quick.nextDeadline())
+    }
+
     @Test fun brieflyUprightDoesNotExit() {
         val t = shownTrigger()
         assertEquals(none, t.onOrientation(upright, true, 1_000))

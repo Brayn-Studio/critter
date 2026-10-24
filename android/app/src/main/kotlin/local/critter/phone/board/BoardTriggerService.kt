@@ -39,8 +39,9 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
 
     private val tick = Runnable {
         scheduledAt = null
-        perform(trigger.onTick(now()))
-        update()
+        val action = trigger.onTick(now())
+        perform(action)
+        update(afterIdleTick = action == Action.None)
     }
 
     private val receiver = object : BroadcastReceiver() {
@@ -166,10 +167,10 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
     }
 
     /** Sensor on or off, and the timer re-aimed, after anything the trigger was told. */
-    private fun update() {
+    private fun update(afterIdleTick: Boolean = false) {
         if (!started) return
         if (trigger.sensorWanted) listen() else unlisten()
-        reschedule()
+        reschedule(afterIdleTick)
     }
 
     private fun listen() {
@@ -186,12 +187,23 @@ class BoardTriggerService(private val context: Context, private val enabled: () 
         listening = false
     }
 
-    private fun reschedule() {
+    /**
+     * One timer for the trigger's next deadline, if it has one. A deadline already past that a tick deciding nothing
+     * left behind is not re-posted: it would only come round at once to the same nothing, again and again. The next
+     * thing the trigger is told re-aims the timer.
+     */
+    private fun reschedule(afterIdleTick: Boolean = false) {
         val deadline = trigger.nextDeadline()
         if (deadline == scheduledAt) return
         handler.removeCallbacks(tick)
         scheduledAt = deadline
-        if (deadline != null) handler.postDelayed(tick, (deadline - now()).coerceAtLeast(0))
+        if (deadline == null) return
+        val wait = deadline - now()
+        if (afterIdleTick && wait <= 0) {
+            Log.d(TAG, "a deadline ${-wait} ms past is left after a tick that decided nothing; not re-posted")
+            return
+        }
+        handler.postDelayed(tick, wait.coerceAtLeast(0))
     }
 
     private fun now() = SystemClock.elapsedRealtime()
