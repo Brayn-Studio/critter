@@ -391,12 +391,12 @@ iPhone 上的 Critter 只在前台时连着 Mac，所以平时由 Mac 通过 App
 
 ## iOS（开发中）
 
-iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模拟器里跑，还没有装到真机上。它和安卓版一样连到 Mac 上的 Critter，外观是同一套像素风格；App 不开着时，由 Mac 经 APNs 推送通知、更新实时活动。
+iPhone 版的 Critter（源码在 `ios/`）还在开发中，没有上架 App Store，用 `make ios` 构建、从这台 Mac 装到手机上（见下面的"装到 iPhone 上"）。已在 iPhone 16 Pro / iOS 27.0.1 上验证（2026-10-24）。它和安卓版一样连到 Mac 上的 Critter，外观是同一套像素风格；App 不开着时，由 Mac 经 APNs 推送通知、更新实时活动。
 
 现在能做的：
 
 - 首次引导：第一次打开（没配对、也没走过引导）依次是欢迎页、配对、通知权限、实时活动说明、充电时自动打开看板（在「快捷指令」里建一个自动化的三步图解），上面一排种子写着 `n / 4`。每一步都能跳过，并说跳过少了什么（配对这一步的「跳过」在扫码页上，手动输入、等 Mac 同意、配对失败这几页要先回到扫码页）；跳过了配对，走完引导就到配对页。设置里「重新走一遍引导」可以再看一遍。
-- 配对：扫 Mac 上的二维码、打开 `critter-pair://` 链接，或者从局域网里选一台 Mac 再输入 8 位码，流程和安卓版一样。等 Mac 点允许时屏幕保持常亮；相机开不了时扫码框里说原因；本地网络权限被拒时，首页的离线卡片、手动输入页和连不上的失败页会说"没有本地网络权限"，带「去设置」（模拟器不管这个权限，只用 `-critterLocalNetworkDenied` 看过）。
+- 配对：扫 Mac 上的二维码、打开 `critter-pair://` 链接，或者从局域网里选一台 Mac 再输入 8 位码，流程和安卓版一样。第一次配对时系统会弹出「本地网络」权限，答完后 App 自己再连一次，不用重新扫码；等 Mac 点允许时屏幕保持常亮；相机开不了时扫码框里说原因；本地网络权限被拒时，首页的离线卡片、手动输入页和连不上的失败页会说"没有本地网络权限"，带「去设置」（模拟器不管这个权限，只用 `-critterLocalNetworkDenied` 看过）。
 - 看会话：首页上半是一片草地，每个会话一只宠物站在上面（等你确认的头顶冒橙色气泡，会话多了放不下的合成一堆）；草地跟着时间换天空，离线时天黑、宠物睡着。下面是 5 小时和 7 天两张额度卡和会话列表，等你确认的排在最前。点一行看详情；做完了的会话点开时会告诉 Mac 你看过了。
 - 回应会话：在详情里给会话发一句话（Codex 会话要电脑那边接通了控制通道才行），或者停止 Codex 当前这一回合；权限请求直接在首页点"拒绝""允许"，提问和计划点"打开回答"，在卡片里回答。
 - 通知（要 Mac 配好 APNs 密钥，见"iPhone 推送"）：
@@ -418,7 +418,7 @@ iPhone 版的 Critter（源码在 `ios/`）还在开发中，现在只能在模�
 - 和 Mac 的联机：模拟器里的 App 连这台 Mac 上真的 Critter，登记推送（模拟器自己拿到的 sandbox token）、设置里显示 Mac 回的那句话、取消配对时先撤销登记，都对着真的 Mac 走过。
 - 计划 2 留下的：看板自动打开（模拟器没有充电状态和重力传感器，只能用 `-critterFakeDock` 模拟充电横放）、亮度调节和保持常亮（模拟器不理亮度写入，日志只证明调用对）、系统的"减少动态效果"开关（`simctl` 改不了，只试了 App 自己的开关）、Mac 把清单发来后换掉小芽（只有单元测试）、扫码（模拟器没有相机，只看到了没有相机时的那一页）。模拟器也发不了触摸和键盘，点按、拖动、输入这几条路径只读过代码。
 
-装到真机之前要做的事和要在真机上验证的，列在 `docs/critter-ios-backlog.md` 的"装到真机的计划"里。iPhone 上没有悬浮球：iOS 不允许 App 画在其他 App 上面，由实时活动代替。
+真机上验证过什么、还有哪些没验证，列在 `docs/critter-ios-backlog.md` 的"真机上还没验证的"里。iPhone 上没有悬浮球：iOS 不允许 App 画在其他 App 上面，由实时活动代替。
 
 在模拟器里跑（需要 Xcode，最低 iOS 17.2，只支持 iPhone）：
 
@@ -457,7 +457,7 @@ make ios-install                   # 装到连着这台 Mac 的那一台 iPhone 
 ALLOW_PROVISIONING=1 make ios      # 让 Xcode 自己去开发者账号里登记（见下），只在账号主人同意时用
 ```
 
-- **`make ios`** 用手动签名（`ios/Config/Base.xcconfig` 里的 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`），所以 Xcode 不会自己去开发者账号里登记任何东西。构建前先找这台 Mac 上装好的描述文件（`scripts/ios-device.sh profiles`，只读）：App 和两个扩展各要一份，是这个 Team 的 App ID（`com.braynlabs.critter`、`.notify`、`.widgets`）、没过期、带齐 `ios/Config/*.entitlements` 里的能力（App Group `group.com.braynlabs.critter`、钥匙串共享组、推送、时效性通知，清单见 `docs/critter-ios-backlog.md`"描述文件要带齐这些能力"）。缺哪一份、少哪个能力、哪份过期，它都说出来并停下，不开始构建。描述文件要是开发用的（推送登记的是 `sandbox`）。先在开发者网站给三个 App ID 打开这些能力、生成描述文件，再用 Xcode（设置 › Accounts › 下载手动描述文件）装到这台 Mac 上。用过一次 `ALLOW_PROVISIONING=1` 以后，这台 Mac 上的是 Xcode 自己管理的描述文件，手动签名用不了它们：三份都是这种时，`make ios` 改用自动签名，但不加 `-allowProvisioningUpdates`，所以 Xcode 只用已经装好的描述文件，不连开发者账号；三份里两种混着时它会说明并停下。`scripts/dev/test-ios-device.sh` 用假的描述文件检查这几种情况。
+- **`make ios`** 用手动签名（`ios/Config/Base.xcconfig` 里的 `CODE_SIGN_STYLE[sdk=iphoneos*] = Manual`），所以 Xcode 不会自己去开发者账号里登记任何东西。构建前先找这台 Mac 上装好的描述文件（`scripts/ios-device.sh profiles`，只读）：App 和两个扩展各要一份，是这个 Team 的 App ID（`com.braynlabs.critter`、`.notify`、`.widgets`）、没过期、带齐 `ios/Config/*.entitlements` 里的能力（App Group `group.com.braynlabs.critter`：App 和两个扩展都要；钥匙串共享组 `<Team ID>.com.braynlabs.critter.shared`：App 和通知扩展；推送 `aps-environment = development` 和时效性通知：App）。缺哪一份、少哪个能力、哪份过期，它都说出来并停下，不开始构建。描述文件要是开发用的（推送登记的是 `sandbox`）。先在开发者网站给三个 App ID 打开这些能力、生成描述文件，再用 Xcode（设置 › Accounts › 下载手动描述文件）装到这台 Mac 上。用过一次 `ALLOW_PROVISIONING=1` 以后，这台 Mac 上的是 Xcode 自己管理的描述文件，手动签名用不了它们：三份都是这种时，`make ios` 改用自动签名，但不加 `-allowProvisioningUpdates`，所以 Xcode 只用已经装好的描述文件，不连开发者账号；三份里两种混着时它会说明并停下。`scripts/dev/test-ios-device.sh` 用假的描述文件检查这几种情况。
 - **`ALLOW_PROVISIONING=1`** 这一次构建改成自动签名并加 `-allowProvisioningUpdates`：Xcode 会自己在开发者账号里给 App ID 打开能力、登记 App Group、生成描述文件，开头会打印"这会在开发者账号里登记 App ID 能力和 App Group"。它改的是账号里的东西，只在账号主人同意时用；仓库里的签名设置不变。
 - **`make ios-install`** 用 `xcrun devicectl list devices` 找连着的 iPhone（真机、和这台 Mac 配对过、连得上：线连着，或者配对过后在同一个 Wi‑Fi 里），正好一台时用 `xcrun devicectl device install app` 装上；一台都没有或者不止一台时说清楚并停下（`scripts/ios-device.sh iphone`）。手机要解锁、信任这台 Mac，并在 设置 › 隐私与安全性 里打开开发者模式。
 
