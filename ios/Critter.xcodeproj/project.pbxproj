@@ -14,7 +14,44 @@
 		C7A100000000000000000052 /* nunito.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000042 /* nunito.ttf */; };
 		C7A100000000000000000053 /* silkscreen_regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000043 /* silkscreen_regular.ttf */; };
 		C7A100000000000000000054 /* silkscreen_bold.ttf in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000044 /* silkscreen_bold.ttf */; };
+		C7A10000000000000000006B /* CritterKit in Frameworks */ = {isa = PBXBuildFile; productRef = C7A10000000000000000006A /* CritterKit */; };
+		C7A10000000000000000007B /* CritterKit in Frameworks */ = {isa = PBXBuildFile; productRef = C7A10000000000000000007A /* CritterKit */; };
+		C7A10000000000000000007C /* Skins in Resources */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000040 /* Skins */; };
+		C7A100000000000000000082 /* CritterNotify.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000061 /* CritterNotify.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		C7A100000000000000000083 /* CritterWidgets.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = C7A100000000000000000071 /* CritterWidgets.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 /* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C7A100000000000000000085 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7A100000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C7A100000000000000000060;
+			remoteInfo = CritterNotify;
+		};
+		C7A100000000000000000087 /* PBXContainerItemProxy */ = {
+			isa = PBXContainerItemProxy;
+			containerPortal = C7A100000000000000000001 /* Project object */;
+			proxyType = 1;
+			remoteGlobalIDString = C7A100000000000000000070;
+			remoteInfo = CritterWidgets;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXCopyFilesBuildPhase section */
+		C7A100000000000000000081 /* Embed Foundation Extensions */ = {
+			isa = PBXCopyFilesBuildPhase;
+			buildActionMask = 2147483647;
+			dstPath = "";
+			dstSubfolderSpec = 13;
+			files = (
+				C7A100000000000000000082 /* CritterNotify.appex in Embed Foundation Extensions */,
+				C7A100000000000000000083 /* CritterWidgets.appex in Embed Foundation Extensions */,
+			);
+			name = "Embed Foundation Extensions";
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
 		C7A100000000000000000005 /* Critter.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = Critter.app; sourceTree = BUILT_PRODUCTS_DIR; };
@@ -25,12 +62,37 @@
 		C7A100000000000000000042 /* nunito.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = nunito.ttf; path = ../android/app/src/main/res/font/nunito.ttf; sourceTree = SOURCE_ROOT; };
 		C7A100000000000000000043 /* silkscreen_regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = silkscreen_regular.ttf; path = ../android/app/src/main/res/font/silkscreen_regular.ttf; sourceTree = SOURCE_ROOT; };
 		C7A100000000000000000044 /* silkscreen_bold.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; name = silkscreen_bold.ttf; path = ../android/app/src/main/res/font/silkscreen_bold.ttf; sourceTree = SOURCE_ROOT; };
+		C7A100000000000000000061 /* CritterNotify.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CritterNotify.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7A100000000000000000069 /* CritterNotify.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CritterNotify.xcconfig; sourceTree = "<group>"; };
+		C7A100000000000000000071 /* CritterWidgets.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = CritterWidgets.appex; sourceTree = BUILT_PRODUCTS_DIR; };
+		C7A100000000000000000079 /* CritterWidgets.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = CritterWidgets.xcconfig; sourceTree = "<group>"; };
+		C7A100000000000000000088 /* Critter.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = Critter.entitlements; sourceTree = "<group>"; };
+		C7A100000000000000000089 /* CritterNotify.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CritterNotify.entitlements; sourceTree = "<group>"; };
+		C7A10000000000000000008A /* CritterWidgets.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = CritterWidgets.entitlements; sourceTree = "<group>"; };
+		C7A10000000000000000008B /* CritterNotify-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CritterNotify-Info.plist"; sourceTree = "<group>"; };
+		C7A10000000000000000008C /* CritterWidgets-Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = "CritterWidgets-Info.plist"; sourceTree = "<group>"; };
+		C7A10000000000000000008D /* Base.xcconfig */ = {isa = PBXFileReference; lastKnownFileType = text.xcconfig; path = Base.xcconfig; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFileSystemSynchronizedRootGroup section */
 		C7A100000000000000000006 /* Critter */ = {
 			isa = PBXFileSystemSynchronizedRootGroup;
 			path = Critter;
+			sourceTree = "<group>";
+		};
+		C7A100000000000000000062 /* CritterNotify */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CritterNotify;
+			sourceTree = "<group>";
+		};
+		C7A100000000000000000072 /* CritterWidgets */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = CritterWidgets;
+			sourceTree = "<group>";
+		};
+		C7A100000000000000000080 /* Shared */ = {
+			isa = PBXFileSystemSynchronizedRootGroup;
+			path = Shared;
 			sourceTree = "<group>";
 		};
 /* End PBXFileSystemSynchronizedRootGroup section */
@@ -45,6 +107,22 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C7A100000000000000000064 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7A10000000000000000006B /* CritterKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7A100000000000000000074 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7A10000000000000000007B /* CritterKit in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXFrameworksBuildPhase section */
 
 /* Begin PBXGroup section */
@@ -52,7 +130,10 @@
 			isa = PBXGroup;
 			children = (
 				C7A100000000000000000006 /* Critter */,
-				C7A100000000000000000045 /* Shared */,
+				C7A100000000000000000062 /* CritterNotify */,
+				C7A100000000000000000072 /* CritterWidgets */,
+				C7A100000000000000000080 /* Shared */,
+				C7A100000000000000000045 /* Bundled */,
 				C7A100000000000000000011 /* Config */,
 				C7A100000000000000000003 /* Products */,
 			);
@@ -62,11 +143,13 @@
 			isa = PBXGroup;
 			children = (
 				C7A100000000000000000005 /* Critter.app */,
+				C7A100000000000000000061 /* CritterNotify.appex */,
+				C7A100000000000000000071 /* CritterWidgets.appex */,
 			);
 			name = Products;
 			sourceTree = "<group>";
 		};
-		C7A100000000000000000045 /* Shared */ = {
+		C7A100000000000000000045 /* Bundled */ = {
 			isa = PBXGroup;
 			children = (
 				C7A100000000000000000040 /* Skins */,
@@ -75,14 +158,22 @@
 				C7A100000000000000000043 /* silkscreen_regular.ttf */,
 				C7A100000000000000000044 /* silkscreen_bold.ttf */,
 			);
-			name = Shared;
+			name = Bundled;
 			sourceTree = "<group>";
 		};
 		C7A100000000000000000011 /* Config */ = {
 			isa = PBXGroup;
 			children = (
+				C7A10000000000000000008D /* Base.xcconfig */,
 				C7A100000000000000000012 /* Critter.xcconfig */,
 				C7A100000000000000000013 /* Info.plist */,
+				C7A100000000000000000088 /* Critter.entitlements */,
+				C7A100000000000000000069 /* CritterNotify.xcconfig */,
+				C7A10000000000000000008B /* CritterNotify-Info.plist */,
+				C7A100000000000000000089 /* CritterNotify.entitlements */,
+				C7A100000000000000000079 /* CritterWidgets.xcconfig */,
+				C7A10000000000000000008C /* CritterWidgets-Info.plist */,
+				C7A10000000000000000008A /* CritterWidgets.entitlements */,
 			);
 			path = Config;
 			sourceTree = "<group>";
@@ -97,13 +188,17 @@
 				C7A100000000000000000007 /* Sources */,
 				C7A100000000000000000008 /* Frameworks */,
 				C7A100000000000000000009 /* Resources */,
+				C7A100000000000000000081 /* Embed Foundation Extensions */,
 			);
 			buildRules = (
 			);
 			dependencies = (
+				C7A100000000000000000084 /* PBXTargetDependency */,
+				C7A100000000000000000086 /* PBXTargetDependency */,
 			);
 			fileSystemSynchronizedGroups = (
 				C7A100000000000000000006 /* Critter */,
+				C7A100000000000000000080 /* Shared */,
 			);
 			name = Critter;
 			packageProductDependencies = (
@@ -113,6 +208,54 @@
 			productName = Critter;
 			productReference = C7A100000000000000000005 /* Critter.app */;
 			productType = "com.apple.product-type.application";
+		};
+		C7A100000000000000000060 /* CritterNotify */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7A100000000000000000066 /* Build configuration list for PBXNativeTarget "CritterNotify" */;
+			buildPhases = (
+				C7A100000000000000000063 /* Sources */,
+				C7A100000000000000000064 /* Frameworks */,
+				C7A100000000000000000065 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C7A100000000000000000062 /* CritterNotify */,
+				C7A100000000000000000080 /* Shared */,
+			);
+			name = CritterNotify;
+			packageProductDependencies = (
+				C7A10000000000000000006A /* CritterKit */,
+			);
+			productName = CritterNotify;
+			productReference = C7A100000000000000000061 /* CritterNotify.appex */;
+			productType = "com.apple.product-type.app-extension";
+		};
+		C7A100000000000000000070 /* CritterWidgets */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = C7A100000000000000000076 /* Build configuration list for PBXNativeTarget "CritterWidgets" */;
+			buildPhases = (
+				C7A100000000000000000073 /* Sources */,
+				C7A100000000000000000074 /* Frameworks */,
+				C7A100000000000000000075 /* Resources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			fileSystemSynchronizedGroups = (
+				C7A100000000000000000072 /* CritterWidgets */,
+				C7A100000000000000000080 /* Shared */,
+			);
+			name = CritterWidgets;
+			packageProductDependencies = (
+				C7A10000000000000000007A /* CritterKit */,
+			);
+			productName = CritterWidgets;
+			productReference = C7A100000000000000000071 /* CritterWidgets.appex */;
+			productType = "com.apple.product-type.app-extension";
 		};
 /* End PBXNativeTarget section */
 
@@ -125,6 +268,12 @@
 				LastUpgradeCheck = 2710;
 				TargetAttributes = {
 					C7A100000000000000000004 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					C7A100000000000000000060 = {
+						CreatedOnToolsVersion = 27.1;
+					};
+					C7A100000000000000000070 = {
 						CreatedOnToolsVersion = 27.1;
 					};
 				};
@@ -147,6 +296,8 @@
 			projectRoot = "";
 			targets = (
 				C7A100000000000000000004 /* Critter */,
+				C7A100000000000000000060 /* CritterNotify */,
+				C7A100000000000000000070 /* CritterWidgets */,
 			);
 		};
 /* End PBXProject section */
@@ -164,6 +315,21 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C7A100000000000000000065 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7A100000000000000000075 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				C7A10000000000000000007C /* Skins in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
@@ -174,7 +340,34 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
+		C7A100000000000000000063 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+		C7A100000000000000000073 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
 /* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C7A100000000000000000084 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C7A100000000000000000060 /* CritterNotify */;
+			targetProxy = C7A100000000000000000085 /* PBXContainerItemProxy */;
+		};
+		C7A100000000000000000086 /* PBXTargetDependency */ = {
+			isa = PBXTargetDependency;
+			target = C7A100000000000000000070 /* CritterWidgets */;
+			targetProxy = C7A100000000000000000087 /* PBXContainerItemProxy */;
+		};
+/* End PBXTargetDependency section */
 
 /* Begin XCBuildConfiguration section */
 		C7A10000000000000000000B /* Debug */ = {
@@ -225,6 +418,34 @@
 			};
 			name = Release;
 		};
+		C7A100000000000000000067 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C7A100000000000000000069 /* CritterNotify.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		C7A100000000000000000068 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C7A100000000000000000069 /* CritterNotify.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
+		C7A100000000000000000077 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C7A100000000000000000079 /* CritterWidgets.xcconfig */;
+			buildSettings = {
+			};
+			name = Debug;
+		};
+		C7A100000000000000000078 /* Release */ = {
+			isa = XCBuildConfiguration;
+			baseConfigurationReference = C7A100000000000000000079 /* CritterWidgets.xcconfig */;
+			buildSettings = {
+			};
+			name = Release;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
@@ -246,6 +467,24 @@
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Release;
 		};
+		C7A100000000000000000066 /* Build configuration list for PBXNativeTarget "CritterNotify" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7A100000000000000000067 /* Debug */,
+				C7A100000000000000000068 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
+		C7A100000000000000000076 /* Build configuration list for PBXNativeTarget "CritterWidgets" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				C7A100000000000000000077 /* Debug */,
+				C7A100000000000000000078 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Release;
+		};
 /* End XCConfigurationList section */
 
 /* Begin XCLocalSwiftPackageReference section */
@@ -263,6 +502,14 @@
 		C7A100000000000000000021 /* CritterClient */ = {
 			isa = XCSwiftPackageProductDependency;
 			productName = CritterClient;
+		};
+		C7A10000000000000000006A /* CritterKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CritterKit;
+		};
+		C7A10000000000000000007A /* CritterKit */ = {
+			isa = XCSwiftPackageProductDependency;
+			productName = CritterKit;
 		};
 /* End XCSwiftPackageProductDependency section */
 	};

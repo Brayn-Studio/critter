@@ -1,0 +1,14 @@
+// The notification service extension (CritterNotify/): opens the sealed text of a push (spec §8.7). Both
+// configurations are based on this file.
+
+#include "Base.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.braynlabs.critter.notify
+PRODUCT_NAME = CritterNotify
+INFOPLIST_FILE = Config/CritterNotify-Info.plist
+// The App Group and the shared keychain group (the push key).
+CODE_SIGN_ENTITLEMENTS = Config/CritterNotify.entitlements
+
+APPLICATION_EXTENSION_API_ONLY = YES
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks

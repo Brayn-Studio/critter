@@ -1,0 +1,14 @@
+// The widget extension (CritterWidgets/): only the Live Activity (spec §8.5). Both configurations are based on
+// this file.
+
+#include "Base.xcconfig"
+
+PRODUCT_BUNDLE_IDENTIFIER = com.braynlabs.critter.widgets
+PRODUCT_NAME = CritterWidgets
+INFOPLIST_FILE = Config/CritterWidgets-Info.plist
+// The App Group (custom skins).
+CODE_SIGN_ENTITLEMENTS = Config/CritterWidgets.entitlements
+
+APPLICATION_EXTENSION_API_ONLY = YES
+SKIP_INSTALL = YES
+LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks @executable_path/../../Frameworks

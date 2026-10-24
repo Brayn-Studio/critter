@@ -1,29 +1,21 @@
 // The Critter app target. Both configurations (Debug, Release) are based on this file.
 
+#include "Base.xcconfig"
+
 PRODUCT_BUNDLE_IDENTIFIER = com.braynlabs.critter
 PRODUCT_NAME = Critter
-DEVELOPMENT_TEAM = XB89283VYM
-CODE_SIGN_STYLE = Automatic
-IPHONEOS_DEPLOYMENT_TARGET = 17.2
-TARGETED_DEVICE_FAMILY = 1
-SWIFT_VERSION = 6.0
 INFOPLIST_FILE = Config/Info.plist
-MARKETING_VERSION = 0.1
-CURRENT_PROJECT_VERSION = 1
+// Push (development), the App Group and the keychain group the extensions share.
+CODE_SIGN_ENTITLEMENTS = Config/Critter.entitlements
 
-// Info.plist is written out in full (Config/, outside the synchronized source folder).
-GENERATE_INFOPLIST_FILE = NO
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks
+// The extensions are embedded signed, as built: copying them does not strip them (each strips itself when installed).
+COPY_PHASE_STRIP = NO
 ENABLE_PREVIEWS = YES
 
 // Critter/Assets.xcassets: the app icon (light, dark and tinted, from scripts/dev/make-ios-icon.py) and the launch
 // screen's sky and icon.
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
-
-// iPhone only: no Mac or Vision Pro variants.
-SUPPORTS_MACCATALYST = NO
-SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD = NO
-SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD = NO
 
 // The DEBUG launch arguments and their fixtures (Critter/Debug/) are not in a release build. A pattern's * does
 // not cross a /: each folder is listed.

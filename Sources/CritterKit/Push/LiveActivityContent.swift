@@ -1,7 +1,7 @@
 import Foundation
 
 /// One pet on the Live Activity: the skin's name and the state it shows.
-public struct PetBadge: Codable, Equatable, Sendable {
+public struct PetBadge: Codable, Hashable, Sendable {
     public var skin: String
     public var state: PetState
 
@@ -13,7 +13,7 @@ public struct PetBadge: Codable, Equatable, Sendable {
 
 /// The Live Activity's `ContentState`. The system renders it straight from the push, so it is
 /// numbers, skin names and states -- no session name, path or any other text.
-public struct LiveActivityContent: Codable, Equatable, Sendable {
+public struct LiveActivityContent: Codable, Hashable, Sendable {
     /// `attributes-type` of a push-to-start: the name of the app's `ActivityAttributes` type.
     public static let attributesName = "CritterActivity"
     /// Most pets shown behind the lead one.
