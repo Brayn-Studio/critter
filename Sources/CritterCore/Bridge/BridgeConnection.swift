@@ -6,6 +6,15 @@ public enum SayOutcome: Equatable, Sendable { case sent, unavailable, failed, un
 /// request had an answer already (another phone was first), so this one was dropped.
 public enum AnswerOutcome: Equatable, Sendable { case accepted, alreadyAnswered, failed }
 
+/// What became of a push registration handed to `BridgeServices.registerPush`.
+public enum PushRegistrationOutcome: Equatable, Sendable {
+    /// Kept (or, for an empty token, cleared). `pushReady`: this Mac can push to it now -- its APNs setup works,
+    /// APNs has not refused it, and it is for the app the setup names (spec 8.8).
+    case stored(pushReady: Bool)
+    /// It could not be kept (the devices file could not be written).
+    case failed
+}
+
 /// What a bridge connection needs from the app. `BridgeController` implements it.
 public protocol BridgeServices: AnyObject {
     var macName: String { get }
@@ -22,9 +31,8 @@ public protocol BridgeServices: AnyObject {
     func interrupt(sessionId: String) -> SayOutcome
     func skinManifest(name: String) -> JSONValue?
     func snapshotMessage() -> ServerMessage
-    /// Keeps the device's push registration (an empty one takes it back). False if it could not
-    /// be kept.
-    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool
+    /// Keeps the device's push registration (an empty one takes it back), and says whether the Mac can push to it.
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> PushRegistrationOutcome
 }
 
 public extension BridgeServices {
@@ -118,6 +126,11 @@ public final class BridgeConnection {
         }
     }
 
+    /// The `message` of the `ok` reply to a stored push registration: whether this Mac can push to it now.
+    static func storedPushMessage(pushReady: Bool) -> String {
+        pushReady ? "已登记" : "已登记；这台 Mac 还没配置推送"
+    }
+
     private func result(_ id: String?, _ reason: ResultReason?, _ message: String? = nil) -> [Output] {
         [.send(.result(id: id, ok: reason == nil, reason: reason, message: message))]
     }
@@ -171,7 +184,13 @@ public final class BridgeConnection {
             guard registration.token.isEmpty || (registration.hasValidKey && registration.hasValidTokens) else {
                 return result(id, .invalid, "推送登记无效")
             }
-            return services.registerPush(deviceId: deviceId, registration) ? result(id, nil) : result(id, .failed, "保存失败")
+            switch services.registerPush(deviceId: deviceId, registration) {
+            case .stored(let pushReady):
+                // The phone's settings show it (spec 8.8). Taken back, there is nothing to say about pushing.
+                return result(id, nil, registration.token.isEmpty ? nil : Self.storedPushMessage(pushReady: pushReady))
+            case .failed:
+                return result(id, .failed, "保存失败")
+            }
         case .hello, .pair:
             return []
         }

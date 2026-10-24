@@ -135,6 +135,14 @@ private func target(_ deviceId: String, _ kind: PushTarget.Kind, _ token: String
     #expect(mixed.snapshot(body([session("s1", .waiting)], [pending("r2", "s1")]), now: t0 + 2).isEmpty)
 }
 
+@Test func theRegistrationsReplySaysWhetherTheMacCanPushToIt() {
+    #expect(PushCoordinatorRules.pushReady(registration("aa"), bundleId: bundle, blocked: false))
+    // No working setup, APNs refused it, or it is for another app.
+    #expect(!PushCoordinatorRules.pushReady(registration("aa"), bundleId: nil, blocked: false))
+    #expect(!PushCoordinatorRules.pushReady(registration("aa"), bundleId: bundle, blocked: true))
+    #expect(!PushCoordinatorRules.pushReady(registration("aa", bundleId: "com.example.other"), bundleId: bundle, blocked: false))
+}
+
 @Test func theDestinationDecidesWhetherARegistrationStartsOver() {
     let base = registration("aa", done: false, activity: ActivityRegistration(enabled: true, startToken: "51"))
     #expect(PushCoordinatorRules.startsOver(from: nil, to: base))

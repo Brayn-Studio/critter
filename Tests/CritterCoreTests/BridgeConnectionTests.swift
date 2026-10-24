@@ -16,7 +16,7 @@ private final class FakeServices: BridgeServices {
     var said: [(String, String)] = []
     var interrupted: [String] = []
     var registered: [(String, PushRegistration)] = []
-    var registerResult = true
+    var registerResult = PushRegistrationOutcome.stored(pushReady: true)
 
     func verify(deviceId: String, token: String) -> DeviceRecord? {
         token == goodToken ? DeviceRecord(id: deviceId, name: "P", tokenHash: "h", pairedAt: 0) : nil
@@ -28,7 +28,7 @@ private final class FakeServices: BridgeServices {
     func markSeen(sessionId: String) { seen.append(sessionId) }
     func say(text: String, sessionId: String) -> SayOutcome { said.append((text, sessionId)); return sayResult }
     func interrupt(sessionId: String) -> SayOutcome { interrupted.append(sessionId); return .sent }
-    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool {
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> PushRegistrationOutcome {
         registered.append((deviceId, registration))
         return registerResult
     }
@@ -296,7 +296,8 @@ private func registration(
         registration(token: "", activity: ActivityRegistration(enabled: true, startToken: "NOT HEX")),
     ]
     for item in fine {
-        #expect(c.receive(ClientMessage.push(id: "ok", registration: item).encode()) == [.send(.result(id: "ok", ok: true, reason: nil, message: nil))])
+        let message: String? = item.token.isEmpty ? nil : "已登记"
+        #expect(c.receive(ClientMessage.push(id: "ok", registration: item).encode()) == [.send(.result(id: "ok", ok: true, reason: nil, message: message))])
     }
     #expect(s.registered.count == 3)
 }
@@ -304,21 +305,27 @@ private func registration(
 @Test func connectionAnswersPushWithResult() {
     let s = FakeServices()
     let c = readyConnection(s)
-    // Stored.
+    // Stored, and this Mac can push to it.
     #expect(c.receive(ClientMessage.push(id: "p1", registration: registration()).encode())
-        == [.send(.result(id: "p1", ok: true, reason: nil, message: nil))])
+        == [.send(.result(id: "p1", ok: true, reason: nil, message: "已登记"))])
     #expect(s.registered.map(\.0) == ["dev"])
     #expect(s.registered.first?.1 == registration())
     // A key that is not 32 bytes: nothing is stored.
     #expect(c.receive(ClientMessage.push(id: "p2", registration: registration(key: "short")).encode())
         == [.send(.result(id: "p2", ok: false, reason: .invalid, message: "推送登记无效"))])
     #expect(s.registered.count == 1)
-    // An empty token takes the registration back, whatever the key.
+    // An empty token takes the registration back, whatever the key: nothing to say about pushing.
     #expect(c.receive(ClientMessage.push(id: "p3", registration: registration(token: "", key: "")).encode())
         == [.send(.result(id: "p3", ok: true, reason: nil, message: nil))])
     #expect(s.registered.count == 2)
+    // Stored, but this Mac has no working push setup (or one for another app): the phone shows the Mac's words.
+    s.registerResult = .stored(pushReady: false)
+    #expect(c.receive(ClientMessage.push(id: "p4", registration: registration()).encode())
+        == [.send(.result(id: "p4", ok: true, reason: nil, message: "已登记；这台 Mac 还没配置推送"))])
+    #expect(c.receive(ClientMessage.push(id: "p5", registration: registration(token: "", key: "")).encode())
+        == [.send(.result(id: "p5", ok: true, reason: nil, message: nil))])
     // The Mac could not keep it.
-    s.registerResult = false
+    s.registerResult = .failed
     #expect(c.receive(ClientMessage.push(id: nil, registration: registration()).encode())
         == [.send(.result(id: nil, ok: false, reason: .failed, message: "保存失败"))])
     #expect(c.phase == .ready(deviceId: "dev"))
@@ -344,6 +351,6 @@ private func registration(
     _ = c.receive(ClientMessage.pair(code: "CODE2345", deviceName: "Pixel").encode())
     _ = c.approvePairing(deviceId: "d1", token: "t1")
     #expect(c.receive(ClientMessage.push(id: "p1", registration: registration()).encode())
-        == [.send(.result(id: "p1", ok: true, reason: nil, message: nil))])
+        == [.send(.result(id: "p1", ok: true, reason: nil, message: "已登记"))])
     #expect(s.registered.first?.0 == "d1")
 }

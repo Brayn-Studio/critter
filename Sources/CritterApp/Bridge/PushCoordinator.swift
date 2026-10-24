@@ -153,6 +153,14 @@ final class PushCoordinator: @unchecked Sendable {
         reschedule()
     }
 
+    /// Whether the Mac can push to a phone with this registration now, for the `result` of its `push` frame (spec
+    /// 8.8): the setup works (it is read if it has not been yet: a device has just registered), APNs has not refused
+    /// it, and the registration is for the app the setup names.
+    func canPush(to registration: PushRegistration) -> Bool {
+        guard bridgeOn, setupIsReady() else { return false }
+        return PushCoordinatorRules.pushReady(registration, bundleId: fanout.bundleId, blocked: sender?.blockedReason != nil)
+    }
+
     /// The settings' "发送测试通知": a test notification for every registered device. False if there is
     /// nothing to send it with or to.
     @discardableResult

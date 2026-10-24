@@ -126,6 +126,15 @@ private func docBlocks(_ label: String) throws -> [String] {
     #expect(registration.activity?.enabled == true)
 }
 
+/// The doc's reply to a push registration is exactly what the Mac sends for one it stored without a working push
+/// setup.
+@Test func protocolDocPushResultIsWhatTheMacSends() throws {
+    let block = try #require(try docBlocks("push-result").first)
+    let sent = ServerMessage.result(id: "p1", ok: true, reason: nil, message: BridgeConnection.storedPushMessage(pushReady: false))
+    #expect(String(decoding: sent.encode(), as: UTF8.self) == block)
+    #expect(ServerMessage.decode(Data(block.utf8)) == sent)
+}
+
 /// The doc's push payloads are exactly what `PushPayload` writes, and its sealed text and Live
 /// Activity content are exactly what `PushCrypto` and `LiveActivityContent` make and read.
 @Test func protocolDocPushPayloadExamplesAreWhatTheCodeWrites() throws {

@@ -21,6 +21,12 @@ public enum PushCoordinatorRules {
         return registration.bundleId == bundleId
     }
 
+    /// What the Mac's `result` to a registration says (spec 8.8): whether it can push to it now -- the setup works
+    /// (`bundleId` is nil without one), APNs has not refused it, and the registration is for the app it names.
+    public static func pushReady(_ registration: PushRegistration, bundleId: String?, blocked: Bool) -> Bool {
+        !blocked && canPush(registration, bundleId: bundleId)
+    }
+
     /// Whether a device's new registration starts its notifications over (the next snapshot only records):
     /// a device that just registered, or one whose pushes now go elsewhere -- another token, environment, app
     /// or key. New preferences or Live Activity tokens carry on.

@@ -82,11 +82,11 @@ extension BridgeController: BridgeServices {
         return try? JSONDecoder().decode(JSONValue.self, from: Data(SkinLoader.builtinJSON.utf8))
     }
 
-    func registerPush(deviceId: String, _ registration: PushRegistration) -> Bool {
-        guard registry.setPush(deviceId: deviceId, registration) else { return false }
+    func registerPush(deviceId: String, _ registration: PushRegistration) -> PushRegistrationOutcome {
+        guard registry.setPush(deviceId: deviceId, registration) else { return .failed }
         refreshDevices()
         pushRegistrationChanged(deviceId: deviceId)
-        return true
+        return .stored(pushReady: push.canPush(to: registration))
     }
 
     /// A device registered for push, or took its registration back. `refreshDevices()` has

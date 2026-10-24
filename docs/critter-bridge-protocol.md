@@ -303,7 +303,12 @@ Rules:
 
 The Mac answers with a `result` (`id` echoed):
 
-- `ok: true` -- stored (or, for an empty `token`, cleared).
+- `ok: true` -- stored (or, for an empty `token`, cleared). A stored registration's `message` says whether this Mac can push to it now, for the phone's settings to show (spec 8.8): `已登记`, or `已登记；这台 Mac 还没配置推送` when the Mac's APNs setup (设置 › iPhone 推送) is missing or unusable, APNs refused it, or it names another bundle id than the registration. A cleared one has no `message`.
+
+```json push-result
+{"id":"p1","message":"已登记；这台 Mac 还没配置推送","ok":true,"type":"result"}
+```
+
 - `ok: false`, `reason: "invalid"`, message `推送登记无效` -- `token` is not empty but `key` is not base64url without padding of exactly 32 bytes, or `token`, `activity.startToken` or `activity.activityToken` (where given and not empty) is not lowercase ASCII hex. Nothing was stored.
 - `ok: false`, `reason: "failed"`, message `保存失败` -- the Mac could not keep it (for example, it could not write its devices file). The phone may try again later.
 
