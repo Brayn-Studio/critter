@@ -7,6 +7,25 @@ public enum SayFeedback {
     /// The longest message "发一句" sends.
     public static let maxLength = 4000
 
+    /// What the "发一句" field holds after the user made it `new` (Android's field and the Mac count UTF-16 units): all
+    /// of it up to `maxLength` units; past that, the characters that fit, never half of one, and `clipped` says the
+    /// sheet must tell what was left out. Clipped stays as it was (`wasClipped`) for a text exactly at the limit, and
+    /// clears once the text is shorter.
+    public static func fit(_ new: String, wasClipped: Bool) -> (text: String, clipped: Bool) {
+        let room = maxLength
+        let units = new.utf16.count
+        if units <= room { return (new, units < room ? false : wasClipped) }
+        var kept = ""
+        var used = 0
+        for character in new {
+            let size = String(character).utf16.count
+            if used + size > room { break }
+            kept.append(character)
+            used += size
+        }
+        return (kept, true)
+    }
+
     /// The words for `result`. For a message: "已发送", the Mac's own explanation when it gave one, else what an
     /// unavailable route means (`codex`: the Codex control channel is not connected; otherwise the session started
     /// too early to receive), else "发送失败". For a stop request (`isInterrupt`): the Mac's words, else what the

@@ -4,55 +4,46 @@ import CritterKit
 
 /// The board's sounds (spec §8.7, Android `BoardSounds`): `Sounds/<theme>/{waiting,done,error}.wav` from the app's
 /// bundle, while the board is up and the setting 「看板提示音」 is on. The theme is the Mac's `prefs.soundTheme`;
-/// `system`, an unknown one or one the app does not have means `voice`. Which snapshot deserves a sound is
-/// `SoundTrigger.enteredAlertStates`' to say: only a state a session has just entered, never on the first snapshot of
-/// a connection (or of the board), and of several only the most urgent.
+/// `system`, an unknown one or one the app does not have means `voice`. Which snapshot deserves which sound is
+/// `BoardSoundCue`'s to say: only a state a session has just entered, never on the first snapshot of a connection (or
+/// of the board), and of several only the most urgent.
 ///
 /// The audio session is `.ambient`: the ring/silent switch silences it, and it plays along with whatever else is
 /// playing instead of stopping it. One sound at a time.
 @MainActor
 final class BoardSounds {
-    private static let fallback = "voice"
     private static let states: [PetState] = [.waiting, .done, .error]
 
     /// Each sound loaded so far, by "theme/state".
     private var players: [String: AVAudioPlayer] = [:]
-    /// The sessions' states in the last snapshot of this connection; nil before the first.
-    private var previous: [String: PetState]?
+    /// Which snapshot plays which sound.
+    private var cue = BoardSoundCue()
     private var sessionSet = false
 
     /// Called with every snapshot while the board is up, and once when it comes up. `live` false (the connection
     /// dropped, or the snapshot is a cached one) forgets the last one, so the first snapshot of the next connection
     /// is not taken for news.
     func update(_ body: SnapshotBody?, live: Bool, enabled: Bool) {
-        guard live, let body else {
-            previous = nil
-            return
-        }
-        let current = Dictionary(body.sessions.map { ($0.id, $0.state) }, uniquingKeysWith: { first, _ in first })
-        if enabled {
-            let theme = Self.resolve(body.prefs.soundTheme)
-            prepare(theme)
-            if let entered = SoundTrigger.enteredAlertStates(old: previous, new: current).first {
-                play(entered, theme: theme)
-            }
-        }
-        previous = current
+        let entered = cue.next(body.map { BoardSoundCue.states($0.sessions) }, live: live, enabled: enabled)
+        guard live, enabled, let body else { return }
+        let theme = Self.resolve(body.prefs.soundTheme)
+        prepare(theme)
+        if let entered { play(entered, theme: theme) }
     }
 
     /// The board is gone: nothing more is played, and the sounds are let go.
     func stop() {
         for player in players.values { player.stop() }
         players.removeAll()
-        previous = nil
+        cue.reset()
     }
 
     /// The folder for the Mac's `theme`: the theme itself when the app has it, `voice` otherwise.
     static func resolve(_ theme: String) -> String {
-        guard theme != "system", theme != "unknown", PhoneSkinLibrary.isPlain(theme),
-              Bundle.main.url(forResource: "waiting", withExtension: "wav", subdirectory: "Sounds/\(theme)") != nil
-        else { return fallback }
-        return theme
+        BoardSoundCue.theme(theme) { name in
+            PhoneSkinLibrary.isPlain(name)
+                && Bundle.main.url(forResource: "waiting", withExtension: "wav", subdirectory: "Sounds/\(name)") != nil
+        }
     }
 
     /// Loads the theme's three sounds ahead of time, so the first one is not lost to loading.

@@ -51,10 +51,6 @@ struct HomeView: View {
     /// phone's).
     private static let emptySkin = "sprig"
 
-    private struct Target: Identifiable {
-        let id: String
-    }
-
     var body: some View {
         let snapshot = store.snapshot
         let sessions = snapshot.map(SessionOrder.forBoard) ?? []
@@ -83,13 +79,13 @@ struct HomeView: View {
                 SettingsView(store: store, onPairAgain: onPairAgain)
             }
         }
-        .sheetShell(item: detailTarget, handle: 160) { target in
+        .sheetShell(item: $presentedSessionId.sheetTarget, handle: 160) { target in
             DetailSheet(sessionId: target.id, store: store) { requestId in
                 presentedSessionId = nil
                 presentedRequestId = requestId
             }
         }
-        .sheetShell(item: answerTarget) { target in
+        .sheetShell(item: $presentedRequestId.sheetTarget) { target in
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
         }
         // Under the board the home screen stays in the window: its Critters (the meadow's, a sheet's) stop until it
@@ -163,14 +159,6 @@ struct HomeView: View {
             }
         }
         #endif
-    }
-
-    private var detailTarget: Binding<Target?> {
-        Binding(get: { presentedSessionId.map(Target.init) }, set: { presentedSessionId = $0?.id })
-    }
-
-    private var answerTarget: Binding<Target?> {
-        Binding(get: { presentedRequestId.map(Target.init) }, set: { presentedRequestId = $0?.id })
     }
 
     /// Not connected, and either down or recovering from it (`lost`).
@@ -269,23 +257,12 @@ struct HomeView: View {
 
     /// The opening plays once a day, the first time there are Critters to pop up (`HomeRules.shouldPlayOpening`).
     private var openingDue: Bool {
-        guard let today = Self.dayNumber(PhoneSettings.day(Date())) else { return false }
-        return HomeRules.shouldPlayOpening(lastShownDay: Self.dayNumber(settings.openingShownOn), today: today)
+        guard let today = HomeRules.dayNumber(PhoneSettings.day(Date())) else { return false }
+        return HomeRules.shouldPlayOpening(lastShownDay: HomeRules.dayNumber(settings.openingShownOn), today: today)
     }
 
     private func markOpeningShown() {
         settings.openingShownOn = PhoneSettings.day(Date())
-    }
-
-    /// Days since 1970-01-01 for a "yyyy-MM-dd" day as `PhoneSettings` keeps it; nil if it is not one.
-    static func dayNumber(_ day: String?) -> Int? {
-        guard let parts = day?.split(separator: "-").compactMap({ Int($0) }), parts.count == 3 else { return nil }
-        var calendar = Calendar(identifier: .gregorian)
-        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
-        guard let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
-            return nil
-        }
-        return Int((date.timeIntervalSince1970 / 86_400).rounded(.down))
     }
 
     // MARK: - The list

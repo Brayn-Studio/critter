@@ -30,26 +30,16 @@ final class SkinStore {
     @ObservationIgnored private var asking = SkinAsking()
     @ObservationIgnored private let directory: URL?
 
-    /// The order the settings show the skins in (visual design §8.8, Android `SettingsScreen.SKINS`): sprig first, the
-    /// default.
-    nonisolated static let preferredOrder = ["sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet"]
-
-    /// The skins the app ships, as the app's `Skins` folder has them (every folder with a manifest that decodes): the
-    /// ones in `preferredOrder` in that order, then any other by name, so a skin added to the folder still shows.
+    /// The skins the app ships, as the app's `Skins` folder has them (every folder with a manifest that decodes), in
+    /// the settings' order (`PhoneSkinLibrary.ordered`).
     static let bundledNames: [String] = {
         guard let folder = Bundle.main.url(forResource: "Skins", withExtension: nil),
               let entries = try? FileManager.default.contentsOfDirectory(
                   at: folder, includingPropertiesForKeys: nil, options: .skipsHiddenFiles
               )
         else { return [PhoneSkinLibrary.fallback] }
-        return ordered(entries.map(\.lastPathComponent).filter { bundled($0) != nil })
+        return PhoneSkinLibrary.ordered(entries.map(\.lastPathComponent).filter { bundled($0) != nil })
     }()
-
-    /// `names` in `preferredOrder`, the ones it does not list after them by name.
-    nonisolated static func ordered(_ names: [String]) -> [String] {
-        let known = preferredOrder.filter(names.contains)
-        return known + names.filter { !preferredOrder.contains($0) }.sorted()
-    }
 
     /// - Parameter directory: where pushed skins are saved; nil keeps them in memory only. The default is
     ///   Application Support's `Skins`.

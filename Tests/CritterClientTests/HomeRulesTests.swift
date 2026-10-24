@@ -27,3 +27,15 @@ private func card(_ kind: PendingKind, more: Int = 0) -> CardRequest {
     #expect(!HomeRules.shouldPlayOpening(lastShownDay: 100, today: 100))
     #expect(HomeRules.shouldPlayOpening(lastShownDay: 99, today: 100))
 }
+
+/// The settings keep the opening's day as "yyyy-MM-dd"; the rule compares days since 1970-01-01.
+@Test func aDayIsCountedFrom1970() {
+    #expect(HomeRules.dayNumber("1970-01-01") == 0)
+    #expect(HomeRules.dayNumber("1970-01-02") == 1)
+    #expect(HomeRules.dayNumber("2026-10-24") == 20_750)
+    #expect(HomeRules.dayNumber("2024-02-29") == 19_782)
+    #expect(HomeRules.dayNumber(nil) == nil)
+    #expect(HomeRules.dayNumber("") == nil)
+    #expect(HomeRules.dayNumber("2026-10") == nil)
+    #expect(HomeRules.dayNumber("tomorrow") == nil)
+}

@@ -68,3 +68,25 @@ private func result(_ ok: Bool, _ reason: ResultReason? = nil, message: String? 
     let straightY: CGFloat = 300 + (60 - 300) * 4 / 7
     #expect(abs(60 - (straightY - path[3].y)) <= 3)
 }
+
+/// The "发一句" field holds 4000 UTF-16 units at most: what does not fit is left out, never half a character, and the
+/// sheet says so until the text is shorter than the limit again.
+@Test func theSayFieldClipsAt4000Units() {
+    let short = SayFeedback.fit("你好", wasClipped: true)
+    #expect(short.text == "你好")
+    #expect(!short.clipped)
+    let full = String(repeating: "a", count: 4000)
+    let atLimit = SayFeedback.fit(full, wasClipped: true)
+    #expect(atLimit.text == full)
+    #expect(atLimit.clipped)
+    #expect(!SayFeedback.fit(full, wasClipped: false).clipped)
+    let over = SayFeedback.fit(full + "bc", wasClipped: false)
+    #expect(over.text == full)
+    #expect(over.clipped)
+    // An emoji is two units: one that would end past the limit is left out whole.
+    let almost = String(repeating: "a", count: 3999)
+    let emoji = SayFeedback.fit(almost + "😀", wasClipped: false)
+    #expect(emoji.text == almost)
+    #expect(emoji.clipped)
+    #expect(SayFeedback.fit(String(repeating: "a", count: 3998) + "😀", wasClipped: true).text.utf16.count == 4000)
+}

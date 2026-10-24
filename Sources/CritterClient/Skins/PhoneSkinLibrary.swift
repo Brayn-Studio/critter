@@ -14,6 +14,17 @@ public final class PhoneSkinLibrary {
     /// The skin shown for anything that cannot be found.
     public static let fallback = "sprig"
 
+    /// The order the settings show the skins in (visual design §8.8, Android `SettingsScreen.SKINS`): sprig first, the
+    /// default.
+    public static let preferredOrder = ["sprig", "mochi", "peep", "bristle", "frill", "spout", "bonnet"]
+
+    /// `names` in `preferredOrder`, the ones it does not list after them by name (a skin added to the app's folder
+    /// still shows).
+    public static func ordered(_ names: [String]) -> [String] {
+        let known = preferredOrder.filter(names.contains)
+        return known + names.filter { !preferredOrder.contains($0) }.sorted()
+    }
+
     /// The builtin sprig, for the phone that has not even its bundled one (never happens in a good build).
     private static let builtinSprig = SkinLoader.builtin()
 

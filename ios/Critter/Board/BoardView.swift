@@ -43,10 +43,6 @@ struct BoardView: View {
     /// The window's safe area on its wider side (62 pt on an iPhone 17 Pro in landscape).
     @State private var safeSide: CGFloat = 0
 
-    private struct Target: Identifiable {
-        let id: String
-    }
-
     /// How far in from each side the content keeps, at most (the safe area's side, when it is narrower).
     private static let sideInset: CGFloat = 50
 
@@ -68,7 +64,7 @@ struct BoardView: View {
             TouchWatch { screen.touched() }
             SafeAreaReader { insets in safeSide = max(insets.left, insets.right) }
         }
-        .sheetShell(item: answerTarget) { target in
+        .sheetShell(item: $presentedRequestId.sheetTarget) { target in
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)
         }
         .statusBarHidden()
@@ -156,10 +152,6 @@ struct BoardView: View {
             }
             BoardIconButton(icon: .close, label: "关闭看板", action: onClose)
         }
-    }
-
-    private var answerTarget: Binding<Target?> {
-        Binding(get: { presentedRequestId.map(Target.init) }, set: { presentedRequestId = $0?.id })
     }
 
     /// A tap on a Critter: one with a request the phone can answer opens its card (the oldest request); any other was

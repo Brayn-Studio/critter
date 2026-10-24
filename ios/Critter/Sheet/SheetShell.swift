@@ -23,9 +23,34 @@ extension View {
         }
     }
 
+    /// Sets `waitedOut` once a live snapshot has had `SheetTarget.liveWait` to arrive since the sheet opened on `id`:
+    /// until then, a subject missing from a cached snapshot proves nothing (the answer card, the details).
+    func liveWait<ID: Equatable>(id: ID, waitedOut: Binding<Bool>) -> some View {
+        task(id: id) {
+            try? await Task.sleep(for: SheetTarget.liveWait)
+            guard !Task.isCancelled else { return }
+            waitedOut.wrappedValue = true
+        }
+    }
+
     /// Content that begins with a meadow: it starts at the very top of the sheet, under a light grabber.
     func sheetMeadowTop(_ meadowTop: Bool = true) -> some View {
         preference(key: SheetMeadowTopKey.self, value: meadowTop)
+    }
+}
+
+/// A sheet's subject by its id (a request's, a session's), as `sheetShell(item:)` takes it.
+struct SheetTarget: Identifiable, Equatable {
+    let id: String
+
+    /// How long a sheet waits for a live snapshot before it believes one that lacks its subject.
+    static let liveWait: Duration = .seconds(8)
+}
+
+extension Binding where Value == String? {
+    /// The id as a sheet's subject: the sheet is up while it is set, and closing the sheet clears it.
+    var sheetTarget: Binding<SheetTarget?> {
+        Binding<SheetTarget?>(get: { wrappedValue.map(SheetTarget.init) }, set: { wrappedValue = $0?.id })
     }
 }
 

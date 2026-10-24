@@ -27,4 +27,16 @@ public enum HomeRules {
     public static func shouldPlayOpening(lastShownDay: Int?, today: Int) -> Bool {
         lastShownDay != today
     }
+
+    /// Days since 1970-01-01 for a "yyyy-MM-dd" day (as the phone's settings keep the opening's day); nil if it is not
+    /// one.
+    public static func dayNumber(_ day: String?) -> Int? {
+        guard let parts = day?.split(separator: "-").compactMap({ Int($0) }), parts.count == 3 else { return nil }
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "UTC") ?? .gmt
+        guard let date = calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2])) else {
+            return nil
+        }
+        return Int((date.timeIntervalSince1970 / 86_400).rounded(.down))
+    }
 }

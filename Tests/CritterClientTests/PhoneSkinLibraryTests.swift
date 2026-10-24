@@ -133,3 +133,13 @@ private let newcomer = json(named("newcomer"))
     let library = PhoneSkinLibrary(bundled: { _ in nil }, pushed: [:], forced: nil, clockSkin: "sprig", reuse: nil)
     #expect(library.manifest("mochi").name == PhoneSkinLibrary.fallback)
 }
+
+/// The settings show the bundled skins sprig first, in the design's order, then any other by name.
+@Test func skinsAreOrderedForTheSettings() {
+    #expect(
+        PhoneSkinLibrary.ordered(["bonnet", "zebra", "mochi", "sprig", "apple", "peep"])
+            == ["sprig", "mochi", "peep", "bonnet", "apple", "zebra"]
+    )
+    #expect(PhoneSkinLibrary.ordered([]).isEmpty)
+    #expect(PhoneSkinLibrary.ordered(PhoneSkinLibrary.preferredOrder.reversed()) == PhoneSkinLibrary.preferredOrder)
+}

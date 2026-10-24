@@ -79,10 +79,7 @@ struct AnswerSheet: View {
             .onChange(of: store.snapshot, initial: true) { noteSeen() }
             // The first live snapshot can be the cached one over again: going live counts too.
             .onChange(of: store.isLive) { noteSeen() }
-            .task(id: requestId) {
-                try? await Task.sleep(for: .seconds(8))
-                waitedOut = true
-            }
+            .liveWait(id: requestId, waitedOut: $waitedOut)
             .task(id: autoClose) {
                 guard let delay = autoClose else { return }
                 try? await Task.sleep(for: delay)

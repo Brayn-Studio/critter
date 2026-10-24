@@ -71,10 +71,7 @@ struct DetailSheet: View {
                 SheetMessage(text: gone ? "这个会话已经结束" : "正在连接电脑…")
             }
         }
-        .task(id: sessionId) {
-            try? await Task.sleep(for: .seconds(8))
-            waitedOut = true
-        }
+        .liveWait(id: sessionId, waitedOut: $waitedOut)
         .task(id: gone) {
             guard gone else { return }
             try? await Task.sleep(for: .seconds(1.5))
@@ -211,22 +208,7 @@ struct DetailSheet: View {
     /// The field takes at most `SayFeedback.maxLength` UTF-16 units (as Android's field and the Mac count them);
     /// anything past that is left out and the sheet says so.
     private func setText(_ new: String) {
-        let room = SayFeedback.maxLength
-        if new.utf16.count <= room {
-            text = new
-            if new.utf16.count < room { clipped = false }
-            return
-        }
-        var kept = ""
-        var units = 0
-        for character in new {
-            let size = String(character).utf16.count
-            if units + size > room { break }
-            kept.append(character)
-            units += size
-        }
-        text = kept
-        clipped = true
+        (text, clipped) = SayFeedback.fit(new, wasClipped: clipped)
     }
 
     /// Something to say, a session that takes messages, a Mac to tell, and no message on its way.
