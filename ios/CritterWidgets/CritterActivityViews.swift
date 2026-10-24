@@ -127,8 +127,8 @@ struct ActivityLook {
 /// The bundled typefaces (the widget lists them under UIAppFonts as the app does), at fixed sizes: the Live Activity
 /// has a fixed height, so its words do not grow with the reader's text size. Chinese falls back to the system font.
 enum ActivityFonts {
-    /// Silkscreen: counts and percentages.
-    static func digits(_ size: CGFloat) -> Font { .custom("Silkscreen-Bold", fixedSize: size) }
+    /// Silkscreen (regular, as the app's counts and percentages): counts and percentages.
+    static func digits(_ size: CGFloat) -> Font { .custom("Silkscreen-Regular", fixedSize: size) }
     /// Nunito: "%" (Silkscreen's reads as a z when small) and the words.
     static func words(_ size: CGFloat, heavy: Bool = true) -> Font {
         .custom(heavy ? "Nunito-ExtraBold" : "Nunito-SemiBold", fixedSize: size)

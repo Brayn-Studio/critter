@@ -18,5 +18,6 @@ ENABLE_PREVIEWS = YES
 ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon
 
 // The DEBUG launch arguments and their fixtures (Critter/Debug/) are not in a release build. A pattern's * does
-// not cross a /: each folder is listed.
-EXCLUDED_SOURCE_FILE_NAMES[config=Release] = $(inherited) $(SRCROOT)/Critter/Debug/* $(SRCROOT)/Critter/Debug/Fixtures/*
+// not cross a /: each folder is listed. The Live Activity's views (CritterWidgets/, compiled into the app only for
+// `-critterActivityDemo`'s page) are left out as well.
+EXCLUDED_SOURCE_FILE_NAMES[config=Release] = $(inherited) $(SRCROOT)/Critter/Debug/* $(SRCROOT)/Critter/Debug/Fixtures/* $(SRCROOT)/CritterWidgets/ActivityPictures.swift $(SRCROOT)/CritterWidgets/CritterActivityViews.swift
