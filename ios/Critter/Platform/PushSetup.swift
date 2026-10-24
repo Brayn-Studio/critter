@@ -14,7 +14,10 @@ import UserNotifications
 ///   notification service extension opens pushes with it; never logged, never in an App Group file (spec §10);
 /// - whether notifications may be shown, the done and error reminders, and the Live Activity: its switch and the tokens
 ///   the system gave (`LiveActivityManager`, which calls `update` when they change);
-/// - the environment: `sandbox` in DEBUG builds, `production` otherwise.
+/// - the environment: always `sandbox`, the APNs environment of the tokens a build signed with `aps-environment =
+///   development` gets (`Config/Critter.entitlements`; every configuration, Debug and Release, is signed with it and
+///   installed from Xcode). A token registered under the other environment is refused by APNs, and the Mac then drops
+///   the registration.
 ///
 /// One for the app's life (`shared`): the app delegate hands it the token, possibly before the app has attached the
 /// store; nothing is registered until both are there.
@@ -36,11 +39,10 @@ final class PushSetup {
     private static let log = Logger(subsystem: "com.braynlabs.critter", category: "notifications")
     private static let tokenAccount = "deviceToken"
 
-    #if DEBUG
+    /// The APNs environment the device token belongs to: `aps-environment = development` in `Config/Critter.entitlements`
+    /// gives sandbox tokens, in Debug and Release alike. A distribution build (App Store, TestFlight: signed
+    /// `production`) does not exist yet; when one does, this has to follow its signature.
     static let environment = PushEnvironment.sandbox
-    #else
-    static let environment = PushEnvironment.production
-    #endif
 
     private init() {
         if case .found(let data) = SharedKeychain.push.read(Self.tokenAccount) {

@@ -5,7 +5,8 @@
 PRODUCT_BUNDLE_IDENTIFIER = com.braynlabs.critter
 PRODUCT_NAME = Critter
 INFOPLIST_FILE = Config/Info.plist
-// Push (development), the App Group and the keychain group the extensions share.
+// Push (development: sandbox tokens, which `PushSetup` registers), time-sensitive notifications, the App Group and the
+// keychain group the extensions share.
 CODE_SIGN_ENTITLEMENTS = Config/Critter.entitlements
 
 LD_RUNPATH_SEARCH_PATHS = $(inherited) @executable_path/Frameworks

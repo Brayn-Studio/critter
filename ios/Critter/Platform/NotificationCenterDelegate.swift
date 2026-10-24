@@ -87,7 +87,7 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
     private var reconcileDue = false
 
     private let center = UNUserNotificationCenter.current()
-    private static let log = Logger(subsystem: "com.braynlabs.critter", category: "notifications")
+    private nonisolated static let log = Logger(subsystem: "com.braynlabs.critter", category: "notifications")
 
     /// Becomes the notification center's delegate and registers the categories.
     func install() {
@@ -169,7 +169,9 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
     // MARK: - Answering from a button
 
     /// Sends the answer over a connection of its own and puts the result in the notification's place. The system's
-    /// background time is asked for; if it runs out first, the answer is cut short (as not delivered).
+    /// background time is asked for. If it runs out first, "没送到…" (with the buttons) is posted right there, in the
+    /// expiry handler, before the app is suspended, and the answer is cut short; a result that still comes in after it
+    /// replaces it only when it says more (`NotificationResultSlot`).
     private func answer(_ payload: AnswerPayload, requestId: String, in notice: NoticeInfo) async {
         let route = answerRoute
         let work = Task { () -> BackgroundAnswerResult in
@@ -179,19 +181,36 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
                 app: route.app
             )
         }
-        let background = BackgroundTask(name: "Critter: an answer from a notification") {
-            Self.log.notice("background time ran out: the answer is cut short")
+        var slot = NotificationResultSlot()
+        let background = BackgroundTask(name: "Critter: an answer from a notification") { [self] in
             work.cancel()
+            guard let shown = slot.expired() else { return }
+            Self.log.notice("background time ran out: the answer to \(requestId, privacy: .public) is cut short; \(String(describing: shown), privacy: .public) is shown now")
+            showResult(shown, in: notice)
         }
+        #if DEBUG
+        if let after = DebugLaunch.current.answerExpiry {
+            Task {
+                try? await Task.sleep(for: .seconds(after))
+                Self.log.notice("-critterAnswerExpiry: the background time runs out now")
+                background.expire()
+            }
+        }
+        #endif
         let result = await work.value
-        Self.log.notice("answered \(requestId, privacy: .public) from its notification: \(String(describing: result), privacy: .public)")
-        await showResult(result, in: notice)
+        if let shown = slot.finished(result) {
+            Self.log.notice("answered \(requestId, privacy: .public) from its notification: \(String(describing: shown), privacy: .public)")
+            showResult(shown, in: notice)
+        } else {
+            Self.log.notice("answered \(requestId, privacy: .public) from its notification: \(String(describing: result), privacy: .public), shown already")
+        }
         background.end()
     }
 
     /// The result, under the notification's own id: it replaces the request's. Where trying again may help it keeps the
-    /// category (the buttons) and the push's keys, so a tap answers again.
-    private func showResult(_ result: BackgroundAnswerResult, in notice: NoticeInfo) async {
+    /// push's category (the buttons) and its keys, so a tap answers again. Posted without waiting (also from the expiry
+    /// handler, which must not wait).
+    private func showResult(_ result: BackgroundAnswerResult, in notice: NoticeInfo) {
         let text = result.notificationText(about: notice.about)
         let content = UNMutableNotificationContent()
         content.title = text.title
@@ -205,12 +224,10 @@ final class NotificationCenterDelegate: NSObject, UNUserNotificationCenterDelega
             content.threadIdentifier = alert.sessionId
         }
         content.userInfo = userInfo
-        content.categoryIdentifier = text.keepButtons ? notice.category : ""
+        content.categoryIdentifier = text.keepButtons ? (notice.alert?.category.rawValue ?? notice.category) : ""
         if case .answered = result { content.interruptionLevel = .passive }
-        do {
-            try await center.add(UNNotificationRequest(identifier: notice.identifier, content: content, trigger: nil))
-        } catch {
-            Self.log.error("showing the result failed: \(error.localizedDescription, privacy: .public)")
+        center.add(UNNotificationRequest(identifier: notice.identifier, content: content, trigger: nil)) { error in
+            if let error { Self.log.error("showing the result failed: \(error.localizedDescription, privacy: .public)") }
         }
     }
 

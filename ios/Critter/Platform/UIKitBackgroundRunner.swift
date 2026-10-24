@@ -13,23 +13,33 @@ final class UIKitBackgroundRunner: BackgroundRunner {
     }
 }
 
-/// One `beginBackgroundTask`, ended once: when the work is done, or when the system's time runs out (`onExpire` is told
-/// first, to cut the work short).
+/// One `beginBackgroundTask`, ended once: when the work is done, or when the system's time runs out. Then `onExpire`
+/// runs first, synchronously, before the task is ended: the system suspends the app right after, so whatever must not
+/// be lost (cutting the work short, a notification to post) happens in it, not after an `await`.
 @MainActor
 final class BackgroundTask {
     private var id = UIBackgroundTaskIdentifier.invalid
+    private var onExpire: (@MainActor () -> Void)?
 
     init(name: String, onExpire: (@MainActor () -> Void)? = nil) {
+        self.onExpire = onExpire
         id = UIApplication.shared.beginBackgroundTask(withName: name) { [weak self] in
-            MainActor.assumeIsolated {
-                onExpire?()
-                self?.end()
-            }
+            MainActor.assumeIsolated { self?.expire() }
         }
+    }
+
+    /// The time ran out (the system's expiration handler; DEBUG builds can force it): `onExpire`, then the end.
+    func expire() {
+        guard id != .invalid else { return }
+        let onExpire = onExpire
+        self.onExpire = nil
+        onExpire?()
+        end()
     }
 
     func end() {
         guard id != .invalid else { return }
+        onExpire = nil
         UIApplication.shared.endBackgroundTask(id)
         id = .invalid
     }

@@ -140,32 +140,36 @@ enum WithdrawPushDebug {
 /// The fixture Mac as the background answers reach it (`-critterFixture`): a connection of their own, as on a phone.
 /// It says `welcome` to `hello` and answers an `answer` with `-critterFixtureResult` (a taken answer leaves the
 /// snapshot the app shows, as on the Mac). `-critterFixtureMacAway`: no connection can be made, as when the phone is
-/// not on the Mac's network.
+/// not on the Mac's network. `-critterFixtureMacSilent`: the connection is made and nothing ever comes back.
 struct FixtureTransport: BridgeTransport {
     let result: CommandResult
     let away: Bool
+    let silent: Bool
 
     func connect(host: String, port: UInt16, fingerprint: String?) async throws -> any BridgeSocket {
         try await Task.sleep(for: .milliseconds(300))
         if away { throw TransportError.unreachable }
-        return FixtureSocket(result: result)
+        return FixtureSocket(result: result, silent: silent)
     }
 }
 
 private final class FixtureSocket: BridgeSocket, @unchecked Sendable {
     private let result: CommandResult
+    private let silent: Bool
     private let lock = NSLock()
     private var inbox: [String] = []
     private var waiting: CheckedContinuation<String, any Error>?
     private var closed = false
 
-    init(result: CommandResult) {
+    init(result: CommandResult, silent: Bool) {
         self.result = result
+        self.silent = silent
     }
 
     var peerFingerprint: String? { String(repeating: "0", count: 64) }
 
     func send(_ text: String) async throws {
+        if silent { return }
         switch ClientMessage.decode(Data(text.utf8)) {
         case .hello?:
             deliver(.welcome(macName: DebugLaunch.fixtureMacName, version: "fixture"))

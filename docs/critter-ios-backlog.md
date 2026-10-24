@@ -49,7 +49,8 @@ iOS 计划 1（`docs/superpowers/plans/2026-10-24-critter-ios-1-skeleton.md`）�
 - **通知上的按钮和横幅。** 下拉后的「允许」「拒绝」「拒绝并写理由…」（输入框"拒绝的理由（可不写）"、发送"拒绝并发送理由"），点之前先要解锁；Codex 的只有两个；提问、计划的「打开」。模拟器里只从日志看到系统登记的类别和选项（`-critterNotificationAction` 走的是同一个处理函数，按不了真按钮）。前台：快照里已有的请求只轻震（模拟器没有触感），其它出横幅、有声音；"时效性"在专注模式里的表现。
 - **点按钮作答的整条路。** App 被划掉时点「允许」：系统在后台启动 App、连 Mac、送答案、用同一个通知 id（APNs 的 `apns-collapse-id`）换成"已允许"；Mac 连不上时 20 秒内换成"没送到…"并保留按钮，再点一次能成；后台时间用完时作答被截断（`BackgroundAnswer` 的取消）。点通知正文冷启动 App 时直接打开那张卡片。模拟器里 `simctl push` 没有 collapse id，同一个请求会有好几条通知，App 按推送里的 `r`/`k`/`s` 认通知，真机上要确认按 collapse id 换掉的是同一条。
 - **撤回推送。** `simctl push` 把只有 `content-available` 的推送变成一次不带载荷的 background fetch，`didReceiveRemoteNotification` 只用 DEBUG 的 `-critterWithdrawPush` 走过。真机上看后台推送能不能叫醒 App 删通知；App 被划掉、低电量模式时系统不送后台推送，那时靠回到前台后的对账（模拟器里验证过）。
-- **推送环境。** DEBUG 构建登记 `sandbox`，其它构建登记 `production`；但 `Critter.entitlements` 写的是 `aps-environment = development`，开发签名装到真机的 Release 构建拿到的是 sandbox 的 token，登记成 `production` 后 Mac 推送会被 APNs 拒（`BadDeviceToken`），Mac 删掉登记。装真机时用 Debug 构建，或者改成按签名里的 `aps-environment` 决定。
+- **推送环境。** App 一律登记 `sandbox`（`PushSetup.environment`）：Debug 和 Release 都用 `Critter.entitlements` 的 `aps-environment = development` 签名、从 Xcode 装，拿到的都是 sandbox 的 token。以后做发布构建（App Store、TestFlight，签的是 `production`）时，登记的环境要跟着签名改，否则 Mac 推送会被 APNs 拒（`BadDeviceToken`），Mac 删掉登记。真机上确认 Release 构建登记的是 sandbox、推送能到。
+- **时效性通知的能力。** `Critter.entitlements` 加了 `com.apple.developer.usernotifications.time-sensitive`（等你确认的通知要能穿过专注模式，spec §8.7）。装真机用的描述文件必须带上 Time Sensitive Notifications 能力（在开发者账号里给 App ID 打开），否则签名失败；没有这个能力时系统把时效性通知当普通通知。真机上确认通知服务扩展设的 `.timeSensitive` 生效（专注模式里能提醒）；不生效就给 `CritterNotify.entitlements` 也加上同一个键。
 
 ## 前端优化轮
 

@@ -217,3 +217,41 @@ public enum BackgroundAnswer {
         }
     }
 }
+
+/// What an answer from a notification's button puts in the notification's place, when the app's background time can
+/// run out before the answer's result (global constraint: a "没送到…" keeps the buttons). The system suspends the app
+/// right after its expiry handler, so that handler shows `.unreachable` at once (`expired`) instead of waiting for the
+/// cut-short answer; the answer's own result then (`finished`):
+/// - says nothing new when it is `.unreachable` too: it is on screen already;
+/// - replaces "没送到…" when it says more (the answer got there just before the time ran out, or the Mac refused it): its
+///   buttons would only invite an answer that is not needed. If the app is suspended before that, the "没送到…" stays,
+///   and trying again is safe: the Mac says "已在电脑上处理".
+///
+/// Once a result other than "没送到…" is shown, nothing replaces it.
+public struct NotificationResultSlot: Equatable, Sendable {
+    /// What the notification shows now; nil until something was posted.
+    public private(set) var shown: BackgroundAnswerResult?
+
+    public init() {}
+
+    /// The background time ran out: what to post now, or nil when a result is shown already.
+    public mutating func expired() -> BackgroundAnswerResult? {
+        guard shown == nil else { return nil }
+        shown = .unreachable
+        return .unreachable
+    }
+
+    /// The answer's result is in: what to post, or nil when there is nothing new to say.
+    public mutating func finished(_ result: BackgroundAnswerResult) -> BackgroundAnswerResult? {
+        switch shown {
+        case nil:
+            shown = result
+            return result
+        case .unreachable? where result != .unreachable:
+            shown = result
+            return result
+        default:
+            return nil
+        }
+    }
+}

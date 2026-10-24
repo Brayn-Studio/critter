@@ -130,6 +130,12 @@ import os
 ///   (`FixtureTransport`): it answers as `-critterFixtureResult` says, and a taken answer leaves the snapshot.
 /// - `-critterFixtureMacAway`: with `-critterFixture`, a background answer cannot reach the fixture Mac (no connection
 ///   can be made): the notification says "没送到…" and keeps its buttons.
+/// - `-critterFixtureMacSilent`: with `-critterFixture`, the fixture Mac takes a background answer's connection and never
+///   says `welcome` (asleep, or another network in between): the answer waits up to its 20 s.
+/// - `-critterAnswerExpiry <seconds>`: that long after an answer from a notification's button starts, its background
+///   time runs out as if the system said so (`BackgroundTask.expire`, the path of the system's expiration handler):
+///   "没送到…" is posted at once with the buttons, and the cut-short answer adds nothing. With
+///   `-critterFixtureMacSilent` the answer is still waiting then.
 /// - `-critterWithdrawPush <id>[,<id>…][@<seconds>]`: that long after launch (default 3 s), the Mac's withdrawal of
 ///   these notifications goes through the app's handler for background pushes (`WithdrawPushDebug`): `xcrun simctl
 ///   push` turns a background push into a background fetch without its payload. The log lists the delivered
@@ -228,6 +234,9 @@ struct DebugLaunch {
     /// `-critterNotificationAction`.
     var notificationAction: NotificationActionDebug.Step?
     var fixtureMacAway = false
+    var fixtureMacSilent = false
+    /// `-critterAnswerExpiry`.
+    var answerExpiry: Double?
     /// `-critterWithdrawPush`.
     var withdrawPush: WithdrawPushDebug.Step?
     /// `-critterActivityDemo`.
@@ -328,6 +337,8 @@ struct DebugLaunch {
         testPushKey = value("critterTestPushKey")
         notificationAction = value("critterNotificationAction").flatMap(NotificationActionDebug.Step.init)
         fixtureMacAway = arguments.contains("-critterFixtureMacAway")
+        fixtureMacSilent = arguments.contains("-critterFixtureMacSilent")
+        answerExpiry = value("critterAnswerExpiry").flatMap(Double.init)
         withdrawPush = value("critterWithdrawPush").flatMap(WithdrawPushDebug.Step.init)
         activityDemo = value("critterActivityDemo").flatMap(ActivityDemo.Kind.init(rawValue:))
         liveActivitySwitch = (value("critterLiveActivitySwitch") ?? "").split(separator: ",").compactMap { step in
@@ -435,7 +446,7 @@ extension DebugLaunch {
         guard fixture != nil else { return nil }
         let storage = FixtureStorage(cached: nil)
         return NotificationCenterDelegate.AnswerRoute(
-            pairing: { storage.load() }, transport: FixtureTransport(result: fixtureResult, away: fixtureMacAway),
+            pairing: { storage.load() }, transport: FixtureTransport(result: fixtureResult, away: fixtureMacAway, silent: fixtureMacSilent),
             app: "critter-ios/fixture"
         )
     }

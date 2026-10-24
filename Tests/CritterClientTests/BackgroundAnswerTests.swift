@@ -241,3 +241,47 @@ struct BackgroundAnswerTests {
         #expect(await answer.value == .answered(decision: "allow"))
     }
 }
+
+// What takes a notification's place when the app's background time may run out before the answer's result (global
+// constraint: not delivered -> "没送到…", the buttons stay).
+
+@Test func runningOutOfTimeShowsNotDeliveredAtOnce() {
+    var slot = NotificationResultSlot()
+    // The system's time ran out first: "没送到…" now, with the buttons, before the app is suspended.
+    #expect(slot.expired() == .unreachable)
+    #expect(slot.expired() == nil)
+    // The cut-short answer then ends as not delivered too: said already, nothing to post again.
+    #expect(slot.finished(.unreachable) == nil)
+    #expect(slot.shown == .unreachable)
+}
+
+@Test func aResultThatComesAfterTheTimeRanOutReplacesNotDelivered() {
+    // The answer got there just before the time ran out, and its result is in after "没送到…" was posted: the truth
+    // replaces it, so the buttons do not invite an answer that is not needed (one would read "已在电脑上处理").
+    for late in [
+        BackgroundAnswerResult.answered(decision: "allow"), .resolved, .expired, .refused(message: "提交失败", canRetry: true),
+        .notPaired("尚未配对"),
+    ] {
+        var slot = NotificationResultSlot()
+        _ = slot.expired()
+        #expect(slot.finished(late) == late)
+        #expect(slot.shown == late)
+        // Nothing after it.
+        #expect(slot.finished(.unreachable) == nil)
+        #expect(slot.expired() == nil)
+    }
+}
+
+@Test func aResultInTimeIsShownOnce() {
+    var slot = NotificationResultSlot()
+    #expect(slot.finished(.answered(decision: "deny")) == .answered(decision: "deny"))
+    // The time running out afterwards (the result was being posted) changes nothing.
+    #expect(slot.expired() == nil)
+    #expect(slot.finished(.unreachable) == nil)
+    #expect(slot.shown == .answered(decision: "deny"))
+
+    // Not delivered within the 20 s, before the time ran out: shown once, the expiry adds nothing.
+    var away = NotificationResultSlot()
+    #expect(away.finished(.unreachable) == .unreachable)
+    #expect(away.expired() == nil)
+}
