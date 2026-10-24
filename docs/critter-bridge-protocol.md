@@ -296,7 +296,7 @@ An iPhone does not stay connected, so the Mac pushes to it through APNs. After `
 
 Rules:
 
-- **Every registration is complete and replaces the old one.** To change one thing, send everything again. An empty `token` takes the registration back: the Mac forgets everything it had for this device (the other fields are ignored).
+- **Every registration is complete and replaces the old one.** To change one thing, send everything again. An empty `token` takes the registration back: the Mac forgets everything it had for this device (the other fields are ignored). **A phone that wants no pushes at all -- every notification switched off and the Live Activity off -- sends an empty `token`.** That is the only shape that unregisters: a registration with a token, `notifyDone` and `notifyError` false and no (or a disabled) `activity` is still a registration, because a session that waits for the user is always pushed.
 - The Mac keeps it with the device record (`devices.json`, mode 0600). Revoking the device or resetting pairing on the Mac deletes it.
 - Required: every field except `activity` and the optional parts of it. A `push` frame that is missing one cannot be decoded and is ignored, like any frame the Mac cannot decode.
 - Before `hello` or `pair`, like any other frame, a `push` gets `denied` `protocol`.

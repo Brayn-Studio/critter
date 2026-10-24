@@ -48,6 +48,18 @@ private func registration(
     #expect(!registration().isEmpty)
 }
 
+/// Only an empty token unregisters (the doc says so): a phone that wants no pushes at all sends one. With the
+/// notifications and the Live Activity off a registration stays, since a waiting session is always pushed.
+@Test func onlyAnEmptyTokenMeansNoPushesAtAll() {
+    var r = registration(activity: ActivityRegistration(enabled: false))
+    r.notifyDone = false
+    r.notifyError = false
+    #expect(!r.isEmpty)
+    r.activity = nil
+    #expect(!r.isEmpty)
+    #expect(registration(token: "").isEmpty)
+}
+
 @Test func aKeyThatIsNot32BytesIsInvalid() {
     #expect(registration().hasValidKey)
     #expect(!registration(key: "").hasValidKey)
