@@ -267,8 +267,38 @@ private func denied(_ r: DenyReason) -> [BridgeConnection.Output] { [.send(.deni
     #expect(services.interrupted == ["codex-thread"])
 }
 
-private func registration(token: String = "aa11", key: String = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8") -> PushRegistration {
-    PushRegistration(token: token, environment: .sandbox, bundleId: "com.braynlabs.critter", key: key, notifyDone: true, notifyError: false)
+private func registration(
+    token: String = "aa11", key: String = "AAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8", activity: ActivityRegistration? = nil
+) -> PushRegistration {
+    PushRegistration(
+        token: token, environment: .sandbox, bundleId: "com.braynlabs.critter", key: key, notifyDone: true, notifyError: false,
+        activity: activity
+    )
+}
+
+@Test func aTokenThatIsNotLowercaseHexIsRefused() {
+    let s = FakeServices()
+    let c = readyConnection(s)
+    let refused = [
+        registration(token: "AA11"), registration(token: "zz11"), registration(token: "aa 11"), registration(token: "aa\u{FF11}"),
+        registration(activity: ActivityRegistration(enabled: true, startToken: "5A5A")),
+        registration(activity: ActivityRegistration(enabled: true, startToken: "5a5a", activityId: "A1", activityToken: "9f9g")),
+    ]
+    for (n, bad) in refused.enumerated() {
+        #expect(c.receive(ClientMessage.push(id: "p\(n)", registration: bad).encode())
+            == [.send(.result(id: "p\(n)", ok: false, reason: .invalid, message: "推送登记无效"))])
+    }
+    #expect(s.registered.isEmpty)
+    // Lowercase hex everywhere, an empty start token, or an unregistration (whatever it holds) are fine.
+    let fine = [
+        registration(activity: ActivityRegistration(enabled: true, startToken: "5a5a", activityId: "A1", activityToken: "0f9e")),
+        registration(activity: ActivityRegistration(enabled: true, startToken: "")),
+        registration(token: "", activity: ActivityRegistration(enabled: true, startToken: "NOT HEX")),
+    ]
+    for item in fine {
+        #expect(c.receive(ClientMessage.push(id: "ok", registration: item).encode()) == [.send(.result(id: "ok", ok: true, reason: nil, message: nil))])
+    }
+    #expect(s.registered.count == 3)
 }
 
 @Test func connectionAnswersPushWithResult() {

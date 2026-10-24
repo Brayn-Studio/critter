@@ -304,7 +304,7 @@ Rules:
 The Mac answers with a `result` (`id` echoed):
 
 - `ok: true` -- stored (or, for an empty `token`, cleared).
-- `ok: false`, `reason: "invalid"`, message `推送登记无效` -- `token` is not empty but `key` is not base64url without padding of exactly 32 bytes. Nothing was stored.
+- `ok: false`, `reason: "invalid"`, message `推送登记无效` -- `token` is not empty but `key` is not base64url without padding of exactly 32 bytes, or `token`, `activity.startToken` or `activity.activityToken` (where given and not empty) is not lowercase ASCII hex. Nothing was stored.
 - `ok: false`, `reason: "failed"`, message `保存失败` -- the Mac could not keep it (for example, it could not write its devices file). The phone may try again later.
 
 **An older Mac sends no `result`.** It does not know the frame and ignores it. A phone must therefore not treat the missing reply as a lost connection (the way it would for `answer` or `say`): wait up to 10 s, then keep the connection and tell the user "这台 Mac 上的 Critter 版本太旧，收不到推送". `welcome.version` says what the Mac runs.
@@ -398,4 +398,4 @@ When the Mac pushes (the Android app's alert rules, spec 6.3 and 6.6):
 - When the Mac ends an activity it forgets its `activityId` and `activityToken`, and a registration that reports that token again stands for no activity: nothing is sent to it.
 - `aps.timestamp` grows with every Live Activity push to a device, by a second when two fall in the same second (the system drops an update that is not newer than the last).
 - A token APNs says is dead (`410`, or `400` with `BadDeviceToken` or `DeviceTokenNotForTopic`): for `token`, the Mac drops the whole registration (the phone registers again the next time it connects); for `activityToken`, it clears `activityId` and `activityToken`; a refused `startToken` is not used again until the phone registers another.
-- `403` (a wrong key, Team ID or bundle id): the Mac sends nothing more until its setup changes. `429`, `5xx` or no answer: retried after 1, 2 and 4 s, then given up.
+- `403`, or `400` with `BadTopic`, `MissingTopic` or `TopicDisallowed` (a wrong key, Team ID or bundle id): the Mac sends nothing more until its setup changes. `429`, `5xx` or no answer: retried after 1, 2 and 4 s, then given up.

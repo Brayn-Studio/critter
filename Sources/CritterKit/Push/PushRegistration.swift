@@ -53,4 +53,12 @@ public struct PushRegistration: Codable, Equatable, Sendable {
 
     /// Nothing to push to: no token, or a key nothing could be sealed with.
     public var isEmpty: Bool { token.isEmpty || !hasValidKey }
+
+    /// `token`, and the Live Activity's `startToken` and `activityToken` where they are given (not empty), are
+    /// lowercase ASCII hex, as APNs tokens are written.
+    public var hasValidTokens: Bool {
+        [token, activity?.startToken, activity?.activityToken].compactMap { $0 }.allSatisfy { token in
+            token.utf8.allSatisfy { (UInt8(ascii: "0")...UInt8(ascii: "9")).contains($0) || (UInt8(ascii: "a")...UInt8(ascii: "f")).contains($0) }
+        }
+    }
 }

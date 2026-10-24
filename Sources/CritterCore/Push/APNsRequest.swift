@@ -7,14 +7,14 @@ public enum APNsRequest {
     public static let productionHost = "api.push.apple.com"
 
     /// - Parameters:
-    ///   - deviceToken: the phone's APNs token, hex. Anything that is not a hex digit is left out: a token
-    ///     cannot reach the rest of the URL.
+    ///   - deviceToken: the phone's APNs token, hex. Anything that is not an ASCII hex digit is left out: a
+    ///     token cannot reach the rest of the URL.
     ///   - bearer: a JWT from `APNsToken`.
     public static func make(
         _ message: APNsMessage, deviceToken: String, environment: PushEnvironment, config: APNsConfig, bearer: String
     ) -> URLRequest {
         let host = environment == .sandbox ? sandboxHost : productionHost
-        let token = deviceToken.filter(\.isHexDigit)
+        let token = deviceToken.filter { $0.isASCII && $0.isHexDigit }
         var components = URLComponents()
         components.scheme = "https"
         components.host = host

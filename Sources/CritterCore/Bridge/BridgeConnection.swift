@@ -168,7 +168,7 @@ public final class BridgeConnection {
             }
         case .push(let id, let registration):
             // An empty token is an unregistration, whatever else it holds.
-            guard registration.token.isEmpty || registration.hasValidKey else {
+            guard registration.token.isEmpty || (registration.hasValidKey && registration.hasValidTokens) else {
                 return result(id, .invalid, "推送登记无效")
             }
             return services.registerPush(deviceId: deviceId, registration) ? result(id, nil) : result(id, .failed, "保存失败")

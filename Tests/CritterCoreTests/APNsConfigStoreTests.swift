@@ -39,7 +39,8 @@ private func writeKey(named name: String, in dir: URL) throws -> (URL, String) {
     let downloads = base.appendingPathComponent("Downloads")
 
     let (first, _) = try writeKey(named: "AuthKey_OLD0000000.p8", in: downloads)
-    _ = try store.importKey(from: first)
+    let old = try store.importKey(from: first)
+    try store.save(APNsConfig(keyId: "OLD0000000", teamId: "TEAM123456", keyFile: old.keyFile))
     let (source, pem) = try writeKey(named: "AuthKey_ABC123DEFG.p8", in: downloads)
     let imported = try store.importKey(from: source)
 
@@ -47,11 +48,48 @@ private func writeKey(named name: String, in dir: URL) throws -> (URL, String) {
     #expect(try String(contentsOf: imported.keyFile, encoding: .utf8) == pem)
     #expect(permissions(imported.keyFile) == 0o600)
     #expect(permissions(paths.apnsDir) == 0o700)
-    // The key it replaces is gone; the one in Downloads is the user's and stays.
-    let left = try FileManager.default.contentsOfDirectory(atPath: paths.apnsDir.path).filter { $0.hasSuffix(".p8") }
-    #expect(left == ["AuthKey_ABC123DEFG.p8"])
+    func keys() throws -> [String] {
+        try FileManager.default.contentsOfDirectory(atPath: paths.apnsDir.path).filter { $0.hasSuffix(".p8") }.sorted()
+    }
+    // The key in use stays until a setup naming the new one is saved; then it goes.
+    #expect(try keys() == ["AuthKey_ABC123DEFG.p8", "AuthKey_OLD0000000.p8"])
+    try store.save(APNsConfig(keyId: "ABC123DEFG", teamId: "TEAM123456", keyFile: imported.keyFile))
+    #expect(try keys() == ["AuthKey_ABC123DEFG.p8"])
+    // The ones in Downloads are the user's and stay.
     #expect(FileManager.default.fileExists(atPath: source.path))
     #expect(FileManager.default.fileExists(atPath: first.path))
+}
+
+@Test func aSaveThatFailsLeavesTheSetupOnItsOldKey() throws {
+    let (paths, base) = tempPaths()
+    defer {
+        try? FileManager.default.setAttributes([.immutable: false], ofItemAtPath: paths.apnsDir.path)
+        try? FileManager.default.removeItem(at: base)
+    }
+    let store = APNsConfigStore(paths: paths)
+    let downloads = base.appendingPathComponent("Downloads")
+    let (first, oldPem) = try writeKey(named: "AuthKey_OLD0000000.p8", in: downloads)
+    let oldConfig = APNsConfig(keyId: "OLD0000000", teamId: "TEAM123456", keyFile: try store.importKey(from: first).keyFile)
+    try store.save(oldConfig)
+    let (second, _) = try writeKey(named: "AuthKey_ABC123DEFG.p8", in: downloads)
+    let imported = try store.importKey(from: second)
+
+    // The directory cannot be changed (locked): the save fails, and the setup still works with the old key.
+    try FileManager.default.setAttributes([.immutable: true], ofItemAtPath: paths.apnsDir.path)
+    #expect(throws: (any Error).self) {
+        try store.save(APNsConfig(keyId: "ABC123DEFG", teamId: "TEAM123456", keyFile: imported.keyFile))
+    }
+    #expect(store.load() == .ready(oldConfig, pem: oldPem))
+}
+
+@Test func aSetupNeverPrintsItsKey() throws {
+    let pem = P256.Signing.PrivateKey().pemRepresentation
+    let setup = APNsSetup.ready(APNsConfig(keyId: "ABC123DEFG", teamId: "TEAM123456", keyFile: URL(fileURLWithPath: "/k/AuthKey_ABC123DEFG.p8")), pem: pem)
+    for text in ["\(setup)", String(describing: setup), String(reflecting: setup), "\([setup])"] {
+        #expect(!text.contains("BEGIN") && !text.contains(pem.split(separator: "\n")[1]))
+        #expect(text.contains("ABC123DEFG"))
+    }
+    #expect("\(APNsSetup.problem("读不了 .p8 文件"))".contains("读不了 .p8 文件"))
 }
 
 @Test func keyIdIsReadFromTheFileName() throws {

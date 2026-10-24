@@ -181,6 +181,12 @@ private func make(_ m: APNsMessage, environment: PushEnvironment = .sandbox) -> 
     #expect(request.url?.absoluteString == "https://api.push.apple.com/3/device/abcd1")
 }
 
+@Test func onlyASCIIHexDigitsReachThePath() {
+    // Fullwidth digits are hex digits to `Character.isHexDigit`; they must not reach the URL.
+    let request = APNsRequest.make(message(.alert), deviceToken: "ab\u{FF11}\u{FF12}cd", environment: .sandbox, config: config, bearer: "x")
+    #expect(request.url?.absoluteString == "https://api.sandbox.push.apple.com/3/device/abcd")
+}
+
 // MARK: - The reply
 
 private func body(_ reason: String) -> Data { Data(#"{"reason":"\#(reason)"}"#.utf8) }
@@ -200,7 +206,7 @@ private func body(_ reason: String) -> Data { Data(#"{"reason":"\#(reason)"}"#.u
     #expect(APNsResponse.classify(status: 200, body: Data()) == .sent)
     #expect(APNsResponse.classify(status: 403, body: body("InvalidProviderToken")) == .configError("密钥或 Team ID 不对"))
     #expect(APNsResponse.classify(status: 403, body: body("ExpiredProviderToken")) == .configError("ExpiredProviderToken"))
-    #expect(APNsResponse.classify(status: 403, body: body("TopicDisallowed")) == .configError("TopicDisallowed"))
+    #expect(APNsResponse.classify(status: 403, body: body("TopicDisallowed")) == .configError("这把密钥不能给这个 bundle id 推送"))
     #expect(APNsResponse.classify(status: 403, body: Data()) == .configError("403"))
     #expect(APNsResponse.classify(status: 403, body: Data("garbage".utf8)) == .configError("403"))
     #expect(APNsResponse.classify(status: 429, body: body("TooManyRequests")) == .retry)
@@ -362,4 +368,13 @@ private final class Harness {
         #expect(!line.contains("JWT"))
         #expect(!line.contains("apple.com"))
     }
+}
+
+@Test func aTopicTheSetupCannotPushToIsASetupError() {
+    // The bundle id or the key's rights are wrong: every push would fail the same way until the settings change.
+    #expect(APNsResponse.classify(status: 400, body: body("TopicDisallowed")) == .configError("这把密钥不能给这个 bundle id 推送"))
+    #expect(APNsResponse.classify(status: 400, body: body("BadTopic")) == .configError("bundle id 不对"))
+    #expect(APNsResponse.classify(status: 400, body: body("MissingTopic")) == .configError("没有填 bundle id"))
+    // Other 400s stay refusals of that one push.
+    #expect(APNsResponse.classify(status: 400, body: body("BadExpirationDate")) == .rejected("BadExpirationDate"))
 }

@@ -39,12 +39,25 @@ public enum APNsResponse {
             return .dropToken
         case 400 where reason == "BadDeviceToken" || reason == "DeviceTokenNotForTopic":
             return .dropToken
+        case 400 where reason.flatMap(topicProblem) != nil:
+            // The bundle id, or what the key may push to: every push fails like this until the settings change.
+            return .configError(reason.flatMap(topicProblem) ?? "")
         case 403:
-            return .configError(reason == "InvalidProviderToken" ? "密钥或 Team ID 不对" : (reason ?? "403"))
+            return .configError(reason.flatMap(topicProblem) ?? (reason == "InvalidProviderToken" ? "密钥或 Team ID 不对" : (reason ?? "403")))
         case 429, 500...599:
             return .retry
         default:
             return .rejected(reason ?? String(status))
+        }
+    }
+
+    /// What a topic reason means for the settings, nil for any other reason.
+    private static func topicProblem(_ reason: String) -> String? {
+        switch reason {
+        case "TopicDisallowed": return "这把密钥不能给这个 bundle id 推送"
+        case "BadTopic": return "bundle id 不对"
+        case "MissingTopic": return "没有填 bundle id"
+        default: return nil
         }
     }
 

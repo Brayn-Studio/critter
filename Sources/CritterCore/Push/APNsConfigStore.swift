@@ -80,21 +80,25 @@ public struct APNsConfigStore: Sendable {
     }
 
     /// Saves the setup. Only the key's file name is kept, and only for a key in `directory` (`hasKey`); without
-    /// one the other fields are kept for when a key is chosen.
+    /// one the other fields are kept for when a key is chosen. Once it is saved, any other `.p8` in `directory`
+    /// (a key it replaced) is deleted -- only then, so a save that fails leaves the setup on the key it had.
     public func save(_ config: APNsConfig) throws {
         try PrivateDirectory.ensure(directory)
-        let stored = Stored(
-            keyId: config.keyId, teamId: config.teamId, bundleId: config.bundleId,
-            keyFile: hasKey(config) ? config.keyFile.lastPathComponent : ""
-        )
+        let keyName = hasKey(config) ? config.keyFile.lastPathComponent : ""
+        let stored = Stored(keyId: config.keyId, teamId: config.teamId, bundleId: config.bundleId, keyFile: keyName)
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
         try atomicWrite(encoder.encode(stored), to: configFile, permissions: 0o600)
+        guard !keyName.isEmpty else { return }
+        let others = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        for other in others where other.hasSuffix(".p8") && other != keyName {
+            try? FileManager.default.removeItem(at: directory.appendingPathComponent(other))
+        }
     }
 
     /// Copies the `.p8` at `source` into `directory` (0600) as `AuthKey_<KeyID>.p8`, or `AuthKey.p8` when its
-    /// name does not say the Key ID, and deletes any other `.p8` there. The file at `source` is left alone.
-    /// Throws `unreadableKey`, replacing nothing, when it cannot be read or is not a key.
+    /// name does not say the Key ID. The key in use stays until `save` names the new one; the file at `source`
+    /// is left alone. Throws `unreadableKey`, writing nothing, when it cannot be read or is not a key.
     public func importKey(from source: URL) throws -> ImportedKey {
         guard let pem = Self.readKey(source) else { throw Failure.unreadableKey }
         let keyId = APNsConfig.keyId(fromFileName: source.lastPathComponent)
@@ -102,10 +106,6 @@ public struct APNsConfigStore: Sendable {
         try PrivateDirectory.ensure(directory)
         let keyFile = directory.appendingPathComponent(name)
         try atomicWrite(Data(pem.utf8), to: keyFile, permissions: 0o600)
-        let others = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
-        for other in others where other.hasSuffix(".p8") && other != name {
-            try? FileManager.default.removeItem(at: directory.appendingPathComponent(other))
-        }
         return ImportedKey(keyFile: keyFile, keyId: keyId)
     }
 

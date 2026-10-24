@@ -31,8 +31,8 @@ public struct APNsConfig: Equatable, Sendable {
 }
 
 /// What the settings' "iPhone 推送" amounts to: nothing set up yet, a setup ready to sign with, or a setup that
-/// cannot work and why (for the status line).
-public enum APNsSetup: Equatable, Sendable {
+/// cannot work and why (for the status line). Printed, it never shows the key.
+public enum APNsSetup: Equatable, Sendable, CustomStringConvertible, CustomDebugStringConvertible {
     /// The reason shown when the `.p8` is missing or is not a P-256 key.
     public static let unreadableKey = "读不了 .p8 文件"
 
@@ -40,4 +40,20 @@ public enum APNsSetup: Equatable, Sendable {
     /// `pem` is the `.p8`'s contents; it is never logged.
     case ready(APNsConfig, pem: String)
     case problem(String)
+}
+
+extension APNsSetup {
+    public var description: String {
+        switch self {
+        case .notConfigured:
+            return "notConfigured"
+        case .ready(let config, _):
+            return "ready(keyId: \(config.keyId), teamId: \(config.teamId), bundleId: \(config.bundleId), "
+                + "keyFile: \(config.keyFile.lastPathComponent), pem: <hidden>)"
+        case .problem(let reason):
+            return "problem(\(reason))"
+        }
+    }
+
+    public var debugDescription: String { description }
 }
