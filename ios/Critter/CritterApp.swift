@@ -28,7 +28,7 @@ struct CritterApp: App {
         _store = State(initialValue: launch.fixtureStore() ?? launch.pairingStore() ?? Self.makeStore())
         _link = State(initialValue: launch.launchLink)
         deviceName = launch.deviceName ?? UIDevice.current.name
-        let dock = launch.fakeDock ? FakeDock() : nil
+        let dock = launch.fakeDock.map(FakeDock.init(script:))
         fakeDock = dock
         _autoOpen = State(
             initialValue: dock.map { BoardAutoOpen(power: $0.power, gravity: $0.gravity) } ?? BoardAutoOpen()

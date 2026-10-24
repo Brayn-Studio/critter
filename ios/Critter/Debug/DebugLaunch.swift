@@ -81,7 +81,8 @@ import Foundation
 ///   (the simulator has neither): 2 s after launch it is plugged in and lying still in landscape; at 20 s it stands
 ///   upright; at 26 s the setting 「充电横放时自动打开」 is switched off and at 29 s on again; at 32 s it is
 ///   unplugged. The fake sensor gives a reading every 100 ms while it is on, in g like CoreMotion, through the same
-///   path as the real one. With `-critterBoardLog`.
+///   path as the real one. With `-critterBoardLog`. `-critterFakeDock unplug` plays a shorter one instead: plugged
+///   in and lying still in landscape at 2 s, unplugged at 10 s (the board closes 10 s later).
 struct DebugLaunch {
     enum AutoSubmit: Equatable {
         case allow
@@ -147,7 +148,8 @@ struct DebugLaunch {
     var boardLog = false
     var boardDimAfter: TimeInterval?
     var fixtureStep: FixtureStep?
-    var fakeDock = false
+    /// `-critterFakeDock`: which day on the desk the fake charger and sensor play; nil without it.
+    var fakeDock: FakeDock.Script?
     /// When the process started, on the system's uptime clock (the board log counts from here).
     let launchUptime = ProcessInfo.processInfo.systemUptime
 
@@ -232,7 +234,9 @@ struct DebugLaunch {
                 fixtureStep = FixtureStep(sessionId: String(target[0]), state: state, at: at)
             }
         }
-        fakeDock = arguments.contains("-critterFakeDock")
+        if arguments.contains("-critterFakeDock") {
+            fakeDock = value("critterFakeDock") == "unplug" ? .unplug : .standard
+        }
     }
 
     /// With `-critterPairing`: the fake Macs and certificates the pairing screen uses.

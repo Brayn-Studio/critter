@@ -10,12 +10,23 @@ import Foundation
 /// - 26: 「充电横放时自动打开」 switched off (gravity stops); 29: on again (it starts again);
 /// - 32: unplugged (gravity stops).
 ///
+/// `unplug`: plugged in and lying still in landscape at 2 s, unplugged at 10 s (the board closes 10 s later).
+///
 /// The fake sensor reads every 100 ms while it is started, in g like CoreMotion, so the readings take the same path
 /// (and the same conversion to m/s²) as the real ones.
 @MainActor
 final class FakeDock {
+    enum Script: Equatable, Sendable {
+        case standard, unplug
+    }
+
     let power = FakePower()
     let gravity = FakeGravity()
+    private let script: Script
+
+    init(script: Script) {
+        self.script = script
+    }
 
     /// Gravity in g: lying on its long edge, and standing on its short one.
     private static let landscape = (x: -1.0, y: 0.0, z: 0.0)
@@ -26,6 +37,11 @@ final class FakeDock {
         await at(2)
         gravity.reading = Self.landscape
         power.set(true)
+        if script == .unplug {
+            await at(10)
+            power.set(false)
+            return
+        }
         await at(20)
         gravity.reading = Self.upright
         await at(26)
