@@ -1,25 +1,59 @@
 import CritterClient
 import CritterKit
 import SwiftUI
+import UIKit
 
-/// One session's details and 「发一句」 (Android `DetailActivity`): a sheet over the home list. The session is looked up
-/// in the latest snapshot by id; when it is gone the sheet says so and closes.
+/// One session's details and 「发一句」 (visual design §8.5, Android `DetailActivity`), the content of a `sheetShell`
+/// over the home screen. The session is looked up in the latest snapshot by id; when it is gone the sheet says so
+/// and closes.
+///
+/// On top a 150 pt meadow with the Critter going on with what it does and a bubble beside it saying what that is
+/// (it looks up at you once the sheet has settled); then the name and state, the facts in two columns, the field and
+/// the send button. Sent, a pixel letter flies in an arc from the button to over the Critter's head, seven steps of
+/// 60 ms, and the Critter notices it and finishes with a little wiggle; "已送到" in green below. Not sent: the
+/// reason in red, and the words stay in the field. With the keyboard up the meadow gets lower and the facts fold
+/// away, so the field stays in view.
 struct DetailSheet: View {
     let sessionId: String
     let store: BridgeStore
+    /// 「打开回答」: the session's request, in its answer card.
+    let onOpenRequest: (String) -> Void
 
-    @Environment(\.dismiss) private var dismiss
+    @Environment(\.closeSheet) private var closeSheet
+    @Environment(SkinStore.self) private var skins
+    @Environment(\.reduceMotion) private var reduceMotion
+
     @State private var text = ""
-    @State private var busy = false
+    /// Something the field could not take: it holds 4000 at most.
+    @State private var clipped = false
+    /// 「发送」 and 「停止当前回合」 each wait for their own receipt.
+    @State private var sending = false
+    @State private var stopping = false
     @State private var feedback: Feedback?
     /// Missing from a cached snapshot proves nothing: the live one gets a while to arrive.
     @State private var waitedOut = false
     @State private var now = Date()
+    @State private var typing = false
+    @State private var stage = CritterStageControl()
+    /// Where the letter is while it flies, in the sheet's space.
+    @State private var letter: CGPoint?
+    @State private var sendFrame: CGRect = .zero
+    @State private var stageFrame: CGRect = .zero
 
-    private struct Feedback {
+    private struct Feedback: Equatable {
         let message: String
         let ok: Bool
     }
+
+    /// The meadow at the top; lower while the keyboard is up, to leave room for the field.
+    private static let stageHeight: CGFloat = 150
+    private static let stageHeightTyping: CGFloat = 118
+    /// The letter lands this many cells above the Critter's feet, over its head.
+    private static let headRows: CGFloat = 14
+    /// The `letter` icon is 9 × 6 cells of 2 pt.
+    private static let letterSize = CGSize(width: 18, height: 12)
+    private static let letterStep: Duration = .milliseconds(60)
+    private nonisolated static let space = "detail-sheet"
 
     private var session: BridgeSession? {
         store.snapshot?.sessions.first { $0.id == sessionId }
@@ -33,15 +67,11 @@ struct DetailSheet: View {
         Group {
             if let session {
                 details(session)
+                    .sheetMeadowTop()
             } else {
-                Text(gone ? "这个会话已经结束" : "正在连接电脑…")
-                    .font(.headline)
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                SheetMessage(text: gone ? "这个会话已经结束" : "正在连接电脑…")
             }
         }
-        .presentationDetents([.medium, .large])
-        .presentationDragIndicator(.visible)
         .task(id: sessionId) {
             try? await Task.sleep(for: .seconds(8))
             waitedOut = true
@@ -49,7 +79,7 @@ struct DetailSheet: View {
         .task(id: gone) {
             guard gone else { return }
             try? await Task.sleep(for: .seconds(1.5))
-            if !Task.isCancelled { dismiss() }
+            if !Task.isCancelled { closeSheet() }
         }
         .task {
             while !Task.isCancelled {
@@ -57,198 +87,457 @@ struct DetailSheet: View {
                 now = Date()
             }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillShowNotification)) { _ in
+            typing = true
+        }
+        .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardWillHideNotification)) { _ in
+            typing = false
+        }
+        #if DEBUG
+        .task {
+            guard let draft = DebugLaunch.current.sayDraft else { return }
+            setText(draft)
+            guard DebugLaunch.current.autoSay else { return }
+            // One second after the sheet is up: the same as tapping the send button.
+            try? await Task.sleep(for: .seconds(1))
+            if let session { say(session) }
+        }
+        #endif
     }
 
-    // MARK: - The details
+    // MARK: - The sheet
 
     private func details(_ session: BridgeSession) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                HStack(spacing: 8) {
-                    Text(verbatim: session.name)
-                        .font(.title2.bold())
-                        .lineLimit(1)
-                    Spacer(minLength: 4)
-                    StateTag(state: session.state)
-                }
-                Text(verbatim: SessionText.doing(session))
-                    .font(.subheadline)
-                    .foregroundStyle(.secondary)
-                facts(session)
-                sayArea(session)
-                if SessionText.canStopTurn(session, online: store.canAct) {
-                    Button(role: .destructive) { stopTurn(session) } label: {
-                        Text(busy ? "正在发送…" : "停止当前回合").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
-                    .controlSize(.large)
-                    .disabled(busy)
-                }
-                if let feedback {
-                    HStack(alignment: .firstTextBaseline, spacing: 6) {
-                        Image(systemName: feedback.ok ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
-                        Text(verbatim: feedback.message)
-                    }
-                    .font(.footnote.weight(.semibold))
-                    .foregroundStyle(feedback.ok ? Color(.systemGreen) : Color(.systemRed))
-                    .accessibilityElement(children: .combine)
-                }
+        VStack(spacing: 0) {
+            DetailStage(
+                session: session, manifest: skins.library.manifest(session.skin),
+                height: typing ? Self.stageHeightTyping : Self.stageHeight, control: stage
+            )
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: { stageFrame = $0 }
+            ViewThatFits(in: .vertical) {
+                column(session)
+                ScrollView { column(session) }
+                    .scrollDismissesKeyboard(.interactively)
             }
-            .padding(.horizontal, 20)
-            .padding(.top, 24)
-            .padding(.bottom, 28)
         }
-        .scrollDismissesKeyboard(.interactively)
+        .coordinateSpace(.named(Self.space))
+        .overlay(alignment: .topLeading) {
+            if let letter {
+                PixelIconView(.letter)
+                    .foregroundStyle(Theme.brand)
+                    .offset(x: letter.x, y: letter.y)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
-    private func facts(_ session: BridgeSession) -> some View {
-        var pairs: [(label: String, value: String)] = []
-        if let branch = session.branch, !branch.trimmingCharacters(in: .whitespaces).isEmpty {
-            pairs.append(("分支", branch))
-        }
-        pairs.append(("来源", SessionText.source(SessionText.visibleSource(session))))
-        if let model = session.model, !model.trimmingCharacters(in: .whitespaces).isEmpty {
-            pairs.append(("模型", model))
-        }
-        let rows = stride(from: 0, to: pairs.count, by: 2).map { Array(pairs[$0..<min($0 + 2, pairs.count)]) }
-        let updated = SessionText.ago(Date(timeIntervalSince1970: Double(session.eventTime) / 1000), now: now)
-        return Grid(alignment: .topLeading, horizontalSpacing: 16, verticalSpacing: 12) {
-            GridRow {
-                Fact(label: "目录", value: session.cwd, monospaced: true)
-                    .gridCellColumns(2)
+    private func column(_ session: BridgeSession) -> some View {
+        let canMessage = SessionText.supportsMessages(session)
+        let pending = store.snapshot?.pending.filter { $0.sessionId == session.id }.min { $0.createdAt < $1.createdAt }
+        return VStack(alignment: .leading, spacing: typing ? 10 : 14) {
+            HStack(spacing: 8) {
+                Text(verbatim: session.name)
+                    .font(.nunito(size: typing ? 18 : 20, weight: .black))
+                    .foregroundStyle(Theme.ink)
+                    .lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                StateTag(state: session.state)
             }
-            ForEach(rows.indices, id: \.self) { i in
-                GridRow {
-                    ForEach(rows[i].indices, id: \.self) { j in
-                        Fact(label: rows[i][j].label, value: rows[i][j].value)
+            .accessibilityElement(children: .combine)
+            .accessibilityAddTraits(.isHeader)
+            if !typing {
+                Facts(session: session, now: now)
+            }
+            if canMessage {
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack(alignment: .bottom, spacing: 8) {
+                        // Not disabled while sending: that drops the keyboard and the sheet changes shape under the
+                        // flying letter. The send button waits instead, and what is typed meanwhile survives the
+                        // send (`SayFeedback.afterSent`).
+                        PixelTextField("发一句…", text: Binding(get: { text }, set: { setText($0) }), maxLines: 5)
+                        SendButton(enabled: canSend(session)) { say(session) }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .named(Self.space)) } action: {
+                                sendFrame = $0
+                            }
                     }
-                    if rows[i].count == 1 { Color.clear.frame(height: 0) }
-                }
-            }
-            if let context = session.context {
-                GridRow {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack {
-                            Text("上下文")
-                                .font(.caption.weight(.bold))
-                                .foregroundStyle(.secondary)
-                            Spacer()
-                            Text(verbatim: SessionText.contextPercent(context))
-                                .font(.footnote.weight(.bold))
-                                .monospacedDigit()
-                        }
-                        SegmentMeter(fraction: context.usedPercent / 100, segments: 24)
+                    if clipped {
+                        Text(verbatim: "一次最多发 \(SayFeedback.maxLength) 个字，多出来的没有放进输入框。")
+                            .font(.nunito(size: 11.5, weight: .heavy))
+                            .foregroundStyle(Theme.err)
+                            .accessibilityAddTraits(.updatesFrequently)
                     }
-                    .accessibilityElement(children: .combine)
-                    .gridCellColumns(2)
+                    hint(session)
                 }
+            } else {
+                hint(session)
             }
-            GridRow {
-                Fact(label: "最后更新", value: updated)
-                Color.clear.frame(height: 0)
+            if SessionText.canStopTurn(session, online: store.canAct) {
+                PixelButton(
+                    title: stopping ? "正在发送…" : "停止当前回合", role: .destructive, style: .secondary, size: .small,
+                    wide: true
+                ) {
+                    stopTurn(session)
+                }
+                .disabled(stopping)
+            }
+            if let pending, SessionText.supportsAnswers(session) {
+                PixelButton(title: "打开回答", style: .secondary, size: .small, wide: true) {
+                    onOpenRequest(pending.requestId)
+                }
+                .disabled(!store.canAct)
+            }
+            if let hint = SessionText.waitingHint(session, hasActionableRequest: pending != nil) {
+                Text(verbatim: hint)
+                    .font(.nunito(size: 12, weight: .bold))
+                    .foregroundStyle(Theme.ink2)
+            }
+            if let feedback {
+                HStack(spacing: 6) {
+                    PixelIconView(feedback.ok ? .check : .bang)
+                    Text(verbatim: feedback.message)
+                        .font(.nunito(size: 12.5, weight: .heavy))
+                }
+                .foregroundStyle(feedback.ok ? Theme.done : Theme.err)
+                .accessibilityElement(children: .combine)
+                .accessibilityAddTraits(.updatesFrequently)
             }
         }
+        .padding(.horizontal, 18)
+        .padding(.top, typing ? 12 : 14)
+        .padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    private func hint(_ session: BridgeSession) -> some View {
+        Text(verbatim: SessionText.messageHint(session))
+            .font(.nunito(size: 11.5, weight: .semibold))
+            .foregroundStyle(Theme.ink2)
+            .lineSpacing(17 - 11.5 * 1.36)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     // MARK: - 发一句
 
-    private func sayArea(_ session: BridgeSession) -> some View {
-        let canMessage = SessionText.supportsMessages(session)
-        return VStack(alignment: .leading, spacing: 8) {
-            HStack(alignment: .bottom, spacing: 8) {
-                TextField("发一句…", text: $text, axis: .vertical)
-                    .lineLimit(1...5)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 10)
-                    .background(Color(.secondarySystemFill), in: RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .disabled(!canMessage)
-                Button { say(session) } label: {
-                    Image(systemName: "arrow.up.circle.fill")
-                        .font(.system(size: 36))
-                }
-                .disabled(!canSend(session))
-                .accessibilityLabel("发送")
-            }
-            Text(verbatim: SessionText.messageHint(session))
-                .font(.caption)
-                .foregroundStyle(.secondary)
+    /// The field takes at most `SayFeedback.maxLength` UTF-16 units (as Android's field and the Mac count them);
+    /// anything past that is left out and the sheet says so.
+    private func setText(_ new: String) {
+        let room = SayFeedback.maxLength
+        if new.utf16.count <= room {
+            text = new
+            if new.utf16.count < room { clipped = false }
+            return
         }
+        var kept = ""
+        var units = 0
+        for character in new {
+            let size = String(character).utf16.count
+            if units + size > room { break }
+            kept.append(character)
+            units += size
+        }
+        text = kept
+        clipped = true
     }
 
-    /// Something to say, no longer than the Mac takes (trimmed, in UTF-16 units as phones count them), a session that
-    /// takes messages, and a Mac to tell.
+    /// Something to say, a session that takes messages, a Mac to tell, and no message on its way.
     private func canSend(_ session: BridgeSession) -> Bool {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        return SessionText.supportsMessages(session) && store.canAct && !busy
-            && !trimmed.isEmpty && trimmed.utf16.count <= BridgeProtocol.maxSayUTF16Units
+        SessionText.supportsMessages(session) && store.canAct && !sending
+            && !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func say(_ session: BridgeSession) {
         guard canSend(session) else { return }
         let sent = text
-        busy = true
+        sending = true
         feedback = nil
         Task {
             let result = await store.send(.say(sessionId: session.id, text: sent.trimmingCharacters(in: .whitespacesAndNewlines)))
-            busy = false
-            feedback = Feedback(message: Self.sayFeedback(result, codex: SessionText.isCodex(session)), ok: result.ok)
-            if result.ok { text = Self.afterSent(current: text, sent: sent) }
+            sending = false
+            // Sent: "已送到" (visual design §7); otherwise the Mac's reason, or what the failure means.
+            let message = result.ok ? "已送到" : SayFeedback.text(for: result, codex: SessionText.isCodex(session))
+            feedback = Feedback(message: message, ok: result.ok)
+            if result.ok {
+                setText(SayFeedback.afterSent(current: text, sent: sent))
+                // Under reduce motion nothing flies: the green line says it.
+                if !reduceMotion { await flyLetter(session) }
+            }
         }
+    }
+
+    /// The letter flies from the send button to just over the Critter's head, one 60 ms step at a time, then the
+    /// Critter notices it and ends with its little after-petting wiggle.
+    private func flyLetter(_ session: BridgeSession) async {
+        guard sendFrame != .zero, stageFrame != .zero else { return }
+        let half = CGSize(width: Self.letterSize.width / 2, height: Self.letterSize.height / 2)
+        let from = CGPoint(x: sendFrame.midX - half.width, y: sendFrame.midY - half.height)
+        let cell = DetailStage.cell
+        let petLeft = DetailStage.petLeft(width: stageFrame.width)
+        let ground = stageFrame.height - DetailStage.ground
+        let to = CGPoint(
+            x: stageFrame.minX + petLeft + 9 * cell - half.width,
+            y: stageFrame.minY + ground - Self.headRows * cell
+        )
+        for point in LetterFlight.path(from: from, to: to, steps: 7, rise: 60, cell: 3) {
+            letter = point
+            try? await Task.sleep(for: Self.letterStep)
+        }
+        letter = nil
+        let skin = skins.library.manifest(session.skin)
+        let n = skin.interactions
+        stage.playClip(LonePet.petId, clip: (skin.clips[n.notice] ?? []) + (skin.clips[n.petEnd] ?? []))
     }
 
     private func stopTurn(_ session: BridgeSession) {
-        guard SessionText.canStopTurn(session, online: store.canAct), !busy else { return }
-        busy = true
+        guard SessionText.canStopTurn(session, online: store.canAct), !stopping else { return }
+        stopping = true
         feedback = nil
         Task {
             let result = await store.send(.interrupt(sessionId: session.id))
-            busy = false
-            feedback = Feedback(message: Self.interruptFeedback(result), ok: result.ok)
+            stopping = false
+            feedback = Feedback(message: SayFeedback.text(for: result, isInterrupt: true), ok: result.ok)
         }
-    }
-
-    /// The text of the field after `sent` went out: the field stays editable while sending, so what was typed after
-    /// the sent words is kept; a field whose sent words were edited meanwhile is a new draft and stays as it is.
-    static func afterSent(current: String, sent: String) -> String {
-        guard current.hasPrefix(sent) else { return current }
-        return String(current.dropFirst(sent.count).drop { $0.isWhitespace })
-    }
-
-    /// What the sheet says about the Mac's receipt for a message (Android `sayFeedback`; success is 「已送到」).
-    static func sayFeedback(_ result: CommandResult, codex: Bool) -> String {
-        if result.ok { return "已送到" }
-        if let message = result.message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return message }
-        if result.reason == .unavailable {
-            return codex ? "尚未连接 Codex 控制通道，请在电脑上继续操作" : "这个会话收不到消息（可能是启动得太早，重启会话后可用）"
-        }
-        return "发送失败"
-    }
-
-    /// A receipt confirms the stop request was accepted, not that the turn has already stopped (Android
-    /// `interruptFeedback`).
-    static func interruptFeedback(_ result: CommandResult) -> String {
-        if let message = result.message, !message.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return message }
-        if result.ok { return "已请求停止当前回合" }
-        return result.reason == .unavailable ? "当前会话无法停止，请在电脑上处理" : "停止请求未发送成功"
     }
 }
 
-private struct Fact: View {
-    let label: String
-    let value: String
-    var monospaced = false
+// MARK: - The meadow
+
+/// The meadow at the top: the session's Critter a quarter of the way in, going on with what it does, and a bubble
+/// beside it saying what that is (one line). Once the sheet has settled, the Critter looks up at you.
+private struct DetailStage: View {
+    let session: BridgeSession
+    let manifest: SkinManifest
+    let height: CGFloat
+    let control: CritterStageControl
+
+    @Environment(\.sheetSettled) private var settled
+
+    /// The Critter's feet above the bottom of the meadow, its cell, and where it stands: a quarter of the way in.
+    static let ground: CGFloat = 22
+    static let cell: CGFloat = 4
+    private static let center: CGFloat = 0.25
+    /// The bubble's top sits this far above the Critter's feet (44 pt from the top of the 150 pt meadow).
+    private static let bubbleAboveGround: CGFloat = 84
+    /// The mockup's details sky: the moon in the top right corner, clear of the bubble.
+    private static let clouds = [CGPoint(x: 0.05, y: 0.12), CGPoint(x: 0.5, y: 0.05)]
+    private static let moon = CGPoint(x: 0.9, y: 0.08)
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: label)
-                .font(.caption.weight(.bold))
-                .foregroundStyle(.secondary)
-            Text(verbatim: value)
-                .font(monospaced ? .system(.subheadline, design: .monospaced).weight(.semibold) : .subheadline.weight(.semibold))
+        GeometryReader { proxy in
+            let width = proxy.size.width
+            let petLeft = Self.petLeft(width: width)
+            let petRight = petLeft + 18 * Self.cell
+            let groundY = height - Self.ground
+            let bubbleLeft = petRight + 18
+            ZStack(alignment: .topLeading) {
+                LonePet(
+                    skin: manifest, state: session.state, activity: session.activity, cell: Self.cell,
+                    groundInset: Self.ground, petX: petLeft, clouds: Self.clouds, moon: Self.moon, control: control
+                )
+                SideBubble(text: SessionText.doing(session))
+                    .frame(width: max(width - bubbleLeft - 12, 0), alignment: .leading)
+                    .offset(x: bubbleLeft, y: max(groundY - Self.bubbleAboveGround, 4))
+            }
+        }
+        .frame(height: height)
+        .onChange(of: settled, initial: true) { _, settled in
+            guard settled else { return }
+            Task { @MainActor in
+                await Task.yield()
+                control.lookAtYou(LonePet.petId)
+            }
+        }
+    }
+}
+
+extension DetailStage {
+    /// Where the Critter's base box starts in a meadow `width` wide.
+    static func petLeft(width: CGFloat) -> CGFloat {
+        (width * center - 9 * cell).rounded()
+    }
+}
+
+/// What the session is doing, in a bubble whose stepped tail points left at the Critter (the mockups'
+/// `.mbub.side`).
+private struct SideBubble: View {
+    let text: String
+
+    var body: some View {
+        HStack(alignment: .bottom, spacing: 0) {
+            // Four rows, each one 2 pt step wider to the left: a staircase down to the bubble's corner.
+            Canvas { context, size in
+                for row in 0..<4 {
+                    let x = CGFloat(3 - row) * 2
+                    context.fill(
+                        Path(CGRect(x: x, y: CGFloat(row) * 2, width: size.width - x, height: 2)),
+                        with: .color(Theme.surface)
+                    )
+                }
+            }
+            .frame(width: 8, height: 8)
+            .padding(.bottom, 4)
+            Text(verbatim: text)
+                .font(.nunito(size: 12, weight: .heavy))
+                .foregroundStyle(Theme.ink)
                 .lineLimit(1)
-                .truncationMode(monospaced ? .middle : .tail)
+                .padding(.horizontal, 9)
+                .padding(.top, 4)
+                .padding(.bottom, 6)
+                .pixelSurface(fill: Theme.surface, lip: Theme.shade, step: 3, lipHeight: 2)
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+// MARK: - The facts
+
+/// Two columns of facts, each with its icon; the context share takes a whole row, and a Codex session's own quota
+/// another.
+private struct Facts: View {
+    let session: BridgeSession
+    let now: Date
+
+    private struct Item {
+        let icon: PixelIcon
+        let label: String
+        let value: String
+        /// Shown in monospace and cut in the middle, so both ends stay readable.
+        var path = false
+    }
+
+    var body: some View {
+        let source = SessionText.visibleSource(session)
+        var items = [Item(icon: .folder, label: "目录", value: session.cwd, path: true)]
+        if let branch = session.branch, !branch.trimmingCharacters(in: .whitespaces).isEmpty {
+            items.append(Item(icon: .branch, label: "分支", value: branch))
+        }
+        items.append(Item(icon: PlaceRow.icon(source), label: "来源", value: SessionText.source(source)))
+        if let model = session.model, !model.trimmingCharacters(in: .whitespaces).isEmpty {
+            items.append(Item(icon: .spark, label: "模型", value: model))
+        }
+        let rows = stride(from: 0, to: items.count, by: 2).map { Array(items[$0..<min($0 + 2, items.count)]) }
+        let updated = SessionText.ago(Date(timeIntervalSince1970: Double(session.eventTime) / 1000), now: now)
+        return VStack(alignment: .leading, spacing: 10) {
+            ForEach(rows.indices, id: \.self) { i in
+                factRow(rows[i])
+            }
+            // An estimated context share (the Mac could not read the real one) is marked with ≈.
+            if let context = session.context {
+                ContextFact(context: context)
+            }
+            if SessionText.isCodex(session), let limits = session.limits {
+                LimitsFact(limits: limits, now: now)
+            }
+            factRow([Item(icon: .dot, label: "最后更新", value: updated)])
+        }
+    }
+
+    private func factRow(_ row: [Item]) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            ForEach(row.indices, id: \.self) { j in
+                fact(row[j])
+            }
+            if row.count == 1 { Color.clear.frame(maxWidth: .infinity, maxHeight: 0) }
+        }
+    }
+
+    private func fact(_ item: Item) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            FactLabel(icon: item.icon, label: item.label)
+            Text(verbatim: item.value)
+                .font(item.path ? .system(size: 13, weight: .bold, design: .monospaced) : .nunito(size: 14, weight: .bold))
+                .foregroundStyle(Theme.ink)
+                .lineLimit(1)
+                .truncationMode(item.path ? .middle : .tail)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .accessibilityElement(children: .combine)
+    }
+}
+
+private struct FactLabel: View {
+    let icon: PixelIcon
+    let label: String
+
+    var body: some View {
+        HStack(spacing: 5) {
+            PixelIconView(icon)
+            Text(verbatim: label)
+                .font(.nunito(size: 11.5, weight: .heavy))
+        }
+        .foregroundStyle(Theme.ink2)
+    }
+}
+
+/// "上下文" and its share ("≈32%": the digits in Silkscreen, the signs in Nunito) over a 24-cell meter.
+private struct ContextFact: View {
+    let context: BridgeContext
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                FactLabel(icon: .battery, label: "上下文")
+                Spacer(minLength: 8)
+                Text.percent(SessionText.contextPercent(context), digits: .silkscreen(size: 13), signSize: 13)
+                    .foregroundStyle(Theme.ink)
+            }
+            SegmentMeter(fraction: context.usedPercent / 100, segments: 24)
+        }
+        .accessibilityElement(children: .combine)
+    }
+}
+
+/// A Codex session's own quota windows (Android `LimitsFact`).
+private struct LimitsFact: View {
+    let limits: BridgeLimits
+    let now: Date
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            FactLabel(icon: .battery, label: "Codex 额度")
+            HStack(alignment: .top, spacing: 14) {
+                window("5 小时", limits.fiveHour)
+                window("7 天", limits.sevenDay)
+            }
+            if let age = LimitsText.staleness(updatedAt: limits.updatedAt, now: now) {
+                Text(verbatim: "额度更新于 \(age)")
+                    .font(.nunito(size: 11.5))
+                    .foregroundStyle(Theme.ink2)
+            }
+        }
+        .accessibilityElement(children: .combine)
+    }
+
+    private func window(_ name: String, _ window: RateWindow?) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(verbatim: "\(name) · \(LimitsText.percent(window))")
+                .font(.nunito(size: 13, weight: .heavy))
+                .foregroundStyle(Theme.ink)
+            if let window {
+                SegmentMeter(fraction: window.usedPercentage / 100, segments: 12)
+            }
+            Text(verbatim: LimitsText.resets(window, now: now, calendar: .autoupdatingCurrent))
+                .font(.nunito(size: 11.5))
+                .foregroundStyle(Theme.ink2)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+// MARK: - The send button
+
+/// The 48 × 44 send button: a primary pixel button with only the `send` icon.
+private struct SendButton: View {
+    let enabled: Bool
+    let action: () -> Void
+
+    var body: some View {
+        Button(action: action) {
+            // The style's 16 pt on each side make it 48 wide.
+            PixelIconView(.send)
+                .frame(width: 16)
+        }
+        .buttonStyle(PixelButtonStyle(style: .primary, size: .regular))
+        .disabled(!enabled)
+        .accessibilityLabel(Text("发送"))
     }
 }

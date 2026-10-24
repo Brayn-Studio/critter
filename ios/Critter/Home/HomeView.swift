@@ -80,8 +80,11 @@ struct HomeView: View {
                 SettingsView(store: store, onPairAgain: onPairAgain)
             }
         }
-        .sheet(item: detailTarget) { target in
-            DetailSheet(sessionId: target.id, store: store)
+        .sheetShell(item: detailTarget, handle: 160) { target in
+            DetailSheet(sessionId: target.id, store: store) { requestId in
+                presentedSessionId = nil
+                presentedRequestId = requestId
+            }
         }
         .sheetShell(item: answerTarget) { target in
             AnswerSheet(requestId: target.id, store: store, drafts: drafts, inline: inline[target.id] ?? .idle)

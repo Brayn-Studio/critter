@@ -10,15 +10,26 @@ import SwiftUI
 
 extension View {
     /// Shows `content` for `item` in a sheet over this view while `item` is set; setting it to nil closes the sheet
-    /// (it slides away first). A drag that starts within `handle` points of the sheet's top can pull it down;
-    /// `meadowTop` content starts at the very top (it begins with a meadow) and the grabber is drawn light over it.
+    /// (it slides away first). A drag that starts within `handle` points of the sheet's top can pull it down.
     func sheetShell<Item: Identifiable, Content: View>(
-        item: Binding<Item?>, handle: CGFloat = 110, meadowTop: Bool = false,
-        @ViewBuilder content: @escaping (Item) -> Content
+        item: Binding<Item?>, handle: CGFloat = 110, @ViewBuilder content: @escaping (Item) -> Content
     ) -> some View {
         overlay {
-            SheetHost(item: item, handle: handle, meadowTop: meadowTop, content: content)
+            SheetHost(item: item, handle: handle, content: content)
         }
+    }
+
+    /// Content that begins with a meadow: it starts at the very top of the sheet, under a light grabber.
+    func sheetMeadowTop(_ meadowTop: Bool = true) -> some View {
+        preference(key: SheetMeadowTopKey.self, value: meadowTop)
+    }
+}
+
+private struct SheetMeadowTopKey: PreferenceKey {
+    static let defaultValue = false
+
+    static func reduce(value: inout Bool, nextValue: () -> Bool) {
+        value = value || nextValue()
     }
 }
 
@@ -41,7 +52,6 @@ extension EnvironmentValues {
 private struct SheetHost<Item: Identifiable, Content: View>: View {
     @Binding var item: Item?
     let handle: CGFloat
-    let meadowTop: Bool
     let content: (Item) -> Content
 
     @Environment(\.reduceMotion) private var reduceMotion
@@ -49,6 +59,8 @@ private struct SheetHost<Item: Identifiable, Content: View>: View {
     @State private var shown: Item?
     @State private var settled = false
     @State private var drag: CGFloat = 0
+    /// The content begins with a meadow (`sheetMeadowTop`).
+    @State private var meadowTop = false
     /// Counts the openings and closings: a late completion of an earlier one does nothing.
     @State private var generation = 0
 
@@ -94,6 +106,7 @@ private struct SheetHost<Item: Identifiable, Content: View>: View {
                 .padding(.top, meadowTop ? 0 : Self.contentTop)
                 .frame(maxWidth: .infinity)
         }
+        .onPreferenceChange(SheetMeadowTopKey.self) { meadowTop = $0 }
         .background(alignment: .top) {
             Theme.surface
                 .padding(.bottom, -Self.below)

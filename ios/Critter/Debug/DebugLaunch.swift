@@ -38,6 +38,9 @@ import Foundation
 ///   shadow shows on the ground under it).
 /// - `-critterFrameLog`: every 10 seconds, "frames <n>" on standard output: how many ticks changed the picture on any
 ///   Critter stage (`FrameLog`). Read it with `xcrun simctl launch --console-pty <device> com.braynlabs.critter …`.
+/// - `-critterSayDraft <text>`: the details sheet's 「发一句」 field starts with this text, through the same limit as
+///   typing (past 4000 it is cut and the sheet says so). With `-critterAutoSay`, it is sent a second later, as if
+///   the send button was tapped (the letter flies; `-critterFixtureResult` decides the receipt).
 /// - `-critterSkyHour <0-23>`: every meadow's sky is drawn as at this hour of the day (`SkyClock`), whatever the
 ///   clock says (the dark appearance is still night).
 struct DebugLaunch {
@@ -73,6 +76,8 @@ struct DebugLaunch {
     var galleryHold = false
     var frameLog = false
     var skyHour: Int?
+    var sayDraft: String?
+    var autoSay = false
 
     static let current = DebugLaunch(arguments: ProcessInfo.processInfo.arguments)
 
@@ -122,6 +127,8 @@ struct DebugLaunch {
         allAsleep = arguments.contains("-critterAllAsleep")
         galleryHold = arguments.contains("-critterGalleryHold")
         frameLog = arguments.contains("-critterFrameLog")
+        sayDraft = value("critterSayDraft")
+        autoSay = arguments.contains("-critterAutoSay")
         skyHour = value("critterSkyHour").flatMap(Int.init).flatMap { (0...23).contains($0) ? $0 : nil }
     }
 

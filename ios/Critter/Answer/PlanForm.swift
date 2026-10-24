@@ -76,5 +76,5 @@ private struct PlanPaper: View {
         .pixelSurface(fill: Theme.surface2, lip: Theme.shade, step: 4, lipHeight: 3, inset: true)
     }
 
-    private static let space = "plan-paper"
+    private nonisolated static let space = "plan-paper"
 }
