@@ -117,7 +117,7 @@ private struct PairStep: View {
         } else {
             PairingView(
                 store: store, deviceName: deviceName, link: $link, onClose: back, position: position,
-                onSkip: next, skipNote: "之后手机不会连上电脑，要用时在首页配对", onPaired: next
+                onSkip: next, skipNote: "之后手机不会连上电脑，走完引导后再配对", onPaired: next
             )
         }
     }
