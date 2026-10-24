@@ -78,8 +78,12 @@ public struct BonjourLocalNetworkGate: LocalNetworkGate {
     }
 }
 
-/// One `waitUntilUsable`: its browser, what it has seen, and the pairing waiting for it.
+/// One `waitUntilUsable`: its browser, what it has seen, and the pairing waiting for it. Each state the browser reports
+/// and how the wait ended go to the log (also in Release), with the time since it started: what the device did while
+/// the 本地网络 prompt was up.
 private final class LocalNetworkWait: Sendable {
+    private static let log = Logger(subsystem: "com.braynlabs.critter", category: "pairing")
+
     private struct State {
         var latest = NWBrowser.State.setup
         var refused = false
@@ -94,6 +98,7 @@ private final class LocalNetworkWait: Sendable {
     private let state = OSAllocatedUnfairLock(initialState: State())
     private let access: LocalNetworkAccess
     private let onRefused: @Sendable () -> Void
+    private let started = ContinuousClock.now
 
     init(access: LocalNetworkAccess, onRefused: @escaping @Sendable () -> Void) {
         self.access = access
@@ -140,6 +145,7 @@ private final class LocalNetworkWait: Sendable {
     }
 
     private func saw(_ update: NWBrowser.State) {
+        note("browser \(update)")
         access.saw(update)
         decide { $0.latest = update }
         if case .failed = update {
@@ -161,16 +167,23 @@ private final class LocalNetworkWait: Sendable {
     }
 
     private func finish(_ usable: Bool) {
-        let (waiter, browser): (CheckedContinuation<Bool, Never>?, NWBrowser?) = state.withLock { s in
-            guard s.outcome == nil else { return (nil, nil) }
+        let (waiter, browser, seen): (CheckedContinuation<Bool, Never>?, NWBrowser?, String?) = state.withLock { s in
+            guard s.outcome == nil else { return (nil, nil, nil) }
             s.outcome = usable
             defer {
                 s.waiter = nil
                 s.browser = nil
             }
-            return (s.waiter, s.browser)
+            return (s.waiter, s.browser, "last \(s.latest), refused \(s.refused), grace over \(s.graceOver)")
         }
+        if let seen { note("\(usable ? "goes on" : "cancelled") (\(seen))") }
         if let browser { queue.async { browser.cancel() } }
         waiter?.resume(returning: usable)
+    }
+
+    /// A line in the log, with the time since the wait started.
+    private func note(_ line: String) {
+        let elapsed = Int((ContinuousClock.now - started) / .milliseconds(1))
+        Self.log.notice("local network gate, \(elapsed) ms: \(line, privacy: .public)")
     }
 }
